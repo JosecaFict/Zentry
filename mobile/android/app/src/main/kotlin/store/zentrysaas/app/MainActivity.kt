@@ -1,4 +1,4 @@
-package com.caprichostore.capricho_store
+package store.zentrysaas.app
 
 import android.app.ActivityManager
 import android.content.Context

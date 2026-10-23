@@ -2,6 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TenantContextService } from '../../core/tenant/tenant-context.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-tenant-brand-admin',
@@ -15,7 +16,7 @@ import { TenantContextService } from '../../core/tenant/tenant-context.service';
           <p>Esta identidad aparece en la tienda pública y en el panel de tu equipo.</p>
         </div>
         <span class="brand-settings__status"
-          >Subdominio: {{ tenant.tenant()?.slug }}.localhost</span
+          >Subdominio: {{ tenantSubdomain() }}</span
         >
       </header>
 
@@ -274,6 +275,12 @@ export class TenantBrandAdmin {
       validators: [Validators.required, Validators.pattern(/^#[0-9A-Fa-f]{6}$/)],
     }),
   });
+
+  tenantSubdomain(): string {
+    const slug = this.tenant.tenant()?.slug ?? '';
+    const domain = environment.tenantBaseDomain || 'localhost';
+    return slug ? `${slug}.${domain}` : domain;
+  }
 
   previewLogo(): string {
     return this.form.controls.logo_url.value.trim() || this.tenant.logoUrl();

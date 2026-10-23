@@ -117,7 +117,7 @@ class _CaprichoStoreAppState extends ConsumerState<CaprichoStoreApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp.router(
-        title: 'Capricho Store',
+        title: 'Zentry',
         debugShowCheckedModeBanner: false,
         scaffoldMessengerKey: _scaffoldMessengerKey,
         theme: AppTheme.light,

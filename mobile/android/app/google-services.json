@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "489331495679",
-    "project_id": "capricho-store-374bb",
-    "storage_bucket": "capricho-store-374bb.firebasestorage.app"
+    "project_number": "369630110983",
+    "project_id": "zentry-663a6",
+    "storage_bucket": "zentry-663a6.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:489331495679:android:032bb812437b4dbf47b2ca",
+        "mobilesdk_app_id": "1:369630110983:android:2acd0b164c0b183b3011a2",
         "android_client_info": {
-          "package_name": "com.caprichostore.capricho_store"
+          "package_name": "store.zentrysaas.app"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyD2pNB9DWTkgEn9LPAdJolJmNgGNmmB2ag"
+          "current_key": "AIzaSyAL49abvgf8LpXZEbr5G9984J2WzC_9iw4"
         }
       ],
       "services": {

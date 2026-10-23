@@ -49,6 +49,8 @@ async def test_platform_overview_accepts_superadmin() -> None:
         tenants_suspendidos=0,
         sucursales_activas=2,
         suscripciones_por_vencer=0,
+        suscripciones_en_gracia=0,
+        suscripciones_suspendidas=0,
     )
     app.dependency_overrides[get_current_principal] = lambda: principal(global_user=True)
     app.dependency_overrides[get_platform_service] = lambda: service
