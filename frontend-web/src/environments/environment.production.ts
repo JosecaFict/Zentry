@@ -1,6 +1,6 @@
 export const environment = {
   production: true,
   apiBaseUrl: '/api/v1',
-  tenantBaseDomain: '',
+  tenantBaseDomain: 'zentrysaas.store',
   defaultTenantSlug: '',
 } as const;
