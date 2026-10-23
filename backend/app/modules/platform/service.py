@@ -18,6 +18,7 @@ from app.modules.platform.schemas import (
     TenantCreate,
     TenantDetail,
     TenantListItem,
+    TenantPublicResponse,
     TenantStatusUpdate,
     TenantUpdate,
 )
@@ -85,6 +86,19 @@ class PlatformService:
 
     async def list_tenants(self) -> list[TenantListItem]:
         return [self._tenant_item(*row) for row in await self.repository.list_tenants()]
+
+    async def search_public_tenants(self, query: str) -> list[TenantPublicResponse]:
+        tenants = await self.repository.search_public_tenants(query)
+        return [
+            TenantPublicResponse(
+                nombre=tenant.nombre,
+                slug=tenant.slug,
+                logo_url=tenant.logo_url,
+                color_primario=tenant.color_primario,
+                color_primario_oscuro=tenant.color_primario_oscuro,
+            )
+            for tenant in tenants
+        ]
 
     async def tenant_detail(self, tenant_id: int) -> TenantDetail:
         row = await self.repository.tenant_detail(tenant_id)

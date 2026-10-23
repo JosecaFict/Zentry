@@ -1,5 +1,6 @@
 import 'package:capricho_store/app/navigation_memory.dart';
 import 'package:capricho_store/core/theme/app_theme.dart';
+import 'package:capricho_store/core/tenant/tenant_context.dart';
 import 'package:capricho_store/features/admin/domain/operational_access.dart';
 import 'package:capricho_store/features/auth/domain/app_user.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
@@ -60,12 +61,13 @@ class ProfileScreen extends ConsumerWidget {
         ),
       ),
       body: user == null
-          ? _buildGuestView(context)
+          ? _buildGuestView(context, ref)
           : _buildAuthenticatedView(context, ref, user),
     );
   }
 
-  Widget _buildGuestView(BuildContext context) {
+  Widget _buildGuestView(BuildContext context, WidgetRef ref) {
+    final company = ref.watch(tenantControllerProvider).selected?.name ?? 'tu empresa';
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
@@ -95,7 +97,7 @@ class ProfileScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'Inicia sesión para gestionar tus datos de cliente, consultar tu cuenta y disfrutar de la experiencia Capricho Store.',
+            'Inicia sesión para gestionar tus datos de cliente, consultar tu cuenta y disfrutar de la experiencia de $company.',
             style: TextStyle(color: Colors.grey.shade700, height: 1.3),
             textAlign: TextAlign.center,
           ),
@@ -115,7 +117,7 @@ class ProfileScreen extends ConsumerWidget {
           const Divider(),
           const SizedBox(height: 16),
           Text(
-            '¿Qué puedes hacer en Capricho Store?',
+            '¿Qué puedes hacer en $company?',
             style: Theme.of(context).textTheme.titleSmall
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
@@ -652,6 +654,12 @@ class ProfileScreen extends ConsumerWidget {
           icon: const Icon(Icons.logout_rounded),
           label: const Text('Cerrar sesión'),
         ),
+        const SizedBox(height: 12),
+        TextButton.icon(
+          onPressed: () => _changeCompany(context, ref),
+          icon: const Icon(Icons.storefront_outlined),
+          label: const Text('Cambiar de empresa'),
+        ),
       ],
     );
   }
@@ -682,6 +690,12 @@ class ProfileScreen extends ConsumerWidget {
     if (confirmed == true) {
       await ref.read(authControllerProvider.notifier).logout();
     }
+  }
+
+  Future<void> _changeCompany(BuildContext context, WidgetRef ref) async {
+    await ref.read(authControllerProvider.notifier).logout();
+    await ref.read(tenantControllerProvider.notifier).clear();
+    if (context.mounted) context.go('/empresa');
   }
 
   Future<void> _showAvatarOptions(

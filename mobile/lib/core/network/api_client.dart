@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:capricho_store/core/auth/token_storage.dart';
 import 'package:capricho_store/core/config/environment.dart';
+import 'package:capricho_store/core/tenant/tenant_storage.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +13,7 @@ final sessionExpiredEventProvider = StreamController<void>.broadcast();
 
 final dioProvider = Provider<Dio>((ref) {
   final storage = ref.watch(tokenStorageProvider);
+  final tenantStorage = ref.watch(tenantStorageProvider);
   final dio = Dio(
     BaseOptions(
       baseUrl: Environment.apiBaseUrl,
@@ -24,6 +26,10 @@ final dioProvider = Provider<Dio>((ref) {
   dio.interceptors.add(
     InterceptorsWrapper(
       onRequest: (options, handler) async {
+        final tenantSlug = await tenantStorage.read();
+        if (tenantSlug != null && tenantSlug.isNotEmpty) {
+          options.headers['X-Tenant-Slug'] = tenantSlug;
+        }
         final token = await storage.read();
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';

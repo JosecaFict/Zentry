@@ -276,7 +276,7 @@ export class CartPage {
             El pago fue cancelado. No se realizó ningún cobro y las prendas volvieron a tu carrito.
             @if (isMobileSource()) {
               <br><br>
-              <a class="button button--secondary" href="capricho://checkout-complete?status=CANCELADO" style="margin-top: 0.5rem; display: inline-block;">
+              <a class="button button--secondary" href="zentry://checkout-complete?status=CANCELADO" style="margin-top: 0.5rem; display: inline-block;">
                 📱 Volver a la tienda
               </a>
             }
@@ -593,7 +593,7 @@ export class CheckoutPage {
   );
   readonly mobileReturnUrl = computed(() => {
     const sessionId = this.paymentSessionId();
-    return `capricho://checkout-complete?session_id=${encodeURIComponent(sessionId)}&status=PAGADO`;
+    return `zentry://checkout-complete?session_id=${encodeURIComponent(sessionId)}&status=PAGADO`;
   });
 
   // Inline address creation modal state
@@ -627,7 +627,7 @@ export class CheckoutPage {
     if (this.route.snapshot.queryParamMap.get('pago_cancelado') === '1') {
       if (this.isMobileSource()) {
         try {
-          window.location.href = 'capricho://checkout-complete?status=CANCELADO';
+          window.location.href = 'zentry://checkout-complete?status=CANCELADO';
         } catch {
           // ignore navigation errors
         }

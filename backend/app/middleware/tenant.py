@@ -12,7 +12,7 @@ from app.modules.platform.models import Tenant
 
 TENANT_PATH = re.compile(r"^/api/v1/t/(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)(?P<rest>/.*|$)")
 TENANT_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-GLOBAL_PREFIXES = ("/api/v1/platform",)
+GLOBAL_PREFIXES = ("/api/v1/platform", "/api/v1/public")
 
 
 @dataclass(frozen=True, slots=True)

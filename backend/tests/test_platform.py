@@ -8,7 +8,8 @@ from app.main import app
 from app.modules.auth.dependencies import CurrentPrincipal, get_current_principal
 from app.modules.auth.models import Usuario
 from app.modules.platform.dependencies import get_platform_service
-from app.modules.platform.schemas import PlatformOverview
+from app.modules.platform.schemas import PlatformOverview, TenantPublicResponse
+from app.modules.platform.router import search_public_tenants
 
 
 def principal(*, global_user: bool) -> CurrentPrincipal:
@@ -74,6 +75,24 @@ async def test_platform_overview_rejects_tenant_admin() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_public_tenant_search_requires_no_session() -> None:
+    service = AsyncMock()
+    service.search_public_tenants.return_value = [
+        TenantPublicResponse(
+            nombre="Capricho Store",
+            slug="capricho-store",
+            logo_url=None,
+            color_primario="#064FE8",
+            color_primario_oscuro="#0039B8",
+        )
+    ]
+    response = await search_public_tenants(service=service, query="capricho")
+
+    assert response[0].slug == "capricho-store"
+    service.search_public_tenants.assert_awaited_once_with("capricho")
 
 
 @pytest.mark.asyncio

@@ -11,7 +11,7 @@ class TokenStorage {
             aOptions: AndroidOptions(resetOnError: true),
           );
 
-  static const _key = 'capricho_access_token';
+  static const _key = 'zentry_access_token';
   final FlutterSecureStorage _storage;
 
   Future<String?> read() => _storage.read(key: _key);

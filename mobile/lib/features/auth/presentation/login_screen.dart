@@ -2,6 +2,7 @@ import 'package:capricho_store/app/navigation_memory.dart';
 import 'package:capricho_store/features/admin/domain/operational_access.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/shared/widgets/brand_wordmark.dart';
+import 'package:capricho_store/core/tenant/tenant_context.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -89,7 +90,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final state = ref.watch(authControllerProvider);
 
     return Scaffold(
-      appBar: AppBar(leading: const BackButton()),
+      appBar: AppBar(
+        leading: const BackButton(),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await ref.read(authControllerProvider.notifier).logout();
+              await ref.read(tenantControllerProvider.notifier).clear();
+              if (context.mounted) context.go('/empresa');
+            },
+            icon: const Icon(Icons.storefront_outlined, size: 18),
+            label: const Text('Cambiar empresa'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: SafeArea(
         child: GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
@@ -103,7 +118,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   const BrandWordmark(),
                   const SizedBox(height: 34),
                   Text(
-                    'Vuelve a tu estilo',
+                    'Ingresa a ${ref.watch(tenantControllerProvider).selected?.name ?? 'tu empresa'}',
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
                   const SizedBox(height: 8),

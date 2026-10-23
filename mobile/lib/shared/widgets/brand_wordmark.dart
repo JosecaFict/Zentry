@@ -1,7 +1,9 @@
 import 'package:capricho_store/core/theme/app_theme.dart';
+import 'package:capricho_store/core/tenant/tenant_context.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class BrandWordmark extends StatelessWidget {
+class BrandWordmark extends ConsumerWidget {
   const BrandWordmark({
     this.compact = false,
     this.white = false,
@@ -12,48 +14,37 @@ class BrandWordmark extends StatelessWidget {
   final bool white;
 
   @override
-  Widget build(BuildContext context) {
-    final assetPath = white
-        ? 'assets/images/logo-capricho-white.png'
-        : 'assets/images/logo-capricho.png';
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tenant = ref.watch(tenantControllerProvider).selected;
     final targetHeight = compact ? 34.0 : 78.0;
 
     return Semantics(
       header: true,
-      label: 'Capricho Store',
-      child: Image.asset(
-        assetPath,
-        height: targetHeight,
-        fit: BoxFit.contain,
-        alignment: Alignment.centerLeft,
-        errorBuilder: (context, error, stackTrace) => _fallbackWordmark(),
-      ),
+      label: tenant?.name ?? 'Zentry',
+      child: tenant?.logoUrl != null && tenant!.logoUrl!.isNotEmpty
+          ? Image.network(
+              tenant.logoUrl!,
+              height: targetHeight,
+              fit: BoxFit.contain,
+              alignment: Alignment.centerLeft,
+              errorBuilder: (_, _, _) => _fallbackWordmark(tenant?.name),
+            )
+          : _fallbackWordmark(tenant?.name),
     );
   }
 
-  Widget _fallbackWordmark() => Column(
+  Widget _fallbackWordmark(String? name) => Column(
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(
-        'CAPRICHO',
+        name ?? 'Zentry',
         style: TextStyle(
           color: white ? Colors.white : AppColors.ink,
           fontSize: compact ? 17 : 28,
           height: 0.92,
           fontWeight: FontWeight.w900,
           letterSpacing: compact ? -0.5 : -1.0,
-        ),
-      ),
-      const SizedBox(height: 2),
-      Text(
-        'STORE',
-        style: TextStyle(
-          color: white ? Colors.white70 : AppColors.cobalt,
-          fontSize: compact ? 8.5 : 11,
-          height: 1.0,
-          fontWeight: FontWeight.w800,
-          letterSpacing: compact ? 2.8 : 3.8,
         ),
       ),
     ],

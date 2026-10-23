@@ -3,20 +3,21 @@ import 'dart:async';
 import 'package:capricho_store/app/router.dart';
 import 'package:capricho_store/core/notifications/fcm_service.dart';
 import 'package:capricho_store/core/theme/app_theme.dart';
+import 'package:capricho_store/core/tenant/tenant_context.dart';
 import 'package:capricho_store/features/commerce/presentation/commerce_controller.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class CaprichoStoreApp extends ConsumerStatefulWidget {
-  const CaprichoStoreApp({super.key});
+class ZentryApp extends ConsumerStatefulWidget {
+  const ZentryApp({super.key});
 
   @override
-  ConsumerState<CaprichoStoreApp> createState() => _CaprichoStoreAppState();
+  ConsumerState<ZentryApp> createState() => _ZentryAppState();
 }
 
-class _CaprichoStoreAppState extends ConsumerState<CaprichoStoreApp> {
+class _ZentryAppState extends ConsumerState<ZentryApp> {
   StreamSubscription<String>? _notificationTapSub;
   StreamSubscription<RemoteMessage>? _foregroundMessageSub;
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
@@ -116,11 +117,14 @@ class _CaprichoStoreAppState extends ConsumerState<CaprichoStoreApp> {
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp.router(
+  Widget build(BuildContext context) {
+    final tenant = ref.watch(tenantControllerProvider).selected;
+    return MaterialApp.router(
         title: 'Zentry',
         debugShowCheckedModeBanner: false,
         scaffoldMessengerKey: _scaffoldMessengerKey,
-        theme: AppTheme.light,
+        theme: AppTheme.forTenant(tenant?.color),
         routerConfig: ref.watch(appRouterProvider),
       );
+  }
 }

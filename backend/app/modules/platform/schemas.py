@@ -31,6 +31,14 @@ class TenantContextResponse(BaseModel):
     dias_para_vencimiento: int | None = None
 
 
+class TenantPublicResponse(BaseModel):
+    nombre: str
+    slug: str
+    logo_url: str | None
+    color_primario: str = "#064FE8"
+    color_primario_oscuro: str = "#0039B8"
+
+
 class TenantBrandUpdate(BaseModel):
     nombre: str = Field(min_length=2, max_length=150)
     logo_url: str | None = Field(default=None, max_length=500)

@@ -18,6 +18,31 @@ abstract final class AppColors {
 }
 
 abstract final class AppTheme {
+  static ThemeData forTenant(Color? primary) {
+    if (primary == null) return light;
+    final base = light;
+    final scheme = ColorScheme.fromSeed(
+      seedColor: primary,
+      brightness: Brightness.light,
+      surface: AppColors.canvas,
+    ).copyWith(
+      primary: primary,
+      onPrimary: Colors.white,
+      error: AppColors.danger,
+      onSurface: AppColors.ink,
+      outline: AppColors.line,
+      surfaceContainerHighest: AppColors.muted,
+    );
+    return base.copyWith(
+      colorScheme: scheme,
+      filledButtonTheme: FilledButtonThemeData(
+        style: base.filledButtonTheme.style?.copyWith(
+          backgroundColor: WidgetStatePropertyAll(primary),
+        ),
+      ),
+    );
+  }
+
   static ThemeData get light {
     final scheme =
         ColorScheme.fromSeed(

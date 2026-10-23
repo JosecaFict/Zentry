@@ -15,6 +15,8 @@ import 'package:capricho_store/features/catalog/presentation/catalog_screen.dart
 import 'package:capricho_store/features/catalog/presentation/product_detail_screen.dart';
 import 'package:capricho_store/features/fitting/presentation/virtual_fitting_screen.dart';
 import 'package:capricho_store/core/theme/app_theme.dart';
+import 'package:capricho_store/core/tenant/tenant_context.dart';
+import 'package:capricho_store/features/tenant/presentation/company_selection_screen.dart';
 import 'package:capricho_store/features/commerce/presentation/addresses_screen.dart';
 import 'package:capricho_store/features/commerce/presentation/cart_screen.dart';
 import 'package:capricho_store/features/commerce/presentation/checkout_complete_screen.dart';
@@ -60,6 +62,7 @@ Page<dynamic> _adaptivePage({
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refresh = _RouterRefreshNotifier();
   ref.listen(authControllerProvider, (_, _) => refresh.notify());
+  ref.listen(tenantControllerProvider, (_, _) => refresh.notify());
   ref.onDispose(refresh.dispose);
 
   return GoRouter(
@@ -69,8 +72,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final uri = state.uri;
 
-      // Interceptar esquema capricho:// o deep links de checkout-complete
-      if (uri.scheme == 'capricho' ||
+      // Interceptar esquema zentry:// o deep links de checkout-complete
+      if (uri.scheme == 'zentry' ||
           uri.host == 'checkout-complete' ||
           uri.path == '/checkout-complete' ||
           uri.toString().contains('checkout-complete')) {
@@ -80,6 +83,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       final location = uri.path;
       if (location == '/splash') return null;
+
+      final tenant = ref.read(tenantControllerProvider);
+      if (location == '/empresa') {
+        return tenant.selected == null ? null : '/inicio';
+      }
+      if (tenant.initialized && tenant.selected == null) return '/empresa';
 
       // [CU-18] Proteger acceso al vestidor virtual con IA: requiere sesión activa
       if (location == '/vestidor') {
@@ -103,7 +112,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     errorBuilder: (context, state) {
       debugPrint('[GoRouter] Error de navegación: ${state.uri}');
       final uri = state.uri;
-      if (uri.scheme == 'capricho' ||
+      if (uri.scheme == 'zentry' ||
           uri.host == 'checkout-complete' ||
           uri.toString().contains('checkout-complete')) {
         return CheckoutCompleteScreen(
@@ -145,6 +154,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/splash',  // Splash de bienvenida
         builder: (context, state) => const SplashScreen(),
+      ),
+      GoRoute(
+        path: '/empresa',
+        pageBuilder: (context, state) => _adaptivePage(
+          key: state.pageKey,
+          child: const CompanySelectionScreen(),
+        ),
       ),
       ShellRoute(
         navigatorKey: _shellNavigatorKey,

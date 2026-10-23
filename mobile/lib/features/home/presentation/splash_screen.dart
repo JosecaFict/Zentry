@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:capricho_store/core/network/api_client.dart';
 import 'package:capricho_store/core/theme/app_theme.dart';
+import 'package:capricho_store/core/tenant/tenant_context.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -58,10 +59,16 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   }
 
   Future<void> _handleSessionAndNavigate() async {
-    // Pre-calentamiento silencioso del backend en la nube (despierta el contenedor de Railway en segundo plano)
-    unawaited(
-      ref.read(dioProvider).get('/health').then((_) => null).catchError((_) => null),
-    );
+    await ref.read(tenantControllerProvider.notifier).restore();
+    final tenant = ref.read(tenantControllerProvider).selected;
+
+    if (tenant == null) {
+      await Future.delayed(const Duration(milliseconds: 1150));
+      if (mounted) context.go('/empresa');
+      return;
+    }
+
+    unawaited(ref.read(dioProvider).get('/health').then((_) => null).catchError((_) => null));
 
     final authNotifier = ref.read(authControllerProvider.notifier);
     final authState = ref.read(authControllerProvider);
@@ -117,35 +124,14 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
           },
           child: Semantics(
             header: true,
-            label: 'Capricho Store',
-            child: Image.asset(
-              'assets/images/logo-capricho.png',
-              width: 220,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => const Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'CAPRICHO',
-                    style: TextStyle(
-                      fontFamily: 'serif',
-                      fontSize: 26,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 4.0,
-                      color: AppColors.ink,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'STORE',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 6.0,
-                      color: AppColors.inkSoft,
-                    ),
-                  ),
-                ],
+            label: 'Zentry',
+            child: const Text(
+              'Zentry',
+              style: TextStyle(
+                fontSize: 34,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -1.2,
+                color: AppColors.ink,
               ),
             ),
           ),

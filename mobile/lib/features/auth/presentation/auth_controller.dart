@@ -65,7 +65,6 @@ class AuthController extends Notifier<AuthState> {
       _sessionSub?.cancel();
     });
 
-    Future.microtask(restore);
     return const AuthState();
   }
 

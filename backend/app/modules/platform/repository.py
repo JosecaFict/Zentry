@@ -254,6 +254,20 @@ class PlatformRepository:
         )
         return list((await self.session.execute(statement)).all())
 
+    async def search_public_tenants(self, query: str, limit: int = 20) -> list[Tenant]:
+        pattern = f"%{query.strip()}%"
+        statement = (
+            select(Tenant)
+            .where(
+                Tenant.estado == "ACTIVO",
+                Tenant.nombre.ilike(pattern) | Tenant.slug.ilike(pattern),
+            )
+            .order_by(Tenant.nombre)
+            .limit(limit)
+            .execution_options(include_all_tenants=True)
+        )
+        return list((await self.session.scalars(statement)).all())
+
     async def tenant_detail(self, tenant_id: int) -> tuple | None:
         rows = [row for row in await self.list_tenants() if row[0].id_tenant == tenant_id]
         if not rows:
