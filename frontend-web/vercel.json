@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://capricho-store-production.up.railway.app/api/$1"
+      "destination": "https://zentry-production-319f.up.railway.app/api/$1"
     },
     {
       "source": "/(.*)",
