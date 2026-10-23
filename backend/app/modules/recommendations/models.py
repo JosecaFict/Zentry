@@ -23,6 +23,7 @@ class ConfiguracionRecomendador(Base):
     id_configuracion: Mapped[int] = mapped_column(
         BigInteger, Identity(always=True), primary_key=True
     )
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     peso_categoria: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, server_default=text("40")
     )

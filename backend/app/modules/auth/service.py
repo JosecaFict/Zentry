@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
+
 from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.audit_context import AuditContext, apply_audit_context
+from app.db.tenant_context import current_tenant_id
 from app.integrations.cloudinary import CloudinaryStorage
 from app.modules.auth.exceptions import (
     AccountPermanentlyBlockedError,
@@ -18,7 +20,6 @@ from app.modules.auth.exceptions import (
 )
 from app.modules.auth.models import Usuario
 from app.modules.auth.repository import AuthRepository
-from app.modules.auth.throttler import InMemoryLoginThrottler, LoginThrottler
 from app.modules.auth.schemas import (
     ChangePasswordRequest,
     LoginRequest,
@@ -27,10 +28,17 @@ from app.modules.auth.schemas import (
     UpdateProfileRequest,
     UserResponse,
 )
+from app.modules.auth.throttler import InMemoryLoginThrottler, LoginThrottler
 
 
 def normalize_email(email: str) -> str:
     return email.strip().lower()
+
+
+def tenant_identity_key(email: str, tenant_id: int | None = None) -> str:
+    resolved_tenant = current_tenant_id() if tenant_id is None else tenant_id
+    scope = str(resolved_tenant) if resolved_tenant is not None else "global"
+    return f"{scope}:{email}"
 
 
 class AuthService:
@@ -50,6 +58,8 @@ class AuthService:
         audit_context: AuditContext,
     ) -> UserResponse:
         email = normalize_email(str(payload.correo))
+        if current_tenant_id() is None:
+            raise SecurityConfigurationError("Tenant context is required for customer registration")
         try:
             await apply_audit_context(self.session, audit_context)
             if await self.repository.get_user_by_email(email) is not None:
@@ -80,7 +90,11 @@ class AuthService:
             check_text = f"{error_prefix} {constraint} {detail}"
             if "ci" in check_text or "usuario_ci" in check_text:
                 raise CiAlreadyRegisteredError from exc
-            if "correo" in check_text or "usuario_correo" in check_text or getattr(exc.orig, "sqlstate", None) == "23505":
+            if (
+                "correo" in check_text
+                or "usuario_correo" in check_text
+                or getattr(exc.orig, "sqlstate", None) == "23505"
+            ):
                 raise EmailAlreadyRegisteredError from exc
             raise
         except Exception:
@@ -95,14 +109,22 @@ class AuthService:
         audit_context: AuditContext,
     ) -> TokenResponse:
         email = normalize_email(str(payload.correo))
+        throttle_key = tenant_identity_key(email)
 
         # 1. Verificar si la cuenta está en pausa temporal de seguridad (cooldown)
-        cooldown = await self.throttler.get_cooldown_remaining(email)
+        cooldown = await self.throttler.get_cooldown_remaining(throttle_key)
         if cooldown is not None:
             raise AccountTemporarilyLockedError(retry_after=cooldown)
 
         try:
             user = await self.repository.get_user_by_email(email)
+            requested_tenant = current_tenant_id()
+            if (
+                user is not None
+                and requested_tenant is not None
+                and user.id_tenant != requested_tenant
+            ):
+                user = None
 
             # 2. Si la cuenta ya está bloqueada de forma permanente
             if user is not None and user.estado == "BLOQUEADO":
@@ -114,7 +136,9 @@ class AuthService:
             if user is None or not verify_password(
                 payload.password.get_secret_value(), user.password_hash
             ):
-                attempts, cooldown_triggered = await self.throttler.record_failed_attempt(email)
+                attempts, cooldown_triggered = await self.throttler.record_failed_attempt(
+                    throttle_key
+                )
                 if cooldown_triggered is not None:
                     raise AccountTemporarilyLockedError(retry_after=cooldown_triggered)
 
@@ -143,7 +167,7 @@ class AuthService:
                 raise InactiveUserError(user.estado)
 
             # 4. Credenciales válidas -> Limpiar registro de fallos en throttler
-            await self.throttler.clear(email)
+            await self.throttler.clear(throttle_key)
 
             authenticated_context = AuditContext(
                 usuario_id=user.id_usuario,
@@ -298,4 +322,3 @@ class AuthService:
             permisos=sorted(permissions),
             avatar_url=user.avatar_url,
         )
-

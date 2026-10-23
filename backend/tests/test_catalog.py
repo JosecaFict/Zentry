@@ -13,9 +13,13 @@ from app.main import app
 from app.modules.auth.dependencies import CurrentPrincipal, get_current_principal
 from app.modules.auth.models import Usuario
 from app.modules.catalog.dependencies import get_catalog_service, get_cloudinary_storage
-from app.modules.catalog.exceptions import CatalogConflictError, CatalogNotFoundError
+from app.modules.catalog.exceptions import (
+    CatalogConflictError,
+    CatalogNotFoundError,
+    InvalidCatalogDataError,
+)
 from app.modules.catalog.models import Color, HistorialPrecio, ImagenProducto, Producto
-from app.modules.catalog.schemas import PriceCreate, ProductImageCreate
+from app.modules.catalog.schemas import BranchCreate, PriceCreate, ProductImageCreate
 from app.modules.catalog.service import CatalogService
 
 NOW = "2026-08-30T21:00:00Z"
@@ -257,6 +261,26 @@ async def test_create_branch_rejects_invalid_schedule() -> None:
         },
     )
     assert response.status_code == 422
+
+
+async def test_basic_plan_rejects_third_active_branch() -> None:
+    session = AsyncMock()
+    repository = AsyncMock()
+    repository.list_active_branches.return_value = [SimpleNamespace(), SimpleNamespace()]
+    service = CatalogService(session, repository)
+
+    with pytest.raises(InvalidCatalogDataError, match="2 sucursales activas"):
+        await service.create_branch(
+            BranchCreate(
+                id_ciudad=1,
+                nombre="Sucursal Norte",
+                direccion="Av. Norte 20",
+            ),
+            AuditContext(tenant_id=1, usuario_id=99),
+            max_active_branches=2,
+        )
+
+    repository.add.assert_not_called()
 
 
 async def test_create_category() -> None:

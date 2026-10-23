@@ -130,6 +130,17 @@ administrativo, ejecuta una sola vez el comando interno:
 python -m app.scripts.bootstrap_owner
 ```
 
+La primera cuenta global de la plataforma se crea, después de aplicar las
+migraciones, con:
+
+```powershell
+python -m app.scripts.bootstrap_superadmin
+```
+
+El comando solicita la contraseña sin mostrarla, crea el usuario con
+`id_tenant = NULL` y asigna únicamente el rol global `SUPERADMIN`. Para validar
+la configuración sin crear una cuenta usa `--check`.
+
 El asistente muestra las sucursales, solicita los datos del dueño y pide la
 contraseña de forma oculta. Si la base todavía no tiene sucursales, también
 solicita los datos de la ciudad y sucursal inicial. Crea todo en una sola
@@ -232,6 +243,13 @@ minutos por defecto para no retener inventario indefinidamente.
 
 ## Alembic
 
-Alembic está configurado para el esquema existente `capricho`, pero este proyecto no contiene
-todavía revisiones que creen o modifiquen tablas. No ejecutes `alembic upgrade` ni
-`alembic revision --autogenerate` hasta definir y revisar una estrategia de baseline.
+Alembic administra la evolución del esquema existente `capricho` a partir de un baseline.
+Después de restaurar o crear la base inicial, aplica todas las revisiones pendientes con:
+
+```powershell
+alembic upgrade head
+```
+
+La revisión comercial vigente crea los planes Gestión y Crecimiento, sus límites, periodos
+de suscripción y el historial de pagos. Las credenciales y los datos de cobro no se guardan
+en migraciones.

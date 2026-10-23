@@ -94,8 +94,17 @@ class CatalogService:
         return self._branch_response(record)
 
     async def create_branch(
-        self, payload: BranchCreate, audit_context: AuditContext
+        self,
+        payload: BranchCreate,
+        audit_context: AuditContext,
+        max_active_branches: int | None = None,
     ) -> BranchResponse:
+        if payload.activo and max_active_branches is not None:
+            active_count = len(await self.repository.list_active_branches())
+            if active_count >= max_active_branches:
+                raise InvalidCatalogDataError(
+                    f"El plan permite hasta {max_active_branches} sucursales activas"
+                )
         city = await self._require_active(Ciudad, payload.id_ciudad, "Ciudad")
         if await self.repository.find_branch_by_city_and_name(payload.id_ciudad, payload.nombre):
             raise CatalogConflictError("Ya existe una sucursal con ese nombre en la ciudad")
@@ -108,11 +117,22 @@ class CatalogService:
         branch_id: int,
         payload: BranchUpdate,
         audit_context: AuditContext,
+        max_active_branches: int | None = None,
     ) -> BranchResponse:
         record = await self.repository.get_branch_record(branch_id)
         if record is None:
             raise CatalogNotFoundError("Sucursal no encontrada")
         values = payload.model_dump(exclude_unset=True)
+        if (
+            values.get("activo") is True
+            and not record.branch.activo
+            and max_active_branches is not None
+        ):
+            active_count = len(await self.repository.list_active_branches())
+            if active_count >= max_active_branches:
+                raise InvalidCatalogDataError(
+                    f"El plan permite hasta {max_active_branches} sucursales activas"
+                )
         city_id = values.get("id_ciudad", record.branch.id_ciudad)
         city = record.city
         if city_id != record.branch.id_ciudad:
@@ -125,9 +145,7 @@ class CatalogService:
         opening = values.get("hora_apertura", record.branch.hora_apertura)
         closing = values.get("hora_cierre", record.branch.hora_cierre)
         if bool(opening) != bool(closing):
-            raise InvalidCatalogDataError(
-                "Debes completar ambas horas o dejar las dos vacías"
-            )
+            raise InvalidCatalogDataError("Debes completar ambas horas o dejar las dos vacías")
         if opening and closing and closing <= opening:
             raise InvalidCatalogDataError(
                 "La hora de cierre debe ser posterior a la hora de apertura"
@@ -328,8 +346,17 @@ class CatalogService:
         )
 
     async def create_product(
-        self, payload: ProductCreate, audit_context: AuditContext
+        self,
+        payload: ProductCreate,
+        audit_context: AuditContext,
+        max_active_products: int | None = None,
     ) -> ProductResponse:
+        if max_active_products is not None:
+            active_count = await self.repository.count_active_products()
+            if active_count >= max_active_products:
+                raise InvalidCatalogDataError(
+                    f"El plan permite hasta {max_active_products} productos activos"
+                )
         category = await self._require_active(Categoria, payload.id_categoria, "Category")
         await self._require_active(Marca, payload.id_marca, "Brand")
         self.validate_catalog_rule(category.nombre, payload.publico_objetivo)

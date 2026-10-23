@@ -51,3 +51,19 @@ export const requireAllPermissions =
       ),
     );
   };
+
+export const platformGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  if (!auth.token()) {
+    return router.createUrlTree(['/platform/login'], { queryParams: { returnUrl: '/platform' } });
+  }
+  return resolveUser(auth).pipe(
+    map((user) =>
+      user?.roles.includes('SUPERADMIN') &&
+      user.permisos.some((permission) => permission.startsWith('platform.'))
+        ? true
+        : router.createUrlTree(['/admin/403']),
+    ),
+  );
+};

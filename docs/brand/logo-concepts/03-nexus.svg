@@ -1,0 +1,13 @@
+<svg width="560" height="180" viewBox="0 0 560 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Zentry Nexus</title>
+  <rect width="560" height="180" rx="18" fill="#10141C"/>
+  <circle cx="90" cy="90" r="45" stroke="#3B74F2" stroke-width="10"/>
+  <circle cx="90" cy="90" r="10" fill="white"/>
+  <circle cx="90" cy="45" r="7" fill="#8FB0FF"/>
+  <circle cx="129" cy="112" r="7" fill="#8FB0FF"/>
+  <circle cx="51" cy="112" r="7" fill="#8FB0FF"/>
+  <path d="M90 80V52M99 95L122 108M81 95L58 108" stroke="white" stroke-width="4"/>
+  <path d="M69 78H112L69 103H112" stroke="#064FE8" stroke-width="7" stroke-linejoin="round"/>
+  <text x="166" y="105" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="57" font-weight="700" letter-spacing="-2.5">Zentry</text>
+  <text x="169" y="129" fill="#AAB4C2" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="2">CONECTA CADA OPERACIÓN</text>
+</svg>

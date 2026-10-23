@@ -1,2 +1,2 @@
-"""Capricho Store backend application."""
+"""Zentry multitenant backend application."""
 

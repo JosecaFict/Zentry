@@ -307,7 +307,7 @@ import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
                         {{ order.modalidad_entrega === 'DELIVERY' ? '🛵 Delivery a domicilio' : '🏬 Retiro en tienda' }}
                       </span>
                       <p class="order-destination">
-                        {{ order.direccion_entrega || order.sucursal || 'Capricho Store Central' }}
+                        {{ order.direccion_entrega || order.sucursal || 'Sucursal central' }}
                       </p>
                     </div>
 

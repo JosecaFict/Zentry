@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 @dataclass(frozen=True, slots=True)
 class AuditContext:
+    tenant_id: int | None = None
     usuario_id: int | None = None
     sesion_id: str | None = None
     ip: str | None = None
@@ -25,6 +26,8 @@ async def apply_audit_context(session: AsyncSession, context: AuditContext) -> N
         "app.origen": context.origen,
         "app.request_id": context.request_id or "",
     }
+    if context.tenant_id is not None:
+        values["app.tenant_id"] = str(context.tenant_id)
     statement = text("SELECT set_config(:setting_name, :setting_value, true)")
     for setting_name, setting_value in values.items():
         await session.execute(

@@ -6,7 +6,11 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
-from app.modules.auth.dependencies import CurrentPrincipal, get_current_principal, get_optional_principal
+from app.modules.auth.dependencies import (
+    CurrentPrincipal,
+    get_current_principal,
+    get_optional_principal,
+)
 from app.modules.auth.models import Usuario
 from app.modules.recommendations.dependencies import get_recommendation_service
 from app.modules.recommendations.schemas import (

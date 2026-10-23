@@ -62,6 +62,7 @@ def audit_context_for(request: Request, principal: CurrentPrincipal):
         request,
         user_id=principal.user.id_usuario,
         session_id=principal.session_id,
+        tenant_id=principal.id_tenant,
     )
 
 
@@ -79,7 +80,9 @@ async def list_cities(
     return await service.list_cities()
 
 
-@router.get("/branches/admin", response_model=list[BranchResponse])  # [CU-03] Listar sucursales admin
+@router.get(
+    "/branches/admin", response_model=list[BranchResponse]
+)  # [CU-03] Listar sucursales admin
 async def list_branches_admin(
     _: Annotated[CurrentPrincipal, Depends(require_permission("sucursales.ver"))],
     service: Annotated[CatalogService, Depends(get_catalog_service)],
@@ -87,7 +90,9 @@ async def list_branches_admin(
     return await service.list_branches_admin()
 
 
-@router.get("/branches/{branch_id}", response_model=BranchResponse)  # [CU-03] Ver detalle sucursal admin
+@router.get(
+    "/branches/{branch_id}", response_model=BranchResponse
+)  # [CU-03] Ver detalle sucursal admin
 async def get_branch_admin(
     branch_id: int,
     _: Annotated[CurrentPrincipal, Depends(require_permission("sucursales.ver"))],
@@ -96,14 +101,20 @@ async def get_branch_admin(
     return await service.get_branch_admin(branch_id)
 
 
-@router.post("/branches", response_model=BranchResponse, status_code=status.HTTP_201_CREATED)  # [CU-03] Crear sucursal
+@router.post(
+    "/branches", response_model=BranchResponse, status_code=status.HTTP_201_CREATED
+)  # [CU-03] Crear sucursal
 async def create_branch(
     payload: BranchCreate,
     request: Request,
     principal: Annotated[CurrentPrincipal, Depends(require_permission("sucursales.crear"))],
     service: Annotated[CatalogService, Depends(get_catalog_service)],
 ):
-    return await service.create_branch(payload, audit_context_for(request, principal))
+    return await service.create_branch(
+        payload,
+        audit_context_for(request, principal),
+        max_active_branches=principal.max_sucursales_activas,
+    )
 
 
 @router.patch("/branches/{branch_id}", response_model=BranchResponse)  # [CU-03] Editar sucursal
@@ -114,10 +125,17 @@ async def update_branch(
     principal: Annotated[CurrentPrincipal, Depends(require_permission("sucursales.editar"))],
     service: Annotated[CatalogService, Depends(get_catalog_service)],
 ):
-    return await service.update_branch(branch_id, payload, audit_context_for(request, principal))
+    return await service.update_branch(
+        branch_id,
+        payload,
+        audit_context_for(request, principal),
+        max_active_branches=principal.max_sucursales_activas,
+    )
 
 
-@router.get("/variants", response_model=list[VariantOption])  # [CU-05] Listar variantes para filtros
+@router.get(
+    "/variants", response_model=list[VariantOption]
+)  # [CU-05] Listar variantes para filtros
 async def list_variant_options(
     _: Annotated[CurrentPrincipal, Depends(get_current_principal)],
     service: Annotated[CatalogService, Depends(get_catalog_service)],
@@ -139,7 +157,9 @@ async def get_category(
     return await service.get_category(category_id)
 
 
-@router.post("/categories", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)  # [CU-05] Crear categoría
+@router.post(
+    "/categories", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED
+)  # [CU-05] Crear categoría
 async def create_category(
     payload: CategoryCreate,
     request: Request,
@@ -149,7 +169,9 @@ async def create_category(
     return await service.create_category(payload, audit_context_for(request, principal))
 
 
-@router.patch("/categories/{category_id}", response_model=CategoryResponse)  # [CU-05] Editar categoría
+@router.patch(
+    "/categories/{category_id}", response_model=CategoryResponse
+)  # [CU-05] Editar categoría
 async def update_category(
     category_id: int,
     payload: CategoryUpdate,
@@ -174,7 +196,9 @@ async def get_brand(
     return await service.get_brand(brand_id)
 
 
-@router.post("/brands", response_model=BrandResponse, status_code=status.HTTP_201_CREATED)  # [CU-05] Crear marca
+@router.post(
+    "/brands", response_model=BrandResponse, status_code=status.HTTP_201_CREATED
+)  # [CU-05] Crear marca
 async def create_brand(
     payload: BrandCreate,
     request: Request,
@@ -205,7 +229,9 @@ async def list_colors(service: Annotated[CatalogService, Depends(get_catalog_ser
     return await service.list_colors()
 
 
-@router.post("/colors", response_model=ColorResponse, status_code=status.HTTP_201_CREATED)  # [CU-05] Crear color
+@router.post(
+    "/colors", response_model=ColorResponse, status_code=status.HTTP_201_CREATED
+)  # [CU-05] Crear color
 async def create_color(
     payload: ColorCreate,
     request: Request,
@@ -238,7 +264,9 @@ async def get_season(
     return await service.get_season(season_id)
 
 
-@router.post("/seasons", response_model=SeasonResponse, status_code=status.HTTP_201_CREATED)  # [CU-05] Crear temporada
+@router.post(
+    "/seasons", response_model=SeasonResponse, status_code=status.HTTP_201_CREATED
+)  # [CU-05] Crear temporada
 async def create_season(
     payload: SeasonCreate,
     request: Request,
@@ -264,14 +292,18 @@ async def list_collections(service: Annotated[CatalogService, Depends(get_catalo
     return await service.list_collections()
 
 
-@router.get("/collections/{collection_id}", response_model=CollectionResponse)  # [CU-04] Ver colección
+@router.get(
+    "/collections/{collection_id}", response_model=CollectionResponse
+)  # [CU-04] Ver colección
 async def get_collection(
     collection_id: int, service: Annotated[CatalogService, Depends(get_catalog_service)]
 ):
     return await service.get_collection(collection_id)
 
 
-@router.post("/collections", response_model=CollectionResponse, status_code=status.HTTP_201_CREATED)  # [CU-05] Crear colección
+@router.post(
+    "/collections", response_model=CollectionResponse, status_code=status.HTTP_201_CREATED
+)  # [CU-05] Crear colección
 async def create_collection(
     payload: CollectionCreate,
     request: Request,
@@ -281,7 +313,9 @@ async def create_collection(
     return await service.create_collection(payload, audit_context_for(request, principal))
 
 
-@router.patch("/collections/{collection_id}", response_model=CollectionResponse)  # [CU-05] Editar colección
+@router.patch(
+    "/collections/{collection_id}", response_model=CollectionResponse
+)  # [CU-05] Editar colección
 async def update_collection(
     collection_id: int,
     payload: CollectionUpdate,
@@ -326,7 +360,9 @@ async def list_products(
     )
 
 
-@router.get("/products/{product_id}", response_model=ProductResponse)  # [CU-04] Ver detalle de prenda y variantes
+@router.get(
+    "/products/{product_id}", response_model=ProductResponse
+)  # [CU-04] Ver detalle de prenda y variantes
 async def get_product(
     product_id: int,
     service: Annotated[CatalogService, Depends(get_catalog_service)],
@@ -335,17 +371,25 @@ async def get_product(
     return await service.get_product(product_id, sucursal)
 
 
-@router.post("/products", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)  # [CU-05] Crear prenda/producto
+@router.post(
+    "/products", response_model=ProductResponse, status_code=status.HTTP_201_CREATED
+)  # [CU-05] Crear prenda/producto
 async def create_product(
     payload: ProductCreate,
     request: Request,
     principal: Annotated[CurrentPrincipal, Depends(require_permission("productos.crear"))],
     service: Annotated[CatalogService, Depends(get_catalog_service)],
 ):
-    return await service.create_product(payload, audit_context_for(request, principal))
+    return await service.create_product(
+        payload,
+        audit_context_for(request, principal),
+        max_active_products=principal.max_productos_activos,
+    )
 
 
-@router.patch("/products/{product_id}", response_model=ProductResponse)  # [CU-05] Actualizar prenda/producto
+@router.patch(
+    "/products/{product_id}", response_model=ProductResponse
+)  # [CU-05] Actualizar prenda/producto
 async def update_product(
     product_id: int,
     payload: ProductUpdate,
@@ -356,7 +400,9 @@ async def update_product(
     return await service.update_product(product_id, payload, audit_context_for(request, principal))
 
 
-@router.get("/products/{product_id}/variants", response_model=list[VariantResponse])  # [CU-04] Consultar variantes de prenda
+@router.get(
+    "/products/{product_id}/variants", response_model=list[VariantResponse]
+)  # [CU-04] Consultar variantes de prenda
 async def list_variants(
     product_id: int,
     service: Annotated[CatalogService, Depends(get_catalog_service)],
@@ -397,7 +443,9 @@ async def create_variants_batch(
     )
 
 
-@router.patch("/variants/{variant_id}", response_model=VariantResponse)  # [CU-05] Actualizar variante/código de barras
+@router.patch(
+    "/variants/{variant_id}", response_model=VariantResponse
+)  # [CU-05] Actualizar variante/código de barras
 async def update_variant(
     variant_id: int,
     payload: VariantUpdate,
@@ -408,14 +456,18 @@ async def update_variant(
     return await service.update_variant(variant_id, payload, audit_context_for(request, principal))
 
 
-@router.get("/products/{product_id}/measurements", response_model=list[MeasurementResponse])  # [CU-18] Medidas de patronaje AR
+@router.get(
+    "/products/{product_id}/measurements", response_model=list[MeasurementResponse]
+)  # [CU-18] Medidas de patronaje AR
 async def list_measurements(
     product_id: int, service: Annotated[CatalogService, Depends(get_catalog_service)]
 ):
     return await service.list_measurements(product_id)
 
 
-@router.put("/products/{product_id}/measurements/{size_id}", response_model=MeasurementResponse)  # [CU-18] Guardar medidas de prenda AR
+@router.put(
+    "/products/{product_id}/measurements/{size_id}", response_model=MeasurementResponse
+)  # [CU-18] Guardar medidas de prenda AR
 async def upsert_measurement(
     product_id: int,
     size_id: int,
@@ -429,7 +481,9 @@ async def upsert_measurement(
     )
 
 
-@router.get("/products/{product_id}/price", response_model=PriceResponse)  # [CU-05] Consultar precio vigente
+@router.get(
+    "/products/{product_id}/price", response_model=PriceResponse
+)  # [CU-05] Consultar precio vigente
 async def get_current_price(
     product_id: int, service: Annotated[CatalogService, Depends(get_catalog_service)]
 ):
@@ -456,14 +510,18 @@ async def set_price(
     )
 
 
-@router.get("/products/{product_id}/price-history", response_model=list[PriceResponse])  # [CU-05] Historial de precios
+@router.get(
+    "/products/{product_id}/price-history", response_model=list[PriceResponse]
+)  # [CU-05] Historial de precios
 async def list_price_history(
     product_id: int, service: Annotated[CatalogService, Depends(get_catalog_service)]
 ):
     return await service.list_price_history(product_id)
 
 
-@router.get("/products/{product_id}/images", response_model=list[ProductImageResponse])  # [CU-04] Consultar imágenes de prenda
+@router.get(
+    "/products/{product_id}/images", response_model=list[ProductImageResponse]
+)  # [CU-04] Consultar imágenes de prenda
 async def list_images(
     product_id: int, service: Annotated[CatalogService, Depends(get_catalog_service)]
 ):
@@ -543,7 +601,9 @@ async def upload_image(
         raise
 
 
-@router.put("/product-images/{image_id}/replace", response_model=ProductImageResponse)  # [CU-05] Reemplazar imagen en Cloudinary
+@router.put(
+    "/product-images/{image_id}/replace", response_model=ProductImageResponse
+)  # [CU-05] Reemplazar imagen en Cloudinary
 async def replace_image(
     image_id: int,
     request: Request,
@@ -589,7 +649,9 @@ async def replace_image(
     return replaced
 
 
-@router.delete("/product-images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)  # [CU-05] Eliminar imagen
+@router.delete(
+    "/product-images/{image_id}", status_code=status.HTTP_204_NO_CONTENT
+)  # [CU-05] Eliminar imagen
 async def delete_image(
     image_id: int,
     request: Request,
@@ -602,7 +664,9 @@ async def delete_image(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.patch("/product-images/{image_id}", response_model=ProductImageResponse)  # [CU-05] Actualizar imagen/orden/principal
+@router.patch(
+    "/product-images/{image_id}", response_model=ProductImageResponse
+)  # [CU-05] Actualizar imagen/orden/principal
 async def update_image(
     image_id: int,
     payload: ProductImageUpdate,
@@ -613,14 +677,18 @@ async def update_image(
     return await service.update_image(image_id, payload, audit_context_for(request, principal))
 
 
-@router.get("/products/{product_id}/seasons", response_model=list[SeasonResponse])  # [CU-05] Ver temporadas del producto
+@router.get(
+    "/products/{product_id}/seasons", response_model=list[SeasonResponse]
+)  # [CU-05] Ver temporadas del producto
 async def list_product_seasons(
     product_id: int, service: Annotated[CatalogService, Depends(get_catalog_service)]
 ):
     return await service.list_product_seasons(product_id)
 
 
-@router.post("/products/{product_id}/seasons", response_model=SeasonResponse)  # [CU-05] Asociar temporada
+@router.post(
+    "/products/{product_id}/seasons", response_model=SeasonResponse
+)  # [CU-05] Asociar temporada
 async def add_product_season(
     product_id: int,
     payload: SeasonRelationRequest,
@@ -633,7 +701,9 @@ async def add_product_season(
     )
 
 
-@router.delete("/products/{product_id}/seasons/{season_id}", status_code=status.HTTP_204_NO_CONTENT)  # [CU-05] Desasociar temporada
+@router.delete(
+    "/products/{product_id}/seasons/{season_id}", status_code=status.HTTP_204_NO_CONTENT
+)  # [CU-05] Desasociar temporada
 async def remove_product_season(
     product_id: int,
     season_id: int,
@@ -647,14 +717,18 @@ async def remove_product_season(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/products/{product_id}/collections", response_model=list[CollectionResponse])  # [CU-05] Ver colecciones del producto
+@router.get(
+    "/products/{product_id}/collections", response_model=list[CollectionResponse]
+)  # [CU-05] Ver colecciones del producto
 async def list_product_collections(
     product_id: int, service: Annotated[CatalogService, Depends(get_catalog_service)]
 ):
     return await service.list_product_collections(product_id)
 
 
-@router.post("/products/{product_id}/collections", response_model=CollectionResponse)  # [CU-05] Asociar colección
+@router.post(
+    "/products/{product_id}/collections", response_model=CollectionResponse
+)  # [CU-05] Asociar colección
 async def add_product_collection(
     product_id: int,
     payload: CollectionRelationRequest,

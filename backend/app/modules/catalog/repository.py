@@ -69,6 +69,14 @@ class CatalogRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def count_active_products(self) -> int:
+        return int(
+            await self.session.scalar(
+                select(func.count(Producto.id_producto)).where(Producto.activo.is_(True))
+            )
+            or 0
+        )
+
     async def list_entities(self, model: type[ModelT], order_by: Any) -> list[ModelT]:
         return list((await self.session.scalars(select(model).order_by(order_by))).all())
 

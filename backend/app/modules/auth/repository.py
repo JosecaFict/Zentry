@@ -1,8 +1,11 @@
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.tenant_context import current_tenant_id
+from app.modules.auth.exceptions import InactiveUserError
 from app.modules.auth.models import (
     Cliente,
     Empleado,
@@ -14,6 +17,21 @@ from app.modules.auth.models import (
     UsuarioPermiso,
     UsuarioRol,
 )
+from app.modules.platform.models import Plan, Subscription, Tenant
+
+
+@dataclass(frozen=True, slots=True)
+class TenantAccess:
+    id_tenant: int
+    slug: str
+    tenant_estado: str
+    subscription_estado: str | None
+    plan_codigo: str | None
+    max_sucursales_activas: int | None
+    max_usuarios_internos: int | None
+    max_productos_activos: int | None
+    permite_reportes_ia: bool
+    permite_offline: bool
 
 
 def resolve_effective_permissions(
@@ -30,15 +48,69 @@ class AuthRepository:
         self.session = session
 
     async def get_user_by_email(self, email: str) -> Usuario | None:
-        statement = select(Usuario).where(Usuario.correo == email)
+        tenant_id = current_tenant_id()
+        tenant_filter = (
+            Usuario.id_tenant == tenant_id if tenant_id is not None else Usuario.id_tenant.is_(None)
+        )
+        statement = (
+            select(Usuario)
+            .where(func.lower(func.btrim(Usuario.correo)) == email, tenant_filter)
+            .execution_options(include_all_tenants=True)
+        )
         return (await self.session.execute(statement)).scalar_one_or_none()
 
     async def get_user_by_ci(self, ci: str) -> Usuario | None:
-        statement = select(Usuario).where(Usuario.ci == ci.strip())
+        tenant_id = current_tenant_id()
+        tenant_filter = (
+            Usuario.id_tenant == tenant_id if tenant_id is not None else Usuario.id_tenant.is_(None)
+        )
+        statement = (
+            select(Usuario)
+            .where(Usuario.ci == ci.strip(), tenant_filter)
+            .execution_options(include_all_tenants=True)
+        )
         return (await self.session.execute(statement)).scalar_one_or_none()
 
     async def get_user_by_id(self, user_id: int) -> Usuario | None:
-        return await self.session.get(Usuario, user_id)
+        statement = (
+            select(Usuario)
+            .where(Usuario.id_usuario == user_id)
+            .execution_options(include_all_tenants=True)
+        )
+        return (await self.session.execute(statement)).scalar_one_or_none()
+
+    async def get_tenant_access(self, tenant_id: int) -> TenantAccess | None:
+        statement = (
+            select(Tenant, Subscription, Plan)
+            .outerjoin(
+                Subscription,
+                (Subscription.id_tenant == Tenant.id_tenant)
+                & (Subscription.estado.in_(("ACTIVA", "POR_VENCER", "GRACIA")))
+                & (Subscription.fecha_inicio <= func.current_date())
+                & (
+                    (Subscription.fecha_fin.is_(None))
+                    | (Subscription.fecha_fin >= func.current_date())
+                ),
+            )
+            .outerjoin(Plan, Plan.id_plan == Subscription.id_plan)
+            .where(Tenant.id_tenant == tenant_id)
+        )
+        row = (await self.session.execute(statement)).one_or_none()
+        if row is None:
+            return None
+        tenant, subscription, plan = row
+        return TenantAccess(
+            id_tenant=tenant.id_tenant,
+            slug=tenant.slug,
+            tenant_estado=tenant.estado,
+            subscription_estado=subscription.estado if subscription else None,
+            plan_codigo=plan.codigo if plan else None,
+            max_sucursales_activas=plan.max_sucursales_activas if plan else None,
+            max_usuarios_internos=plan.max_usuarios_internos if plan else None,
+            max_productos_activos=plan.max_productos_activos if plan else None,
+            permite_reportes_ia=bool(plan and plan.permite_reportes_ia),
+            permite_offline=bool(plan and plan.permite_offline),
+        )
 
     async def get_employee_branch(self, user_id: int) -> tuple[int, str] | None:
         statement = (
@@ -89,6 +161,7 @@ class AuthRepository:
             select(Rol.nombre)
             .join(UsuarioRol, UsuarioRol.id_rol == Rol.id_rol)
             .where(UsuarioRol.id_usuario == user_id, Rol.activo.is_(True))
+            .execution_options(include_all_tenants=True)
         )
         return set((await self.session.scalars(statement)).all())
 
@@ -103,6 +176,7 @@ class AuthRepository:
                 Rol.activo.is_(True),
                 Permiso.activo.is_(True),
             )
+            .execution_options(include_all_tenants=True)
         )
         return set((await self.session.scalars(statement)).all())
 
@@ -114,6 +188,7 @@ class AuthRepository:
                 UsuarioPermiso.id_usuario == user_id,
                 Permiso.activo.is_(True),
             )
+            .execution_options(include_all_tenants=True)
         )
         rows: Sequence[tuple[str, bool]] = (await self.session.execute(statement)).all()
         return dict(rows)

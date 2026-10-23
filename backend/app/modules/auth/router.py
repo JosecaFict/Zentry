@@ -3,7 +3,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Request, UploadFile, status
 
 from app.integrations.cloudinary import CloudinaryStorage
-from app.modules.catalog.dependencies import get_cloudinary_storage
 from app.modules.auth.dependencies import (
     CurrentPrincipal,
     build_request_audit_context,
@@ -26,6 +25,7 @@ from app.modules.auth.schemas import (
     UserResponse,
 )
 from app.modules.auth.service import AuthService
+from app.modules.catalog.dependencies import get_cloudinary_storage
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -52,7 +52,9 @@ async def login(
     return await service.login(payload, build_request_audit_context(request))
 
 
-@router.post("/password-recovery/request", response_model=MessageResponse)  # [CU-08] Solicitar código OTP
+@router.post(
+    "/password-recovery/request", response_model=MessageResponse
+)  # [CU-08] Solicitar código OTP
 async def request_password_recovery(
     payload: PasswordRecoveryRequest,
     service: Annotated[PasswordRecoveryService, Depends(get_password_recovery_service)],
@@ -71,7 +73,9 @@ async def verify_password_recovery_code(
     return await service.verify_code(payload)
 
 
-@router.post("/password-recovery/reset", response_model=MessageResponse)  # [CU-08] Restablecer contraseña con token OTP
+@router.post(
+    "/password-recovery/reset", response_model=MessageResponse
+)  # [CU-08] Restablecer contraseña con token OTP
 async def reset_password(
     payload: PasswordResetRequest,
     request: Request,
@@ -132,13 +136,15 @@ async def update_profile(
     )
 
 
-@router.post("/me/avatar", response_model=UserResponse)  # [CU-01] Subir foto de perfil (Avatar) a Cloudinary
+@router.post(
+    "/me/avatar", response_model=UserResponse
+)  # [CU-01] Subir foto de perfil (Avatar) a Cloudinary
 async def upload_avatar(
     principal: Annotated[CurrentPrincipal, Depends(get_current_principal)],
     service: Annotated[AuthService, Depends(get_auth_service)],
     storage: Annotated[CloudinaryStorage, Depends(get_cloudinary_storage)],
     request: Request,
-    file: UploadFile = File(...),
+    file: UploadFile = File(...),  # noqa: B008 - FastAPI multipart parameter declaration
 ) -> UserResponse:
     audit_context = build_request_audit_context(
         request,
@@ -163,7 +169,9 @@ async def upload_avatar(
     )
 
 
-@router.delete("/me/avatar", response_model=UserResponse)  # [CU-01] Eliminar foto de perfil (Avatar)
+@router.delete(
+    "/me/avatar", response_model=UserResponse
+)  # [CU-01] Eliminar foto de perfil (Avatar)
 async def delete_avatar(
     principal: Annotated[CurrentPrincipal, Depends(get_current_principal)],
     service: Annotated[AuthService, Depends(get_auth_service)],
@@ -206,5 +214,3 @@ async def change_password(
     )
     await service.change_password(principal.user.id_usuario, payload, audit_context)
     return MessageResponse(message="Contraseña actualizada exitosamente")
-
-

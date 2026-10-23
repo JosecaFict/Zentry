@@ -220,6 +220,11 @@
   flex-direction: column;
   line-height: 1.2;
 }
+.admin-company-name {
+  color: var(--ink);
+  font-size: 0.98rem;
+  line-height: 1.2;
+}
 .admin-menu-toggle-btn {
   display: inline-flex;
   align-items: center;
@@ -350,7 +355,7 @@
 }
 .admin-user-profile__branch {
   color: var(--ink-soft);
-  font-size: 0.70rem;
+  font-size: 0.7rem;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -362,6 +367,30 @@
   width: min(calc(100% - 48px), 1500px);
   margin-inline: auto;
   padding: 32px 0 64px;
+}
+
+.admin-subscription-alert {
+  display: flex;
+  gap: 0.5rem 1rem;
+  align-items: baseline;
+  padding: 0.75rem 2rem;
+  color: #62420a;
+  background: #fff5d8;
+  border-bottom: 1px solid #e8cf8b;
+
+  strong {
+    font-size: 0.85rem;
+  }
+
+  span {
+    font-size: 0.82rem;
+  }
+
+  &.is-critical {
+    color: #812a22;
+    background: #fff0ed;
+    border-color: #efb7ae;
+  }
 }
 .admin-page-heading {
   display: flex;
@@ -1852,7 +1881,10 @@ textarea {
   border: 1px solid var(--line);
   background: var(--surface);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease;
 
   &:hover {
     border-color: color-mix(in srgb, var(--line) 50%, var(--accent) 50%);
@@ -2407,7 +2439,9 @@ textarea {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
   display: flex;
   flex-direction: column;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .role-permission-group:hover {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
@@ -2504,7 +2538,7 @@ textarea {
 }
 .role-permission-info small {
   display: block;
-  font-size: 0.70rem;
+  font-size: 0.7rem;
   color: var(--ink-soft);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   line-height: 1.2;
@@ -2512,7 +2546,7 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.role-permission-row input[type="checkbox"] {
+.role-permission-row input[type='checkbox'] {
   width: 17px;
   height: 17px;
   flex: 0 0 auto;
@@ -3040,7 +3074,9 @@ textarea {
       font-size: 0.92rem;
       background: var(--input-bg, #fff);
       color: var(--ink);
-      transition: border-color 0.15s, box-shadow 0.15s;
+      transition:
+        border-color 0.15s,
+        box-shadow 0.15s;
 
       &:focus {
         border-color: var(--primary, #000);
@@ -4240,7 +4276,9 @@ textarea {
   color: var(--ink, #0f172a);
   border: 1px solid var(--line, #e2e8f0);
   border-radius: 12px;
-  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  box-shadow:
+    0 20px 40px -15px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
   max-width: 620px;
   width: 100%;
   max-height: 92vh;
@@ -5039,7 +5077,9 @@ textarea {
   border: 1px solid var(--line);
   background: var(--surface);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
 
   &:hover {
     transform: translateY(-1px);
@@ -5700,7 +5740,9 @@ textarea {
   flex-direction: column;
   gap: 1rem;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
 
   &:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
@@ -5909,7 +5951,9 @@ textarea {
   flex-direction: column;
   gap: 4px;
   box-shadow: var(--shadow-sm);
-  transition: transform 150ms ease, box-shadow 150ms ease;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
 
   &:hover {
     transform: translateY(-2px);
@@ -6117,7 +6161,9 @@ textarea {
     font-size: 0.88rem;
     font-weight: 500;
     cursor: pointer;
-    transition: border-color 140ms ease, box-shadow 140ms ease;
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease;
 
     &:focus {
       outline: none;
@@ -6192,7 +6238,10 @@ textarea {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
   text-decoration: none;
   color: inherit;
-  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease;
 
   &:hover {
     transform: translateY(-2px);
@@ -6433,7 +6482,10 @@ textarea {
     stroke: #ffffff;
     stroke-width: 2.5;
     cursor: pointer;
-    transition: r 120ms ease, fill 120ms ease, stroke-width 120ms ease;
+    transition:
+      r 120ms ease,
+      fill 120ms ease,
+      stroke-width 120ms ease;
 
     &:hover,
     &.is-active {
@@ -6673,7 +6725,10 @@ textarea {
     border-radius: 10px;
     border: 1px solid var(--line);
     background: var(--surface);
-    transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+    transition:
+      transform 120ms ease,
+      border-color 120ms ease,
+      box-shadow 120ms ease;
 
     &:hover {
       transform: translateX(3px);
@@ -6941,7 +6996,9 @@ textarea {
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-  transition: transform 0.15s ease, background 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
 
   &:hover {
     transform: scale(1.08);
@@ -7972,9 +8029,3 @@ textarea {
     cursor: not-allowed;
   }
 }
-
-
-
-
-
-

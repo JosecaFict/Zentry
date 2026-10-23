@@ -2,8 +2,8 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
-from httpx import ASGITransport, AsyncClient
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 from app.modules.auth.dependencies import CurrentPrincipal, get_auth_service, get_current_principal

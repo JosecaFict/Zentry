@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import get_settings
+from app.db.tenant_context import current_tenant_id
 
 settings = get_settings()
 
@@ -34,6 +35,12 @@ async_session_factory = async_sessionmaker(
 async def get_db_session() -> AsyncIterator[AsyncSession]:
     """Provide one independent SQLAlchemy session per request."""
     async with async_session_factory() as session:
+        tenant_id = current_tenant_id()
+        if tenant_id is not None:
+            await session.execute(
+                text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+                {"tenant_id": str(tenant_id)},
+            )
         yield session
 
 

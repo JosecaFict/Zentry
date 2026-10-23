@@ -1,0 +1,10 @@
+<svg width="560" height="180" viewBox="0 0 560 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Zentry Layers</title>
+  <rect width="560" height="180" rx="18" fill="#F7F6F3"/>
+  <path d="M46 65L90 41L134 65L90 89L46 65Z" fill="#064FE8"/>
+  <path d="M46 89L90 113L134 89" stroke="#10141C" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M46 111L90 135L134 111" stroke="#9AA3AF" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M69 65H112L69 88H112" stroke="white" stroke-width="6" stroke-linejoin="round"/>
+  <text x="166" y="105" fill="#10141C" font-family="Arial, Helvetica, sans-serif" font-size="57" font-weight="700" letter-spacing="-2.5">Zentry</text>
+  <text x="169" y="129" fill="#69717D" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="2">UNA PLATAFORMA, MUCHAS EMPRESAS</text>
+</svg>

@@ -13,6 +13,7 @@ from app.core.security import (
     verify_otp_digest,
 )
 from app.db.audit_context import AuditContext, apply_audit_context
+from app.db.tenant_context import current_tenant_id
 from app.modules.auth.exceptions import (
     EmailDeliveryError,
     InvalidPasswordRecoveryCodeError,
@@ -37,13 +38,13 @@ from app.modules.auth.schemas import (
 from app.modules.auth.service import normalize_email
 from app.modules.auth.throttler import LoginThrottler
 
-RECOVERY_MESSAGE = (
-    "Si el correo está registrado, recibirás un código para recuperar tu contraseña."
-)
+RECOVERY_MESSAGE = "Si el correo está registrado, recibirás un código para recuperar tu contraseña."
 
 
 def email_storage_key(email: str) -> str:
-    return hashlib.sha256(email.encode()).hexdigest()
+    tenant_id = current_tenant_id()
+    scope = str(tenant_id) if tenant_id is not None else "global"
+    return hashlib.sha256(f"{scope}:{email}".encode()).hexdigest()
 
 
 class PasswordRecoveryService:
@@ -170,7 +171,8 @@ class PasswordRecoveryService:
                 await self.repository.update_user_status(user, "ACTIVO")
 
         if self.throttler is not None:
-            await self.throttler.clear(user.correo)
+            scope = str(user.id_tenant) if user.id_tenant is not None else "global"
+            await self.throttler.clear(f"{scope}:{user.correo}")
 
         return MessageResponse(
             message="Tu contraseña fue actualizada correctamente. Tu cuenta ha sido desbloqueada."

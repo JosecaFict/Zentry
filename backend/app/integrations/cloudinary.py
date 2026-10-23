@@ -5,6 +5,8 @@ from urllib.parse import unquote, urlparse
 
 import httpx
 
+from app.db.tenant_context import current_tenant_id
+
 
 class CloudinaryError(RuntimeError):
     """Raised when Cloudinary is unavailable or rejects an upload."""
@@ -31,6 +33,11 @@ class CloudinaryStorage:
         self.api_secret = unquote(parsed.password)
         self.timeout_seconds = timeout_seconds
 
+    @staticmethod
+    def _tenant_folder() -> str:
+        tenant_id = current_tenant_id()
+        return f"zentry/tenants/{tenant_id}" if tenant_id is not None else "zentry/global"
+
     def _signature(self, params: dict[str, str | int]) -> str:
         serialized = "&".join(f"{key}={params[key]}" for key in sorted(params))
         return hashlib.sha1(f"{serialized}{self.api_secret}".encode()).hexdigest()
@@ -45,7 +52,7 @@ class CloudinaryStorage:
     ) -> CloudinaryUpload:
         timestamp = int(time.time())
         params: dict[str, str | int] = {
-            "folder": f"capricho-store/productos/{product_id}",
+            "folder": f"{self._tenant_folder()}/productos/{product_id}",
             "timestamp": timestamp,
             "unique_filename": "true",
             "use_filename": "true",
@@ -90,7 +97,7 @@ class CloudinaryStorage:
     ) -> CloudinaryUpload:
         timestamp = int(time.time())
         params: dict[str, str | int] = {
-            "folder": f"capricho-store/avatars/{user_id}",
+            "folder": f"{self._tenant_folder()}/avatars/{user_id}",
             "timestamp": timestamp,
             "unique_filename": "true",
             "use_filename": "true",
@@ -134,7 +141,7 @@ class CloudinaryStorage:
     ) -> CloudinaryUpload:
         timestamp = int(time.time())
         params: dict[str, str | int] = {
-            "folder": "capricho-store/tryon-temp",
+            "folder": f"{self._tenant_folder()}/tryon-temp",
             "timestamp": timestamp,
             "unique_filename": "true",
             "use_filename": "true",

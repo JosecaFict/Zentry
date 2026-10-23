@@ -1,27 +1,19 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.models import Cliente
 from app.modules.catalog.models import (
     Categoria,
-    Color,
     HistorialPrecio,
     ImagenProducto,
     Marca,
     Producto,
     ProductoTemporada,
-    Talla,
     Temporada,
     VarianteProducto,
-)
-from app.modules.commerce.models import (
-    Promocion,
-    PromocionCategoria,
-    PromocionProducto,
-    PromocionTemporada,
 )
 from app.modules.recommendations.models import (
     ConfiguracionRecomendador,
@@ -198,7 +190,6 @@ class RecommendationRepository:
         products = (await self.session.execute(statement)).mappings().all()
         results: list[dict] = []
 
-        now = datetime.now(UTC)
         for p in products:
             pid = p["id_producto"]
             variants_stmt = select(

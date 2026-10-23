@@ -108,7 +108,7 @@ class BrevoEmailClient:
   <body style="margin:0;background:#f7f6f3;color:#121418;font-family:Arial,sans-serif">
     <div style="max-width:560px;margin:0 auto;padding:40px 24px">
       <p style="margin:0 0 24px;color:#064fe8;font-weight:700;letter-spacing:.16em">
-        CAPRICHO STORE
+        ZENTRY · ACCESO SEGURO
       </p>
       <h1 style="margin:0 0 16px;font-size:30px">Recupera tu contraseña</h1>
       <p>Hola, {safe_name}. Usa este código para continuar:</p>
@@ -129,8 +129,7 @@ class BrevoEmailClient:
             "subject": "Código para recuperar tu contraseña",
             "htmlContent": html_content,
             "textContent": (
-                f"Tu código de Capricho Store es {otp}. "
-                f"Vence en {expires_minutes} minutos."
+                f"Tu código de recuperación es {otp}. Vence en {expires_minutes} minutos."
             ),
             "tags": ["password-recovery"],
         }

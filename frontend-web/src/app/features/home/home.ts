@@ -24,7 +24,7 @@ import { StatusPanel } from '../../shared/components/status-panel/status-panel';
       <div class="home-hero__media">
         <img
           src="/images/hero-catalogo-oficial.jpg"
-          alt="Modelos con polera, camisa y polo del catálogo de Capricho Store"
+          alt="Modelos con polera, camisa y polo del catálogo"
           fetchpriority="high"
         />
         <span class="home-hero__reference">Fotografía de referencia</span>
@@ -63,7 +63,7 @@ import { StatusPanel } from '../../shared/components/status-panel/status-panel';
       <img
         class="category-strip"
         src="/images/catalogo-prendas-oficiales.jpg"
-        alt="Polera, camisa, polo y blusa, categorías oficiales de Capricho Store"
+        alt="Polera, camisa, polo y blusa del catálogo"
         loading="lazy"
       />
       <p class="visual-reference-note">Composición visual de referencia</p>

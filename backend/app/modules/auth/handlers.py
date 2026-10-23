@@ -33,7 +33,9 @@ async def ci_already_registered_handler(
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
-        content={"detail": "El carnet de identidad (CI) ya se encuentra registrado con otra cuenta"},
+        content={
+            "detail": "El carnet de identidad (CI) ya se encuentra registrado con otra cuenta"
+        },
     )
 
 

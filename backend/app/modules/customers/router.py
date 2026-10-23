@@ -52,6 +52,7 @@ async def update_customer(
         request,
         user_id=principal.user.id_usuario,
         session_id=principal.session_id,
+        tenant_id=principal.id_tenant,
     )
     return await service.update_customer(
         customer_id=customer_id,
@@ -76,6 +77,7 @@ async def create_quick_customer(
         request,
         user_id=principal.user.id_usuario,
         session_id=principal.session_id,
+        tenant_id=principal.id_tenant,
     )
     return await service.create_quick_customer(
         payload=payload,

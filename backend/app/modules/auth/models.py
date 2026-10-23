@@ -25,7 +25,13 @@ class Rol(Base):
     __tablename__ = "rol"
 
     id_rol: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
-    nombre: Mapped[str] = mapped_column(String(60), nullable=False, unique=True)
+    id_tenant: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("capricho.tenant.id_tenant", ondelete="RESTRICT")
+    )
+    alcance: Mapped[str] = mapped_column(
+        String(10), nullable=False, server_default=text("'TENANT'")
+    )
+    nombre: Mapped[str] = mapped_column(String(60), nullable=False)
     descripcion: Mapped[str | None] = mapped_column(String(200))
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(
@@ -57,15 +63,18 @@ class Usuario(Base):
     __tablename__ = "usuario"
 
     id_usuario: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant", ondelete="RESTRICT"),
+        server_default=text("capricho.fn_tenant_actual()"),
+    )
     nombres: Mapped[str] = mapped_column(String(100), nullable=False)
     apellidos: Mapped[str] = mapped_column(String(100), nullable=False)
-    ci: Mapped[str | None] = mapped_column(String(30), unique=True)
-    correo: Mapped[str] = mapped_column(String(150), nullable=False, unique=True)
+    ci: Mapped[str | None] = mapped_column(String(30))
+    correo: Mapped[str] = mapped_column(String(150), nullable=False)
     telefono: Mapped[str | None] = mapped_column(String(30))
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    estado: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default=text("'ACTIVO'")
-    )
+    estado: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'ACTIVO'"))
     ultimo_acceso: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -79,9 +88,7 @@ class Usuario(Base):
 class UsuarioRol(Base):
     __tablename__ = "usuario_rol"
 
-    id_usuario_rol: Mapped[int] = mapped_column(
-        BigInteger, Identity(always=True), primary_key=True
-    )
+    id_usuario_rol: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     id_usuario: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("capricho.usuario.id_usuario", ondelete="CASCADE"),
@@ -100,9 +107,7 @@ class UsuarioRol(Base):
 class RolPermiso(Base):
     __tablename__ = "rol_permiso"
 
-    id_rol_permiso: Mapped[int] = mapped_column(
-        BigInteger, Identity(always=True), primary_key=True
-    )
+    id_rol_permiso: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     id_rol: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("capricho.rol.id_rol", ondelete="CASCADE"),
@@ -150,9 +155,7 @@ class Ciudad(Base):
     id_ciudad: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     nombre: Mapped[str] = mapped_column(String(100), nullable=False)
     departamento: Mapped[str] = mapped_column(String(100), nullable=False)
-    pais: Mapped[str] = mapped_column(
-        String(100), nullable=False, server_default=text("'Bolivia'")
-    )
+    pais: Mapped[str] = mapped_column(String(100), nullable=False, server_default=text("'Bolivia'"))
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -166,6 +169,12 @@ class Sucursal(Base):
     __tablename__ = "sucursal"
 
     id_sucursal: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant", ondelete="RESTRICT"),
+        nullable=False,
+        server_default=text("capricho.fn_tenant_actual()"),
+    )
     id_ciudad: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("capricho.ciudad.id_ciudad", ondelete="RESTRICT"),
@@ -191,8 +200,12 @@ class Sucursal(Base):
 class Cliente(Base):
     __tablename__ = "cliente"
 
-    id_cliente: Mapped[int] = mapped_column(
-        BigInteger, Identity(always=True), primary_key=True
+    id_cliente: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant", ondelete="RESTRICT"),
+        nullable=False,
+        server_default=text("capricho.fn_tenant_actual()"),
     )
     id_usuario: Mapped[int] = mapped_column(
         BigInteger,
@@ -201,9 +214,7 @@ class Cliente(Base):
         unique=True,
     )
     fecha_nacimiento: Mapped[date | None] = mapped_column(Date)
-    estado: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default=text("'ACTIVO'")
-    )
+    estado: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'ACTIVO'"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -215,8 +226,12 @@ class Cliente(Base):
 class Empleado(Base):
     __tablename__ = "empleado"
 
-    id_empleado: Mapped[int] = mapped_column(
-        BigInteger, Identity(always=True), primary_key=True
+    id_empleado: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant", ondelete="RESTRICT"),
+        nullable=False,
+        server_default=text("capricho.fn_tenant_actual()"),
     )
     id_usuario: Mapped[int] = mapped_column(
         BigInteger,
@@ -247,8 +262,11 @@ class Empleado(Base):
 class Bitacora(Base):
     __tablename__ = "bitacora"
 
-    id_bitacora: Mapped[int] = mapped_column(
-        BigInteger, Identity(always=True), primary_key=True
+    id_bitacora: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant", ondelete="RESTRICT"),
+        server_default=text("capricho.fn_tenant_actual()"),
     )
     id_usuario: Mapped[int | None] = mapped_column(
         BigInteger,

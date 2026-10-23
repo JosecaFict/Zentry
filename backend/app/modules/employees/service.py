@@ -29,9 +29,7 @@ from app.modules.employees.schemas import (
     RoleResponse,
 )
 
-OPERATIONAL_ROLES = frozenset(
-    {"ENCARGADO_SUCURSAL", "CAJERO", "AUXILIAR_INVENTARIO"}
-)
+OPERATIONAL_ROLES = frozenset({"ENCARGADO_SUCURSAL", "CAJERO", "AUXILIAR_INVENTARIO"})
 
 
 class EmployeeService:
@@ -128,6 +126,12 @@ class EmployeeService:
         audit_context: AuditContext,
     ) -> EmployeeResponse:
         email = normalize_email(str(payload.correo))
+        if actor.max_usuarios_internos is not None:
+            active_users = await self.repository.count_active_employees()
+            if active_users >= actor.max_usuarios_internos:
+                raise InvalidEmployeeDataError(
+                    f"El plan permite hasta {actor.max_usuarios_internos} usuarios internos activos"
+                )
         try:
             await apply_audit_context(self.session, audit_context)
             if await self.repository.get_user_by_email(email) is not None:

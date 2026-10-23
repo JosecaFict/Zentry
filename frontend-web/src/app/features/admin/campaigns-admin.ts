@@ -217,7 +217,7 @@ import { CommerceService } from '../../core/services/commerce.service';
                     type="text"
                     class="input-text"
                     formControlName="asunto_email"
-                    placeholder="Ej. ¡Descubre las ofertas exclusivas de Capricho Store!"
+                    placeholder="Ej. ¡Descubre nuestras ofertas exclusivas!"
                   />
                 </div>
 

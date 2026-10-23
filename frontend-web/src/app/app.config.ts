@@ -5,24 +5,31 @@ import {
   provideAppInitializer,
   provideBrowserGlobalErrorListeners,
 } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { catchError, firstValueFrom, of } from 'rxjs';
 
 import { routes } from './app.routes';
 import { AuthService } from './core/auth/auth.service';
 import { authInterceptor } from './core/interceptors/auth.interceptor';
+import { TenantContextService } from './core/tenant/tenant-context.service';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
-    provideAppInitializer(() => {
+    provideAppInitializer(async () => {
       const auth = inject(AuthService);
-      if (auth.token() && !auth.currentUser()) {
-        return firstValueFrom(auth.loadCurrentUser().pipe(catchError(() => of(null))));
+      const tenant = inject(TenantContextService);
+      const router = inject(Router);
+      await firstValueFrom(tenant.load().pipe(catchError(() => of(null))));
+      if (tenant.unavailable()) {
+        await router.navigateByUrl('/servicio-no-disponible');
+        return;
       }
-      return Promise.resolve();
+      if (auth.token() && !auth.currentUser()) {
+        await firstValueFrom(auth.loadCurrentUser().pipe(catchError(() => of(null))));
+      }
     }),
   ],
 };

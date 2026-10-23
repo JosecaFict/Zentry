@@ -18,6 +18,10 @@ from app.modules.catalog.models import (
     Producto,
     VarianteProducto,
 )
+from app.modules.commerce.business_days import (
+    calculate_business_days_elapsed,
+    is_return_window_valid,
+)
 from app.modules.commerce.exceptions import (
     CommerceConflictError,
     CommerceForbiddenError,
@@ -25,8 +29,8 @@ from app.modules.commerce.exceptions import (
     InvalidCommerceOperationError,
     PaymentGatewayError,
 )
-from app.modules.commerce.invoice_mailer import InvoiceMailer
 from app.modules.commerce.fcm_sender import FcmPushSender, get_fcm_sender
+from app.modules.commerce.invoice_mailer import InvoiceMailer
 from app.modules.commerce.invoice_service import (
     InvoiceData,
     InvoiceItem,
@@ -47,18 +51,11 @@ from app.modules.commerce.models import (
     Pago,
     Pedido,
     Promocion,
-    PromocionCategoria,
-    PromocionProducto,
-    PromocionTemporada,
     Reserva,
     TransaccionPasarela,
     Venta,
 )
 from app.modules.commerce.repository import CommerceRepository
-from app.modules.commerce.business_days import (
-    calculate_business_days_elapsed,
-    is_return_window_valid,
-)
 from app.modules.commerce.schemas import (
     ActivePromotionItem,
     AddressCreate,
@@ -2599,6 +2596,7 @@ class CommerceService:
         tienen registro en la bandeja de notificaciones para este colaborador o administrador.
         """
         from datetime import timedelta
+
         from app.modules.auth.models import Empleado, Rol, Sucursal, UsuarioRol
 
         user_roles_stmt = (
@@ -3382,7 +3380,7 @@ class CommerceService:
         urgent_rows = (await self.session.execute(stmt_urgent)).all()
 
         pedidos_urgentes: list[DashboardUrgentOrder] = []
-        for ped, vta, cli, usr in urgent_rows:
+        for ped, vta, _cli, usr in urgent_rows:
             client_name = (
                 f"{usr.nombres} {usr.apellidos}".strip()
                 if usr and (usr.nombres or usr.apellidos)

@@ -965,7 +965,6 @@ class CommerceRepository:
         if not product_ids:
             return {}
 
-        now = datetime.now(UTC)
         promos = await self.get_active_promotions()
         if not promos:
             return {}

@@ -1,0 +1,7 @@
+<svg width="320" height="96" viewBox="0 0 320 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Zentry</title>
+  <rect x="2" y="14" width="68" height="68" rx="15" fill="#064FE8"/>
+  <path d="M20 31H52L20 65H53" stroke="white" stroke-width="8" stroke-linecap="square" stroke-linejoin="round"/>
+  <path d="M58 24V72" stroke="#9DBBFF" stroke-width="3"/>
+  <text x="91" y="60" fill="#10141C" font-family="Arial, Helvetica, sans-serif" font-size="43" font-weight="700" letter-spacing="-1.5">Zentry</text>
+</svg>

@@ -36,7 +36,7 @@ interface DonutSegment {
       <!-- Encabezado y Barra de Herramientas -->
       <header class="admin-page-heading">
         <div>
-          <p class="eyebrow">Panel Ejecutivo · Capricho Store</p>
+          <p class="eyebrow">Panel ejecutivo</p>
           <h1>Centro de Comando</h1>
           <p>
             Monitoreo en tiempo real de facturación, flujo de pedidos en tienda y probador virtual.

@@ -1,4 +1,6 @@
 export const environment = {
   production: true,
-  apiBaseUrl: 'https://capricho-store-production.up.railway.app/api/v1',
+  apiBaseUrl: '/api/v1',
+  tenantBaseDomain: '',
+  defaultTenantSlug: '',
 } as const;

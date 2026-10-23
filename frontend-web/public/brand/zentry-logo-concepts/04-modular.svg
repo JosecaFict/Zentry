@@ -1,0 +1,11 @@
+<svg width="560" height="180" viewBox="0 0 560 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Zentry Modular</title>
+  <rect width="560" height="180" rx="18" fill="#F7F6F3"/>
+  <rect x="45" y="45" width="40" height="40" rx="8" fill="#10141C"/>
+  <rect x="95" y="45" width="40" height="40" rx="8" fill="#064FE8"/>
+  <rect x="45" y="95" width="40" height="40" rx="8" fill="#064FE8"/>
+  <rect x="95" y="95" width="40" height="40" rx="8" fill="#B8C2D1"/>
+  <path d="M56 57H76L56 76H76" stroke="white" stroke-width="5" stroke-linejoin="round"/>
+  <text x="166" y="105" fill="#10141C" font-family="Arial, Helvetica, sans-serif" font-size="57" font-weight="700" letter-spacing="-2.5">Zentry</text>
+  <text x="169" y="129" fill="#69717D" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" letter-spacing="2">ORDENA. ESCALA. CONTROLA.</text>
+</svg>

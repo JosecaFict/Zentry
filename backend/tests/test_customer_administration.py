@@ -2,9 +2,9 @@ from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock
 
+import pytest
 from fastapi import HTTPException, status
 from httpx import ASGITransport, AsyncClient, Response
-import pytest
 
 from app.main import app
 from app.modules.auth.dependencies import CurrentPrincipal, get_current_principal

@@ -1,5 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { TenantContextService } from '../../core/tenant/tenant-context.service';
 
 @Component({
   selector: 'app-site-footer',
@@ -7,15 +8,17 @@ import { RouterLink } from '@angular/router';
   template: `
     <footer class="site-footer">
       <div>
-        <strong>CAPRICHO STORE</strong>
-        <p>Catálogo académico de moda conectado a datos reales.</p>
+        <strong>{{ tenant.name().toUpperCase() }}</strong>
+        <p>Catálogo, pedidos y atención conectados con nuestra operación.</p>
       </div>
       <nav aria-label="Navegación de pie de página">
         <a routerLink="/catalogo">Catálogo</a><a routerLink="/carrito">Carrito</a
         ><a routerLink="/pedidos">Pedidos</a>
       </nav>
-      <p class="site-footer__note">Compra online sin cobro digital y retiro o delivery estimado.</p>
+      <p class="site-footer__note">Compra online con retiro o entrega según disponibilidad.</p>
     </footer>
   `,
 })
-export class SiteFooter {}
+export class SiteFooter {
+  readonly tenant = inject(TenantContextService);
+}

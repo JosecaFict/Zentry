@@ -2,8 +2,8 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
-from httpx import ASGITransport, AsyncClient
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 from app.modules.auth.dependencies import CurrentPrincipal, get_current_principal
@@ -166,8 +166,9 @@ async def test_notify_branch_staff_stock_alert() -> None:
 
 @pytest.mark.asyncio
 async def test_notify_staff_and_admins_new_order() -> None:
-    from app.modules.commerce.service import CommerceService
     from unittest.mock import MagicMock
+
+    from app.modules.commerce.service import CommerceService
 
     mock_session = AsyncMock()
     mock_repo = AsyncMock()
@@ -206,11 +207,11 @@ async def test_notify_staff_and_admins_new_order() -> None:
 @pytest.mark.asyncio
 async def test_update_order_status_notifies_customer_lifecycle() -> None:
     from decimal import Decimal
-    from unittest.mock import MagicMock
-    from app.modules.commerce.service import CommerceService
-    from app.modules.commerce.schemas import OrderStatusUpdate, OrderResponse
+
+    from app.modules.auth.models import Cliente, Empleado, Sucursal
     from app.modules.commerce.models import Pedido, Venta
-    from app.modules.auth.models import Empleado, Cliente, Sucursal
+    from app.modules.commerce.schemas import OrderResponse, OrderStatusUpdate
+    from app.modules.commerce.service import CommerceService
 
     mock_session = AsyncMock()
     mock_repo = AsyncMock()
@@ -299,8 +300,8 @@ async def test_update_order_status_notifies_customer_lifecycle() -> None:
 
 @pytest.mark.asyncio
 async def test_mark_notifications_as_read_persists_leido() -> None:
-    from app.modules.commerce.service import CommerceService
     from app.modules.commerce.models import Notificacion
+    from app.modules.commerce.service import CommerceService
 
     mock_session = AsyncMock()
     mock_repo = AsyncMock()
@@ -334,8 +335,9 @@ async def test_mark_notifications_as_read_persists_leido() -> None:
 
 @pytest.mark.asyncio
 async def test_notify_staff_and_admins_banzer_and_global_admin() -> None:
-    from app.modules.commerce.service import CommerceService
     from unittest.mock import MagicMock
+
+    from app.modules.commerce.service import CommerceService
 
     mock_session = AsyncMock()
     mock_repo = AsyncMock()

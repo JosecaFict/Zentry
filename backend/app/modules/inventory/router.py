@@ -40,6 +40,7 @@ def audit_for(request: Request, principal: CurrentPrincipal):
         request,
         user_id=principal.user.id_usuario,
         session_id=principal.session_id,
+        tenant_id=principal.id_tenant,
     )
 
 

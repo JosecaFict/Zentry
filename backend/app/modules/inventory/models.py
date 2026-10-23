@@ -24,6 +24,7 @@ class Proveedor(Base):
     __tablename__ = "proveedor"
 
     id_proveedor: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     id_ciudad: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("capricho.ciudad.id_ciudad", ondelete="SET NULL")
     )
@@ -64,6 +65,7 @@ class OrdenCompra(Base):
     id_orden_compra: Mapped[int] = mapped_column(
         BigInteger, Identity(always=True), primary_key=True
     )
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     id_proveedor: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("capricho.proveedor.id_proveedor", ondelete="RESTRICT")
     )
@@ -105,6 +107,7 @@ class RecepcionMercaderia(Base):
     __tablename__ = "recepcion_mercaderia"
 
     id_recepcion: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     id_orden_compra: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("capricho.orden_compra.id_orden_compra", ondelete="SET NULL")
     )
@@ -144,6 +147,7 @@ class LoteInventario(Base):
     __tablename__ = "lote_inventario"
 
     id_lote: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     id_detalle_recepcion: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("capricho.detalle_recepcion.id_detalle_recepcion", ondelete="RESTRICT"),
@@ -168,6 +172,7 @@ class MovimientoInventario(Base):
     __tablename__ = "movimiento_inventario"
 
     id_movimiento: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     id_inventario: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("capricho.inventario_sucursal.id_inventario", ondelete="RESTRICT")
     )
@@ -204,6 +209,7 @@ class TransferenciaInventario(Base):
     id_transferencia: Mapped[int] = mapped_column(
         BigInteger, Identity(always=True), primary_key=True
     )
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     id_sucursal_origen: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("capricho.sucursal.id_sucursal", ondelete="RESTRICT")
     )

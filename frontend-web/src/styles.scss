@@ -1,4 +1,5 @@
 @use './app/features/admin/admin';
+@use './app/features/platform/platform';
 @import 'leaflet/dist/leaflet.css';
 @import '@fontsource/alef/400.css';
 @import '@fontsource/alef/700.css';
@@ -223,7 +224,9 @@ h3 {
   max-width: 150px;
   object-fit: contain;
   display: block;
-  transition: opacity 140ms ease, transform 140ms ease;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
 
   &:hover {
     opacity: 0.9;
@@ -678,7 +681,9 @@ h3 {
   justify-content: center;
   align-items: center;
   text-decoration: none;
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
 
   &:hover {
     opacity: 0.9;
@@ -704,6 +709,46 @@ h3 {
     letter-spacing: -0.02em;
     margin-bottom: 1.75rem;
   }
+}
+.auth-page--platform {
+  background: #f4f5f7;
+
+  .auth-visual {
+    display: grid;
+    place-items: center;
+    padding: 64px;
+    background: #10141c;
+  }
+
+  .auth-platform-visual {
+    max-width: 520px;
+  }
+
+  .auth-platform-visual img {
+    width: min(100%, 330px);
+    height: auto;
+  }
+
+  .auth-platform-visual p {
+    max-width: 440px;
+    margin-top: 32px;
+    color: #b8c1ce;
+    font-size: clamp(1.25rem, 2vw, 1.8rem);
+    line-height: 1.45;
+  }
+
+  .auth-brand-logo {
+    width: 210px;
+    height: auto;
+  }
+}
+.auth-platform-kicker {
+  margin: 0 0 28px;
+  color: #064fe8 !important;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 @media (max-width: 480px) {
   .auth-page--login {
@@ -1680,7 +1725,9 @@ td {
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-  transition: transform 0.15s ease, background 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
 
   &:hover {
     transform: scale(1.08);
@@ -1819,7 +1866,10 @@ td {
   align-items: center;
   gap: 1rem;
   position: relative;
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease;
 
   &:hover {
     transform: translateY(-2px);
@@ -1889,7 +1939,9 @@ td {
   margin-left: auto;
   color: var(--ink-soft);
   font-size: 1.15rem;
-  transition: transform 160ms ease, color 160ms ease;
+  transition:
+    transform 160ms ease,
+    color 160ms ease;
 }
 
 /* Grilla Principal */
@@ -2158,25 +2210,25 @@ td {
   font-size: 0.75rem;
   font-weight: 700;
 
-  &[data-status="ENTREGADO"],
-  &[data-status="PAGADO"],
-  &[data-status="RETIRADO"],
-  &[data-status="LISTO_PARA_RETIRAR"] {
+  &[data-status='ENTREGADO'],
+  &[data-status='PAGADO'],
+  &[data-status='RETIRADO'],
+  &[data-status='LISTO_PARA_RETIRAR'] {
     background: #ecfdf3;
     color: #027a48;
     border: 1px solid #a6f4c5;
   }
 
-  &[data-status="EN_PREPARACION"],
-  &[data-status="EN_CAMINO"],
-  &[data-status="PENDIENTE"] {
+  &[data-status='EN_PREPARACION'],
+  &[data-status='EN_CAMINO'],
+  &[data-status='PENDIENTE'] {
     background: #fffaeb;
     color: #b54708;
     border: 1px solid #fedf89;
   }
 
-  &[data-status="CANCELADO"],
-  &[data-status="RECHAZADO"] {
+  &[data-status='CANCELADO'],
+  &[data-status='RECHAZADO'] {
     background: #fef3f2;
     color: #b42318;
     border: 1px solid #fecdca;
@@ -2995,7 +3047,9 @@ td {
     background: var(--surface);
     color: var(--ink);
     font-size: 0.95rem;
-    transition: border-color 0.2s, box-shadow 0.2s;
+    transition:
+      border-color 0.2s,
+      box-shadow 0.2s;
 
     &:focus {
       outline: none;
@@ -3212,7 +3266,9 @@ td {
     flex-direction: column;
     gap: 1rem;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition:
+      transform 0.2s,
+      box-shadow 0.2s;
 
     &:hover {
       box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
@@ -3645,7 +3701,9 @@ td {
     cursor: pointer;
     padding: 4px 8px;
     border-radius: 6px;
-    transition: background 150ms ease, color 150ms ease;
+    transition:
+      background 150ms ease,
+      color 150ms ease;
 
     &:hover {
       background: color-mix(in srgb, var(--accent) 10%, transparent);
@@ -3654,8 +3712,12 @@ td {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .notification-dropdown__list {
@@ -3713,22 +3775,22 @@ td {
     border: 1px solid var(--line);
   }
 
-  &[data-type="pago"] .notification-item__icon-wrap {
+  &[data-type='pago'] .notification-item__icon-wrap {
     background: #ecfdf5;
     border-color: #a7f3d0;
   }
 
-  &[data-type="delivery"] .notification-item__icon-wrap {
+  &[data-type='delivery'] .notification-item__icon-wrap {
     background: #eff6ff;
     border-color: #bfdbfe;
   }
 
-  &[data-type="reserva"] .notification-item__icon-wrap {
+  &[data-type='reserva'] .notification-item__icon-wrap {
     background: #fef3c7;
     border-color: #fde68a;
   }
 
-  &[data-type="campania"] .notification-item__icon-wrap {
+  &[data-type='campania'] .notification-item__icon-wrap {
     background: #fdf2f8;
     border-color: #fbcfe8;
   }
@@ -4624,5 +4686,3 @@ td {
     align-self: flex-start;
   }
 }
-
-

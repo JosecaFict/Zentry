@@ -17,9 +17,7 @@ from app.modules.auth.models import (
 from app.modules.auth.repository import AuthRepository
 from app.modules.employees.exceptions import InvalidEmployeeDataError
 
-MANAGED_EMPLOYEE_ROLES = frozenset(
-    {"ENCARGADO_SUCURSAL", "CAJERO", "AUXILIAR_INVENTARIO", "ADMIN"}
-)
+MANAGED_EMPLOYEE_ROLES = frozenset({"ENCARGADO_SUCURSAL", "CAJERO", "AUXILIAR_INVENTARIO", "ADMIN"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +33,13 @@ class EmployeeRepository:
         self.session = session
         self.auth_repository = AuthRepository(session)
 
+    async def count_active_employees(self) -> int:
+        return int(
+            await self.session.scalar(
+                select(func.count(Empleado.id_empleado)).where(Empleado.estado_laboral == "ACTIVO")
+            )
+            or 0
+        )
     async def list_employees(self) -> list[EmployeeRecord]:
         statement = (
             select(Empleado, Usuario, Sucursal)
@@ -98,9 +103,7 @@ class EmployeeRepository:
 
     async def list_active_permissions(self) -> list[Permiso]:
         statement = (
-            select(Permiso)
-            .where(Permiso.activo.is_(True))
-            .order_by(Permiso.modulo, Permiso.codigo)
+            select(Permiso).where(Permiso.activo.is_(True)).order_by(Permiso.modulo, Permiso.codigo)
         )
         return list((await self.session.scalars(statement)).all())
 
@@ -112,9 +115,7 @@ class EmployeeRepository:
         )
         return set((await self.session.scalars(statement)).all())
 
-    async def set_role_permission(
-        self, *, role_id: int, permission_id: int, enabled: bool
-    ) -> None:
+    async def set_role_permission(self, *, role_id: int, permission_id: int, enabled: bool) -> None:
         statement = select(RolPermiso).where(
             RolPermiso.id_rol == role_id,
             RolPermiso.id_permiso == permission_id,

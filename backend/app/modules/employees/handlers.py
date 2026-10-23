@@ -33,4 +33,3 @@ def register_employee_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ResourceNotFoundError, resource_not_found_handler)
     app.add_exception_handler(ResourceConflictError, resource_conflict_handler)
     app.add_exception_handler(InvalidEmployeeDataError, invalid_employee_data_handler)
-

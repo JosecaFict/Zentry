@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { PermissionService } from '../../core/permissions/permission.service';
+import { TenantContextService } from '../../core/tenant/tenant-context.service';
 import { NotificationBell } from '../../shared/components/notification-bell/notification-bell';
 
 @Component({
@@ -9,8 +10,8 @@ import { NotificationBell } from '../../shared/components/notification-bell/noti
   imports: [RouterLink, RouterLinkActive, NotificationBell],
   template: `
     <header class="site-header">
-      <a class="brand" routerLink="/" aria-label="Capricho Store, ir al inicio">
-        <img src="/images/logo-capricho.png" alt="Capricho Store" class="brand-logo" />
+      <a class="brand" routerLink="/" [attr.aria-label]="tenant.name() + ', ir al inicio'">
+        <img [src]="tenant.logoUrl()" [alt]="tenant.name()" class="brand-logo" />
       </a>
       <button
         class="menu-button"
@@ -49,7 +50,17 @@ import { NotificationBell } from '../../shared/components/notification-bell/noti
               title="Ir al panel operativo"
               aria-label="Ir al panel operativo"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                width="18"
+                height="18"
+                aria-hidden="true"
+              >
                 <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                 <rect x="3" y="7" width="18" height="14" rx="3" />
                 <line x1="3" y1="13" x2="10" y2="13" />
@@ -58,7 +69,12 @@ import { NotificationBell } from '../../shared/components/notification-bell/noti
               </svg>
             </a>
           } @else {
-            <a routerLink="/cuenta" routerLinkActive="active" (click)="closeMenu()" class="nav-account-link">
+            <a
+              routerLink="/cuenta"
+              routerLinkActive="active"
+              (click)="closeMenu()"
+              class="nav-account-link"
+            >
               @if (auth.currentUser()?.avatar_url) {
                 <img [src]="auth.currentUser()?.avatar_url" alt="" class="nav-avatar-mini" />
               }
@@ -77,6 +93,7 @@ import { NotificationBell } from '../../shared/components/notification-bell/noti
 export class SiteHeader {
   readonly auth = inject(AuthService);
   readonly permissions = inject(PermissionService);
+  readonly tenant = inject(TenantContextService);
   private readonly router = inject(Router);
   readonly menuOpen = signal(false);
 

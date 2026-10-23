@@ -32,7 +32,7 @@ export function formatBranchName(rawName?: string | null, id?: number | null): s
       .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''))
       .join(' ');
   }
-  return `Capricho Store – ${name}`;
+  return name;
 }
 
 @Component({
@@ -234,7 +234,7 @@ export class CartPage {
         @if (isMobileSource()) {
           <div style="text-align: center; margin: 1rem 0;">
             <a class="button button--primary" [href]="mobileReturnUrl()" (click)="closeWindowSoon()" style="background: #10b981; border-color: #10b981; color: #fff; font-weight: 600;">
-              📱 Regresar a la App Capricho Store
+              📱 Regresar a la tienda
             </a>
           </div>
         }
@@ -277,7 +277,7 @@ export class CartPage {
             @if (isMobileSource()) {
               <br><br>
               <a class="button button--secondary" href="capricho://checkout-complete?status=CANCELADO" style="margin-top: 0.5rem; display: inline-block;">
-                📱 Volver a la App Capricho Store
+                📱 Volver a la tienda
               </a>
             }
           </p>
@@ -314,7 +314,7 @@ export class CartPage {
                 <span>Sucursal que prepara el pedido</span>
                 <input
                   type="text"
-                  [value]="cart()?.sucursal ? ('Capricho Store ' + cart()?.sucursal) : ('Sucursal #' + cart()?.id_sucursal)"
+                  [value]="cart()?.sucursal || ('Sucursal #' + cart()?.id_sucursal)"
                   readonly
                   disabled
                 />
@@ -461,7 +461,7 @@ export class CartPage {
               {{ submitting() ? 'Preparando pago…' : 'Ir al pago seguro' }}
             </button>
             <p class="stripe-checkout-note">
-              Stripe procesará los datos de tu tarjeta. Capricho Store no almacena esos datos.
+              Stripe procesará los datos de tu tarjeta. La tienda no almacena esos datos.
             </p>
           </aside>
         </form>

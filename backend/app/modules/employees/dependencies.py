@@ -13,4 +13,3 @@ async def get_employee_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AsyncIterator[EmployeeService]:
     yield EmployeeService(session=session, repository=EmployeeRepository(session))
-

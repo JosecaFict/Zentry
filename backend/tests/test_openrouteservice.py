@@ -1,8 +1,6 @@
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from app.integrations.openrouteservice import OpenRouteServiceClient, RouteEstimate
 from app.modules.auth.models import Cliente, Sucursal
 from app.modules.commerce.models import CotizacionEnvio, DireccionCliente, TarifaEnvio

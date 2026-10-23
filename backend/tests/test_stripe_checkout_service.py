@@ -217,8 +217,9 @@ async def test_expired_stripe_session_restores_stock_and_cart() -> None:
 
 
 async def test_stripe_checkout_gateway_uses_to_dict(monkeypatch) -> None:
-    from app.integrations.stripe_checkout import StripeCheckoutGateway
     import stripe
+
+    from app.integrations.stripe_checkout import StripeCheckoutGateway
 
     class FakeSession:
         def __init__(self, data: dict):
@@ -292,8 +293,9 @@ async def test_stripe_checkout_status_completes_paid_and_returns_receipt_url() -
             },
         },
     }
+    from datetime import UTC, datetime
+
     from app.modules.commerce.schemas import OrderResponse
-    from datetime import datetime, UTC
 
     mock_order = OrderResponse(
         id_pedido=8,

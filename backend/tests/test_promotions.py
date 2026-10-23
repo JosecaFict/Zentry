@@ -9,7 +9,6 @@ from app.main import app
 from app.modules.auth.dependencies import CurrentPrincipal, get_current_principal
 from app.modules.auth.models import Usuario
 from app.modules.commerce.dependencies import get_commerce_service
-from app.modules.commerce.exceptions import CommerceNotFoundError
 from app.modules.commerce.schemas import (
     ActivePromotionItem,
     PromotionResponse,

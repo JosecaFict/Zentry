@@ -137,6 +137,11 @@ export const ADMIN_NAVIGATION: AdminNavGroup[] = [
     label: 'Seguridad',
     items: [
       {
+        label: 'Marca de la empresa',
+        path: '/admin/configuracion/marca',
+        permissions: ['permisos.asignar'],
+      },
+      {
         label: 'Roles y permisos',
         path: '/admin/seguridad/roles-permisos',
         permissions: ['permisos.asignar'],

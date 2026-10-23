@@ -25,6 +25,12 @@ class Categoria(Base):
     __tablename__ = "categoria"
 
     id_categoria: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant"),
+        nullable=False,
+        server_default=text("capricho.fn_tenant_actual()"),
+    )
     nombre: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     descripcion: Mapped[str | None] = mapped_column(String(250))
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
@@ -36,6 +42,12 @@ class Marca(Base):
     __tablename__ = "marca"
 
     id_marca: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant"),
+        nullable=False,
+        server_default=text("capricho.fn_tenant_actual()"),
+    )
     nombre: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     descripcion: Mapped[str | None] = mapped_column(String(250))
     pais_origen: Mapped[str | None] = mapped_column(String(100))
@@ -48,6 +60,12 @@ class Talla(Base):
     __tablename__ = "talla"
 
     id_talla: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant"),
+        nullable=False,
+        server_default=text("capricho.fn_tenant_actual()"),
+    )
     codigo: Mapped[str] = mapped_column(String(10), nullable=False, unique=True)
     orden: Mapped[int] = mapped_column(SmallInteger, nullable=False, unique=True)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
@@ -57,6 +75,12 @@ class Color(Base):
     __tablename__ = "color"
 
     id_color: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant"),
+        nullable=False,
+        server_default=text("capricho.fn_tenant_actual()"),
+    )
     nombre: Mapped[str] = mapped_column(String(60), nullable=False, unique=True)
     codigo_hex: Mapped[str | None] = mapped_column(String(7))
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
@@ -66,6 +90,12 @@ class Temporada(Base):
     __tablename__ = "temporada"
 
     id_temporada: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant"),
+        nullable=False,
+        server_default=text("capricho.fn_tenant_actual()"),
+    )
     nombre: Mapped[str] = mapped_column(String(100), nullable=False)
     anio: Mapped[int | None] = mapped_column(SmallInteger)
     fecha_inicio: Mapped[date | None] = mapped_column(Date)
@@ -79,6 +109,12 @@ class Coleccion(Base):
     __tablename__ = "coleccion"
 
     id_coleccion: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant"),
+        nullable=False,
+        server_default=text("capricho.fn_tenant_actual()"),
+    )
     id_temporada: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("capricho.temporada.id_temporada", ondelete="SET NULL")
     )
@@ -93,6 +129,12 @@ class Producto(Base):
     __tablename__ = "producto"
 
     id_producto: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant"),
+        nullable=False,
+        server_default=text("capricho.fn_tenant_actual()"),
+    )
     id_categoria: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("capricho.categoria.id_categoria", ondelete="RESTRICT")
     )
@@ -223,6 +265,12 @@ class InventarioSucursal(Base):
     __tablename__ = "inventario_sucursal"
 
     id_inventario: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("capricho.tenant.id_tenant"),
+        nullable=False,
+        server_default=text("capricho.fn_tenant_actual()"),
+    )
     id_sucursal: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("capricho.sucursal.id_sucursal", ondelete="RESTRICT")
     )

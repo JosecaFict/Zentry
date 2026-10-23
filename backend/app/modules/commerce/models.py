@@ -49,6 +49,7 @@ class Carrito(Base):
     __tablename__ = "carrito"
 
     id_carrito: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     id_cliente: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("capricho.cliente.id_cliente", ondelete="CASCADE"), nullable=False
     )
@@ -82,6 +83,7 @@ class Reserva(Base):
     __tablename__ = "reserva"
 
     id_reserva: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     id_cliente: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("capricho.cliente.id_cliente", ondelete="RESTRICT"), nullable=False
     )
@@ -122,6 +124,7 @@ class Venta(Base):
     __tablename__ = "venta"
 
     id_venta: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     id_cliente: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("capricho.cliente.id_cliente", ondelete="SET NULL")
     )
@@ -282,6 +285,7 @@ class Pedido(Base):
     __tablename__ = "pedido"
 
     id_pedido: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     id_venta: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("capricho.venta.id_venta", ondelete="RESTRICT"),
@@ -308,6 +312,7 @@ class Devolucion(Base):
     __tablename__ = "devolucion"
 
     id_devolucion: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     id_venta: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("capricho.venta.id_venta", ondelete="RESTRICT"), nullable=False
     )
@@ -383,6 +388,7 @@ class Campania(Base):
     id_campania: Mapped[int] = mapped_column(
         BigInteger, Identity(always=True), primary_key=True
     )
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     nombre: Mapped[str] = mapped_column(String(150), nullable=False)
     descripcion: Mapped[str | None] = mapped_column(String(250))
     asunto_email: Mapped[str | None] = mapped_column(String(180))
@@ -406,6 +412,7 @@ class Promocion(Base):
     id_promocion: Mapped[int] = mapped_column(
         BigInteger, Identity(always=True), primary_key=True
     )
+    id_tenant: Mapped[int] = mapped_column(BigInteger, ForeignKey("capricho.tenant.id_tenant"), nullable=False, server_default=text("capricho.fn_tenant_actual()"))
     nombre: Mapped[str] = mapped_column(String(150), nullable=False)
     descripcion: Mapped[str | None] = mapped_column(String(250))
     porcentaje_descuento: Mapped[Decimal] = mapped_column(

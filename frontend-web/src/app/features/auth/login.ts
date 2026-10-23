@@ -6,6 +6,7 @@ import { AuthService } from '../../core/auth/auth.service';
 import { UserResponse } from '../../core/models/auth.model';
 import { ADMIN_PERMISSIONS } from '../../core/permissions/permission.service';
 import { ApiErrorService } from '../../core/services/api-error.service';
+import { TenantContextService } from '../../core/tenant/tenant-context.service';
 import { PasswordField } from './password-field';
 
 export function resolveLoginDestination(user: UserResponse, returnUrl: string | null): string {
@@ -13,6 +14,7 @@ export function resolveLoginDestination(user: UserResponse, returnUrl: string | 
   if (requestedPath?.startsWith('/') && !requestedPath.startsWith('//')) {
     return requestedPath;
   }
+  if (user.roles.includes('SUPERADMIN')) return '/platform';
   const hasAdminAccess = ADMIN_PERMISSIONS.some((permission) => user.permisos.includes(permission));
   return hasAdminAccess ? '/admin' : '/catalogo';
 }
@@ -21,18 +23,37 @@ export function resolveLoginDestination(user: UserResponse, returnUrl: string | 
   selector: 'app-login',
   imports: [ReactiveFormsModule, RouterLink, PasswordField],
   template: `
-    <section class="auth-page auth-page--login">
+    <section class="auth-page auth-page--login" [class.auth-page--platform]="isPlatformLogin">
       <div class="auth-visual" aria-hidden="true">
-        <img src="/images/acceso-hombre-polo.jpg" alt="" />
+        @if (isPlatformLogin) {
+          <div class="auth-platform-visual">
+            <img src="/images/zentry-logo-white.png" alt="" />
+            <p>Control global para operar empresas, planes y accesos desde un solo lugar.</p>
+          </div>
+        } @else {
+          <img src="/images/acceso-hombre-polo.jpg" alt="" />
+        }
       </div>
       <div class="auth-panel">
-        <a class="back-link" routerLink="/">Volver al inicio</a>
+        @if (!isPlatformLogin) {
+          <a class="back-link" routerLink="/">Volver al inicio</a>
+        } @else {
+          <p class="auth-platform-kicker">Administración de plataforma</p>
+        }
         <div class="auth-brand-header">
-          <a routerLink="/" class="auth-brand-link" aria-label="Capricho Store">
-            <img src="/images/logo-capricho.png" alt="Capricho Store" class="auth-brand-logo" />
+          <a
+            [routerLink]="isPlatformLogin ? '/platform/login' : '/'"
+            class="auth-brand-link"
+            [attr.aria-label]="isPlatformLogin ? 'Zentry' : tenant.name()"
+          >
+            <img
+              [src]="isPlatformLogin ? '/images/zentry-logo.png' : tenant.logoUrl()"
+              [alt]="isPlatformLogin ? 'Zentry' : tenant.name()"
+              class="auth-brand-logo"
+            />
           </a>
         </div>
-        <h1>Bienvenido a Capricho Store</h1>
+        <h1>{{ isPlatformLogin ? 'Accede a Zentry' : 'Bienvenido a ' + tenant.name() }}</h1>
         @if (registrationComplete()) {
           <div class="notice notice--success" role="status">
             Tu cuenta fue creada. Ya puedes ingresar.
@@ -68,9 +89,11 @@ export function resolveLoginDestination(user: UserResponse, returnUrl: string | 
             [invalid]="invalid('password')"
             [errorText]="invalid('password') ? 'La contraseña es obligatoria.' : ''"
           />
-          <a class="auth-assist-link" routerLink="/recuperar-contrasena">
-            ¿Olvidaste tu contraseña?
-          </a>
+          @if (!isPlatformLogin) {
+            <a class="auth-assist-link" routerLink="/recuperar-contrasena">
+              ¿Olvidaste tu contraseña?
+            </a>
+          }
           <button
             class="button button--primary button--full"
             type="submit"
@@ -79,7 +102,13 @@ export function resolveLoginDestination(user: UserResponse, returnUrl: string | 
             {{ submitting() ? 'Ingresando…' : 'Ingresar' }}
           </button>
         </form>
-        <p class="auth-switch">¿Aún no tienes cuenta? <a routerLink="/registro">Crear cuenta</a></p>
+        @if (!isPlatformLogin) {
+          <p class="auth-switch">
+            ¿Aún no tienes cuenta? <a routerLink="/registro">Crear cuenta</a>
+          </p>
+        } @else {
+          <p class="auth-switch">Acceso reservado para administradores globales.</p>
+        }
       </div>
     </section>
   `,
@@ -91,12 +120,14 @@ export class Login {
   private readonly errors = inject(ApiErrorService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  readonly tenant = inject(TenantContextService);
   readonly submitting = signal(false);
   readonly errorMessage = signal('');
   readonly sessionExpired = signal(this.route.snapshot.queryParamMap.get('sesion') === 'expirada');
   readonly registrationComplete = signal(
     this.route.snapshot.queryParamMap.get('registro') === 'completo',
   );
+  readonly isPlatformLogin = this.route.snapshot.data['platformLogin'] === true;
   readonly form = this.fb.nonNullable.group({
     correo: ['', [Validators.required, Validators.email]],
     password: ['', Validators.required],
@@ -119,10 +150,16 @@ export class Login {
         finalize(() => this.submitting.set(false)),
       )
       .subscribe({
-        next: (user) =>
+        next: (user) => {
+          if (this.isPlatformLogin && !user.roles.includes('SUPERADMIN')) {
+            this.auth.logout();
+            this.errorMessage.set('Esta cuenta no tiene acceso global a Zentry.');
+            return;
+          }
           void this.router.navigateByUrl(
             resolveLoginDestination(user, this.route.snapshot.queryParamMap.get('returnUrl')),
-          ),
+          );
+        },
         error: (error) =>
           this.errorMessage.set(this.errors.message(error, 'Correo o contraseña incorrectos.')),
       });

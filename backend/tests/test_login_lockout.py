@@ -2,8 +2,8 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
-from httpx import ASGITransport, AsyncClient
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 from app.core.security import hash_password
 from app.db.audit_context import AuditContext
@@ -184,7 +184,6 @@ async def test_auth_service_successful_login_clears_throttler() -> None:
     assert success.access_token is not None
 
     # Verificar que el throttler quedó completamente limpio
-    email_key = InMemoryLoginThrottler()
     assert await throttler.get_cooldown_remaining(user.correo) is None
     # Un nuevo fallo empezará desde intento 1
     att, _ = await throttler.record_failed_attempt(user.correo)

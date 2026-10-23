@@ -2,7 +2,7 @@ import { routes } from './app.routes';
 
 describe('Cycle II routes', () => {
   it('protects every customer commerce route', () => {
-    const publicRoutes = routes.find((route) => route.path === '')?.children ?? [];
+    const publicRoutes = routes.find((route) => route.path === '' && route.children)?.children ?? [];
     const commercePaths = [
       'carrito',
       'checkout',

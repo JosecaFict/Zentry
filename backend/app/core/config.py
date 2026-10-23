@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     database_url: str = Field(alias="DATABASE_URL")
-    app_name: str = Field(default="Capricho Store API", alias="APP_NAME")
+    app_name: str = Field(default="Zentry API", alias="APP_NAME")
     app_env: Literal["development", "test", "staging", "production"] = Field(
         default="development",
         alias="APP_ENV",
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     cloudinary_url: str | None = Field(default=None, alias="CLOUDINARY_URL")
     brevo_api_key: str | None = Field(default=None, alias="BREVO_API_KEY")
     brevo_sender_email: str | None = Field(default=None, alias="BREVO_SENDER_EMAIL")
-    brevo_sender_name: str = Field(default="Capricho Store", alias="BREVO_SENDER_NAME")
+    brevo_sender_name: str = Field(default="Zentry", alias="BREVO_SENDER_NAME")
     password_reset_otp_expire_minutes: int = Field(
         default=10,
         alias="PASSWORD_RESET_OTP_EXPIRE_MINUTES",
