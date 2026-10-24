@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.models import Empleado, Rol, RolPermiso, Sucursal, Usuario, UsuarioRol
@@ -135,6 +135,13 @@ class PlatformRepository:
         )
         self.session.add(tenant)
         await self.session.flush()
+
+        # Las tablas comerciales exigen el contexto PostgreSQL incluso cuando
+        # el tenant se acaba de crear desde una cuenta global SUPERADMIN.
+        await self.session.execute(
+            text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(tenant.id_tenant)},
+        )
 
         self.session.add(
             Subscription(
