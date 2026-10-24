@@ -36,11 +36,10 @@ async def unhandled_exception_handler(
     )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": f"{type(exc).__name__}: {exc}"},
+        content={"detail": "Ocurrió un error interno. Intenta nuevamente en unos minutos."},
     )
 
 
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(DatabaseUnavailableError, database_unavailable_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
-
