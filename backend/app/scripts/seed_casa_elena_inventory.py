@@ -325,10 +325,15 @@ async def get_or_add(session, model_type, condition, **values):
     existing = await session.scalar(lookup)
     if existing is not None:
         return existing
-    await session.execute(
-        pg_insert(model_type).values(id_tenant=tenant_id, **values).on_conflict_do_nothing()
+    created = await session.scalar(
+        pg_insert(model_type)
+        .values(id_tenant=tenant_id, **values)
+        .on_conflict_do_nothing()
+        .returning(model_type)
     )
     await session.flush()
+    if created is not None:
+        return created
     existing = await session.scalar(lookup)
     if existing is None:
         raise SeedError(f"No se pudo crear ni recuperar {model_type.__name__}.")
@@ -480,7 +485,7 @@ async def run_seed(tenant_slug: str = TENANT_SLUG) -> tuple[str, dict[str, int]]
                     id_ciudad=city.id_ciudad,
                     nombre_comercial=name,
                     razon_social=data[0],
-                    nit=f"{prefix}-{data[1].removeprefix('CE-')}",
+                    nit=f"ZENTRY-T{tenant.id_tenant}-P{index}",
                     telefono=f"69{tenant.id_tenant:04d}{index:02d}"[-8:],
                     correo=f"ventas{index}+{tenant.slug}@proveedor-demo.test",
                     direccion=f"Parque Industrial, módulo {index}",
