@@ -20,6 +20,14 @@ class _CompanySelectionScreenState
   Timer? _debounce;
 
   @override
+  void initState() {
+    super.initState();
+    Future.microtask(
+      () => ref.read(tenantControllerProvider.notifier).search(''),
+    );
+  }
+
+  @override
   void dispose() {
     _debounce?.cancel();
     _search.dispose();
@@ -51,21 +59,13 @@ class _CompanySelectionScreenState
               children: [
                 Row(
                   children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: AppColors.ink,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Text(
-                        'Z',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                        ),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.asset(
+                        'assets/images/zentry-mark.png',
+                        width: 44,
+                        height: 44,
+                        fit: BoxFit.cover,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -77,33 +77,43 @@ class _CompanySelectionScreenState
                 ),
                 const SizedBox(height: 56),
                 Text(
-                  'Encuentra tu empresa',
+                  '¿Qué tienda estás buscando?',
                   style: Theme.of(context).textTheme.displaySmall,
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Busca por el nombre comercial o por su identificador. Tu cuenta y tus compras quedarán dentro de esa empresa.',
+                  'Busca y selecciona una tienda para explorar sus productos y realizar tus compras.',
                 ),
                 const SizedBox(height: 28),
                 TextField(
                   controller: _search,
-                  autofocus: true,
                   onChanged: _changed,
                   textInputAction: TextInputAction.search,
                   decoration: const InputDecoration(
-                    labelText: 'Nombre o identificador',
+                    labelText: 'Buscar tiendas',
                     hintText: 'Ej. Capricho Store',
                     prefixIcon: Icon(Icons.search_rounded),
                   ),
                 ),
                 const SizedBox(height: 20),
+                if (!state.loading && state.results.isNotEmpty) ...[
+                  Text(
+                    _search.text.trim().isEmpty
+                        ? 'Tiendas disponibles'
+                        : 'Resultados',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (state.loading)
                   const Center(child: CircularProgressIndicator())
                 else if (state.error != null)
                   _Message(text: state.error!, error: true)
-                else if (_search.text.trim().length >= 2 && state.results.isEmpty)
+                else if (state.results.isEmpty)
                   const _Message(
-                    text: 'No encontramos una empresa con ese nombre.',
+                    text: 'No encontramos una tienda con ese nombre.',
                   )
                 else
                   ...state.results.map(

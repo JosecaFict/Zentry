@@ -104,14 +104,6 @@ class TenantController extends Notifier<TenantState> {
 
   Future<void> search(String query) async {
     final clean = query.trim();
-    if (clean.length < 2) {
-      state = state.copyWith(
-        results: const [],
-        loading: false,
-        clearError: true,
-      );
-      return;
-    }
     state = state.copyWith(loading: true, clearError: true);
     try {
       final response = await ref.read(dioProvider).get<List<dynamic>>(

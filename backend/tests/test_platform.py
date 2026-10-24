@@ -96,6 +96,17 @@ async def test_public_tenant_search_requires_no_session() -> None:
 
 
 @pytest.mark.asyncio
+async def test_public_tenant_search_allows_initial_catalog() -> None:
+    service = AsyncMock()
+    service.search_public_tenants.return_value = []
+
+    response = await search_public_tenants(service=service, query="")
+
+    assert response == []
+    service.search_public_tenants.assert_awaited_once_with("")
+
+
+@pytest.mark.asyncio
 async def test_platform_can_create_tenant() -> None:
     service = AsyncMock()
     service.create_tenant.return_value = {

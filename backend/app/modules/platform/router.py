@@ -32,7 +32,7 @@ public_router = APIRouter(prefix="/public", tags=["public"])
 @public_router.get("/tenants", response_model=list[TenantPublicResponse])
 async def search_public_tenants(
     service: Annotated[PlatformService, Depends(get_platform_service)],
-    query: Annotated[str, Query(min_length=2, max_length=100)],
+    query: Annotated[str, Query(max_length=100)] = "",
 ) -> list[TenantPublicResponse]:
     return await service.search_public_tenants(query.strip())
 
