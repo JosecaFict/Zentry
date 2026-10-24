@@ -1,4 +1,11 @@
-from app.scripts.seed_casa_elena_inventory import COLORS, GARMENTS, SIZES, SUPPLIERS
+from app.scripts.seed_casa_elena_inventory import (
+    COLORS,
+    GARMENTS,
+    REMAINING_DEMO_SLUGS,
+    SIZES,
+    SUPPLIERS,
+    tenant_prefix,
+)
 
 
 def test_casa_elena_seed_dataset_is_consistent() -> None:
@@ -15,3 +22,11 @@ def test_casa_elena_seed_produces_expected_variant_count() -> None:
 
     assert expected_variants == 120
     assert sum(item.stock * len(item.colors) * len(SIZES) for item in GARMENTS) == 580
+
+
+def test_remaining_tenants_have_distinct_global_prefixes() -> None:
+    prefixes = [tenant_prefix(slug) for slug in REMAINING_DEMO_SLUGS]
+
+    assert len(REMAINING_DEMO_SLUGS) == 9
+    assert len(prefixes) == len(set(prefixes))
+    assert "casa-elena" not in REMAINING_DEMO_SLUGS

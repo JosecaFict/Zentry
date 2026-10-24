@@ -45,11 +45,26 @@ from app.modules.inventory.models import (
 from app.modules.platform.models import Tenant
 
 TENANT_SLUG = "casa-elena"
-SEED_MARKER = "CARGA INICIAL CASA ELENA 2026-01"
+SEED_MARKER = "CARGA INICIAL ZENTRY 2026-01"
+REMAINING_DEMO_SLUGS = (
+    "nova-moda",
+    "urban-style",
+    "bella-boutique",
+    "andina-fashion",
+    "prisma-store",
+    "elite-moda",
+    "vertice",
+    "magnolia",
+    "altura-comercial",
+)
 
 
 class SeedError(RuntimeError):
     """Impide que se guarde una carga incompleta o duplicada."""
+
+
+class AlreadySeededError(SeedError):
+    """Indica que una empresa ya tiene la carga inicial."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,8 +277,13 @@ def _decimal(value: str | None, increment: Decimal = Decimal("0")) -> Decimal | 
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Carga compras e inventario para Casa Elena.")
+    parser = argparse.ArgumentParser(description="Carga compras e inventario de demostración.")
     parser.add_argument("--yes", action="store_true", help="Omite la confirmación interactiva.")
+    parser.add_argument(
+        "--all-remaining",
+        action="store_true",
+        help="Carga las otras nueve empresas demo y omite Casa Elena.",
+    )
     return parser
 
 
@@ -273,15 +293,22 @@ async def add(session, model):
     return model
 
 
-async def run_seed() -> dict[str, int]:
+def tenant_prefix(slug: str) -> str:
+    """Produce un prefijo estable para identidades que son globalmente únicas."""
+    return "".join(character for character in slug.upper() if character.isalnum())[:8]
+
+
+async def run_seed(tenant_slug: str = TENANT_SLUG) -> tuple[str, dict[str, int]]:
     async with async_session_factory() as session:
         tenant = await session.scalar(
             select(Tenant)
-            .where(Tenant.slug == TENANT_SLUG)
+            .where(Tenant.slug == tenant_slug)
             .execution_options(include_all_tenants=True)
         )
         if tenant is None:
-            raise SeedError("No existe la empresa Casa Elena (slug casa-elena).")
+            raise SeedError(f"No existe la empresa con slug {tenant_slug}.")
+
+        prefix = tenant_prefix(tenant.slug)
 
         set_tenant_context(tenant.id_tenant)
         try:
@@ -290,15 +317,15 @@ async def run_seed() -> dict[str, int]:
                 AuditContext(
                     tenant_id=tenant.id_tenant,
                     origen="SISTEMA",
-                    user_agent="seed_casa_elena_inventory",
-                    request_id="seed-casa-elena-inventory-v1",
+                    user_agent="seed_demo_inventory",
+                    request_id=f"seed-inventory-{tenant.slug}-v1",
                 ),
             )
             previous = await session.scalar(
                 select(OrdenCompra.id_orden_compra).where(OrdenCompra.observacion == SEED_MARKER)
             )
             if previous is not None:
-                raise SeedError("La carga inicial de Casa Elena ya fue ejecutada.")
+                raise AlreadySeededError(f"{tenant.nombre} ya tiene la carga inicial.")
 
             city = await session.scalar(
                 select(Ciudad).where(
@@ -324,7 +351,7 @@ async def run_seed() -> dict[str, int]:
                         id_ciudad=city.id_ciudad,
                         nombre="Sucursal Principal",
                         direccion="Av. San Martín, Equipetrol",
-                        telefono="71001001",
+                        telefono=f"71{tenant.id_tenant:06d}"[-8:],
                         hora_apertura=time(9, 0),
                         hora_cierre=time(20, 0),
                     ),
@@ -332,7 +359,7 @@ async def run_seed() -> dict[str, int]:
 
             admin_id = await session.scalar(
                 select(Usuario.id_usuario).where(
-                    Usuario.correo == "admin+casa-elena@zentrysaas.store"
+                    Usuario.correo == f"admin+{tenant.slug}@zentrysaas.store"
                 )
             )
             categories = {
@@ -361,12 +388,12 @@ async def run_seed() -> dict[str, int]:
                         id_ciudad=city.id_ciudad,
                         nombre_comercial=name,
                         razon_social=data[0],
-                        nit=data[1],
-                        telefono=f"6900200{index}",
-                        correo=f"ventas{index}@proveedor-demo.test",
+                        nit=f"{prefix}-{data[1].removeprefix('CE-')}",
+                        telefono=f"69{tenant.id_tenant:04d}{index:02d}"[-8:],
+                        correo=f"ventas{index}+{tenant.slug}@proveedor-demo.test",
                         direccion=f"Parque Industrial, módulo {index}",
                         nombre_contacto=data[2],
-                        telefono_contacto=f"6900300{index}",
+                        telefono_contacto=f"68{tenant.id_tenant:04d}{index:02d}"[-8:],
                     ),
                 )
 
@@ -418,8 +445,11 @@ async def run_seed() -> dict[str, int]:
                         ),
                     )
                     for color_index, color_name in enumerate(garment.colors, start=1):
-                        sku = f"CE-{garment.code}-{size_code}-{color_index:02d}"
-                        barcode = f"779{product_count:03d}{size_index + 1:02d}{color_index:02d}26"
+                        sku = f"{prefix}-{garment.code}-{size_code}-{color_index:02d}"
+                        barcode = (
+                            f"779{tenant.id_tenant:04d}{product_count:02d}"
+                            f"{size_index + 1}{color_index}26"
+                        )
                         variant = await add(
                             session,
                             VarianteProducto(
@@ -485,7 +515,7 @@ async def run_seed() -> dict[str, int]:
                             id_detalle_recepcion=detail.id_detalle_recepcion,
                             id_sucursal=branch.id_sucursal,
                             id_variante=variant.id_variante,
-                            numero_lote=f"CE-2026-{supplier_index:02d}-{line_index:03d}",
+                            numero_lote=(f"{prefix}-2026-{supplier_index:02d}-{line_index:03d}"),
                             cantidad_inicial=quantity,
                             cantidad_disponible=0,
                             costo_unitario=cost,
@@ -507,7 +537,7 @@ async def run_seed() -> dict[str, int]:
                             cantidad=quantity,
                             referencia_tipo="RECEPCION",
                             referencia_id=receipt.id_recepcion,
-                            motivo="Carga inicial de inventario Casa Elena",
+                            motivo=f"Carga inicial de inventario {tenant.nombre}",
                         ),
                     )
                     await add(
@@ -522,7 +552,7 @@ async def run_seed() -> dict[str, int]:
                     total_units += quantity
 
             await session.commit()
-            return {
+            return tenant.nombre, {
                 "proveedores": len(suppliers),
                 "marcas": len(brands),
                 "categorias": len(categories),
@@ -540,26 +570,38 @@ async def run_seed() -> dict[str, int]:
 
 async def async_main() -> int:
     args = build_parser().parse_args()
+    slugs = REMAINING_DEMO_SLUGS if args.all_remaining else (TENANT_SLUG,)
     if not args.yes:
-        print(
-            "Se cargarán compras, catálogo e inventario para Casa Elena; "
-            "las imágenes quedarán vacías."
-        )
-        confirmation = await asyncio.to_thread(input, "Escribe CARGAR CASA ELENA para confirmar: ")
-        if confirmation.strip() != "CARGAR CASA ELENA":
+        scope = "las otras nueve empresas demo" if args.all_remaining else "Casa Elena"
+        print(f"Se cargarán compras, catálogo e inventario para {scope}; sin imágenes.")
+        phrase = "CARGAR 9 EMPRESAS" if args.all_remaining else "CARGAR CASA ELENA"
+        confirmation = await asyncio.to_thread(input, f"Escribe {phrase} para confirmar: ")
+        if confirmation.strip() != phrase:
             print("Operación cancelada; no se guardó ningún cambio.")
             return 1
+    completed: list[tuple[str, dict[str, int]]] = []
+    skipped: list[str] = []
     try:
-        result = await run_seed()
-    except (SeedError, SQLAlchemyError) as exc:
-        print(f"No se realizó la carga: {exc}")
-        return 1
+        for slug in slugs:
+            try:
+                result = await run_seed(slug)
+                completed.append(result)
+                print(f"Carga completada: {result[0]}")
+            except AlreadySeededError as exc:
+                skipped.append(str(exc))
+                print(f"Omitida: {exc}")
+            except (SeedError, SQLAlchemyError) as exc:
+                print(f"No se pudo cargar {slug}: {exc}")
+                return 1
     finally:
         await engine.dispose()
-    print("\nCarga de Casa Elena completada correctamente:")
-    for label, value in result.items():
-        print(f"  {label.capitalize()}: {value}")
-    print("  Imágenes: 0 (listas para que las subas desde el panel)")
+    print(f"\nEmpresas cargadas: {len(completed)}; omitidas: {len(skipped)}")
+    for name, result in completed:
+        print(
+            f"  {name}: {result['productos']} productos, {result['variantes']} variantes, "
+            f"{result['unidades']} unidades"
+        )
+    print("Imágenes: 0 por empresa (listas para que las subas desde el panel)")
     return 0
 
 
