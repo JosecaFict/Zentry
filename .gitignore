@@ -31,3 +31,4 @@ apk-release/
 .DS_Store
 Thumbs.db
 *.log
+tenant_credentials*.csv
