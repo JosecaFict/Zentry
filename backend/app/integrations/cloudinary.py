@@ -132,6 +132,71 @@ class CloudinaryStorage:
             alto_px=payload.get("height"),
         )
 
+    async def upload_tenant_logo(
+        self,
+        *,
+        content: bytes,
+        filename: str,
+        content_type: str,
+    ) -> CloudinaryUpload:
+        timestamp = int(time.time())
+        params: dict[str, str | int] = {
+            "folder": f"{self._tenant_folder()}/branding",
+            "timestamp": timestamp,
+            "unique_filename": "true",
+            "use_filename": "true",
+        }
+        data = {
+            **params,
+            "api_key": self.api_key,
+            "signature": self._signature(params),
+        }
+        url = f"https://api.cloudinary.com/v1_1/{self.cloud_name}/image/upload"
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.post(
+                    url,
+                    data=data,
+                    files={"file": (filename, content, content_type)},
+                )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise CloudinaryError("Cloudinary no pudo almacenar el logotipo") from exc
+
+        secure_url = payload.get("secure_url")
+        public_id = payload.get("public_id")
+        if not isinstance(secure_url, str) or not isinstance(public_id, str):
+            raise CloudinaryError("Cloudinary devolvió una respuesta incompleta")
+        return CloudinaryUpload(
+            public_id=public_id,
+            secure_url=secure_url,
+            formato=payload.get("format"),
+            ancho_px=payload.get("width"),
+            alto_px=payload.get("height"),
+        )
+
+    def public_id_from_url(self, secure_url: str | None) -> str | None:
+        if not secure_url:
+            return None
+        parsed = urlparse(secure_url)
+        if parsed.hostname != "res.cloudinary.com":
+            return None
+        marker = f"/{self.cloud_name}/image/upload/"
+        if marker not in parsed.path:
+            return None
+        resource_path = parsed.path.split(marker, maxsplit=1)[1]
+        parts = resource_path.split("/")
+        if parts and parts[0].startswith("v") and parts[0][1:].isdigit():
+            parts = parts[1:]
+        if not parts:
+            return None
+        public_id = "/".join(parts)
+        if "." in parts[-1]:
+            public_id = public_id.rsplit(".", maxsplit=1)[0]
+        expected_prefix = f"{self._tenant_folder()}/branding/"
+        return public_id if public_id.startswith(expected_prefix) else None
+
     async def upload_tryon_photo(
         self,
         *,

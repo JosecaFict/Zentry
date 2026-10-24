@@ -41,11 +41,10 @@ class TenantPublicResponse(BaseModel):
 
 class TenantBrandUpdate(BaseModel):
     nombre: str = Field(min_length=2, max_length=150)
-    logo_url: str | None = Field(default=None, max_length=500)
     color_primario: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     color_primario_oscuro: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
 
-    @field_validator("nombre", "logo_url")
+    @field_validator("nombre")
     @classmethod
     def strip_brand_text(cls, value: str | None) -> str | None:
         if value is None:

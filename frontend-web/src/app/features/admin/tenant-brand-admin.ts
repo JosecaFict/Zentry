@@ -30,11 +30,42 @@ import { environment } from '../../../environments/environment';
             }
           </label>
 
-          <label>
-            <span>URL del logotipo</span>
-            <input formControlName="logo_url" type="url" placeholder="https://.../logo.png" />
-            <small class="field-help">Déjalo vacío para utilizar el logotipo predeterminado.</small>
-          </label>
+          <div class="logo-upload">
+            <span class="logo-upload__label">Logotipo de la tienda</span>
+            <div class="logo-upload__controls">
+              <label class="logo-upload__picker">
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  (change)="selectLogo($event)"
+                />
+                <span>{{ selectedLogo() ? 'Cambiar archivo' : 'Seleccionar imagen' }}</span>
+              </label>
+              <button
+                class="logo-upload__button"
+                type="button"
+                [disabled]="!selectedLogo() || uploadingLogo()"
+                (click)="uploadLogo()"
+              >
+                {{ uploadingLogo() ? 'Subiendo…' : 'Subir logotipo' }}
+              </button>
+              @if (tenant.tenant()?.logo_url) {
+                <button
+                  class="logo-upload__remove"
+                  type="button"
+                  [disabled]="uploadingLogo()"
+                  (click)="deleteLogo()"
+                >
+                  Eliminar actual
+                </button>
+              }
+            </div>
+            @if (selectedLogo()) {
+              <small class="field-help">{{ selectedLogo()?.name }}</small>
+            } @else {
+              <small class="field-help">PNG, JPG o WebP. Tamaño máximo: 2 MB.</small>
+            }
+          </div>
 
           <div class="brand-settings__colors">
             <label>
@@ -137,6 +168,71 @@ import { environment } from '../../../environments/environment';
       gap: 8px;
       color: var(--ink);
       font-weight: 700;
+    }
+    .logo-upload {
+      display: grid;
+      gap: 8px;
+    }
+    .logo-upload__label {
+      color: var(--ink);
+      font-weight: 700;
+    }
+    .logo-upload__controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .logo-upload__picker input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+    .logo-upload__picker span,
+    .logo-upload__button {
+      display: inline-flex;
+      min-height: 46px;
+      box-sizing: border-box;
+      align-items: center;
+      justify-content: center;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .logo-upload__picker:focus-within span {
+      outline: 3px solid color-mix(in srgb, var(--accent) 24%, transparent);
+      border-color: var(--accent);
+    }
+    .logo-upload__button {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+    .logo-upload__button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .logo-upload__remove {
+      min-height: 46px;
+      padding: 0 4px;
+      border: 0;
+      background: transparent;
+      color: var(--danger);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .logo-upload__remove:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
     input {
       min-height: 48px;
@@ -255,16 +351,15 @@ import { environment } from '../../../environments/environment';
 export class TenantBrandAdmin {
   readonly tenant = inject(TenantContextService);
   readonly saving = signal(false);
+  readonly uploadingLogo = signal(false);
+  readonly selectedLogo = signal<File | null>(null);
+  readonly localLogoPreview = signal<string | null>(null);
   readonly message = signal('');
   readonly hasError = signal(false);
   readonly form = new FormGroup({
     nombre: new FormControl(this.tenant.name(), {
       nonNullable: true,
       validators: [Validators.required, Validators.minLength(2), Validators.maxLength(150)],
-    }),
-    logo_url: new FormControl(this.tenant.tenant()?.logo_url ?? '', {
-      nonNullable: true,
-      validators: [Validators.maxLength(500)],
     }),
     color_primario: new FormControl(this.tenant.primaryColor(), {
       nonNullable: true,
@@ -283,7 +378,80 @@ export class TenantBrandAdmin {
   }
 
   previewLogo(): string {
-    return this.form.controls.logo_url.value.trim() || this.tenant.logoUrl();
+    return this.localLogoPreview() || this.tenant.logoUrl();
+  }
+
+  selectLogo(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    this.message.set('');
+    this.hasError.set(false);
+    if (!file) {
+      this.selectedLogo.set(null);
+      this.localLogoPreview.set(null);
+      return;
+    }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      this.selectedLogo.set(null);
+      this.localLogoPreview.set(null);
+      this.hasError.set(true);
+      this.message.set('Usa un logotipo PNG, JPG o WebP.');
+      input.value = '';
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      this.selectedLogo.set(null);
+      this.localLogoPreview.set(null);
+      this.hasError.set(true);
+      this.message.set('El logotipo no debe superar 2 MB.');
+      input.value = '';
+      return;
+    }
+    this.selectedLogo.set(file);
+    const reader = new FileReader();
+    reader.onload = () => this.localLogoPreview.set(String(reader.result));
+    reader.readAsDataURL(file);
+  }
+
+  uploadLogo(): void {
+    const file = this.selectedLogo();
+    if (!file || this.uploadingLogo()) return;
+    this.uploadingLogo.set(true);
+    this.message.set('');
+    this.hasError.set(false);
+    this.tenant.uploadLogo(file).subscribe({
+      next: () => {
+        this.uploadingLogo.set(false);
+        this.selectedLogo.set(null);
+        this.localLogoPreview.set(null);
+        this.message.set('Logotipo actualizado correctamente.');
+      },
+      error: (error: HttpErrorResponse) => {
+        this.uploadingLogo.set(false);
+        this.hasError.set(true);
+        this.message.set(error.error?.detail || 'No se pudo subir el logotipo.');
+      },
+    });
+  }
+
+  deleteLogo(): void {
+    if (this.uploadingLogo()) return;
+    this.uploadingLogo.set(true);
+    this.message.set('');
+    this.hasError.set(false);
+    this.tenant.deleteLogo().subscribe({
+      next: () => {
+        this.uploadingLogo.set(false);
+        this.selectedLogo.set(null);
+        this.localLogoPreview.set(null);
+        this.message.set('Logotipo eliminado correctamente.');
+      },
+      error: (error: HttpErrorResponse) => {
+        this.uploadingLogo.set(false);
+        this.hasError.set(true);
+        this.message.set(error.error?.detail || 'No se pudo eliminar el logotipo.');
+      },
+    });
   }
 
   save(): void {
@@ -292,7 +460,7 @@ export class TenantBrandAdmin {
     this.message.set('');
     this.hasError.set(false);
     const value = this.form.getRawValue();
-    this.tenant.updateBrand({ ...value, logo_url: value.logo_url.trim() || null }).subscribe({
+    this.tenant.updateBrand(value).subscribe({
       next: () => {
         this.saving.set(false);
         this.message.set('Identidad actualizada correctamente.');

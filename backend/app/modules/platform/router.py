@@ -1,13 +1,24 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 
+from app.integrations.cloudinary import CloudinaryError, CloudinaryStorage
 from app.modules.auth.dependencies import (
     CurrentPrincipal,
     require_global_permission,
     require_permission,
 )
-from app.modules.platform.dependencies import get_platform_service
+from app.modules.platform.dependencies import get_platform_cloudinary_storage, get_platform_service
 from app.modules.platform.schemas import (
     PlanResponse,
     PlatformOverview,
@@ -27,6 +38,9 @@ from app.modules.platform.service import PlatformService
 router = APIRouter(prefix="/platform", tags=["platform"])
 tenant_router = APIRouter(prefix="/tenant", tags=["tenant"])
 public_router = APIRouter(prefix="/public", tags=["public"])
+
+MAX_TENANT_LOGO_BYTES = 2 * 1024 * 1024
+ALLOWED_TENANT_LOGO_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 @public_router.get("/tenants", response_model=list[TenantPublicResponse])
@@ -66,6 +80,87 @@ async def update_tenant_brand(
             detail="La cuenta no pertenece a una empresa",
         )
     return await service.update_tenant_brand(principal.id_tenant, payload)
+
+
+@tenant_router.post("/brand/logo", response_model=TenantContextResponse)
+async def upload_tenant_logo(
+    principal: Annotated[
+        CurrentPrincipal,
+        Depends(require_permission("permisos.asignar")),
+    ],
+    service: Annotated[PlatformService, Depends(get_platform_service)],
+    storage: Annotated[CloudinaryStorage, Depends(get_platform_cloudinary_storage)],
+    file: Annotated[UploadFile, File()],
+) -> TenantContextResponse:
+    if principal.id_tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="La cuenta no pertenece a una empresa",
+        )
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_TENANT_LOGO_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Usa un logotipo JPG, PNG o WebP",
+        )
+    content = await file.read(MAX_TENANT_LOGO_BYTES + 1)
+    await file.close()
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El archivo del logotipo está vacío",
+        )
+    if len(content) > MAX_TENANT_LOGO_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="El logotipo no debe superar 2 MB",
+        )
+
+    current = await service.tenant_context(principal.id_tenant)
+    try:
+        uploaded = await storage.upload_tenant_logo(
+            content=content,
+            filename=file.filename or "logo",
+            content_type=content_type,
+        )
+    except CloudinaryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    try:
+        updated = await service.update_tenant_logo(principal.id_tenant, uploaded.secure_url)
+    except Exception:
+        await storage.destroy(uploaded.public_id)
+        raise
+
+    previous_public_id = storage.public_id_from_url(current.logo_url)
+    if previous_public_id and previous_public_id != uploaded.public_id:
+        await storage.destroy(previous_public_id)
+    return updated
+
+
+@tenant_router.delete("/brand/logo", response_model=TenantContextResponse)
+async def delete_tenant_logo(
+    principal: Annotated[
+        CurrentPrincipal,
+        Depends(require_permission("permisos.asignar")),
+    ],
+    service: Annotated[PlatformService, Depends(get_platform_service)],
+    storage: Annotated[CloudinaryStorage, Depends(get_platform_cloudinary_storage)],
+) -> TenantContextResponse:
+    if principal.id_tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="La cuenta no pertenece a una empresa",
+        )
+    current = await service.tenant_context(principal.id_tenant)
+    updated = await service.update_tenant_logo(principal.id_tenant, None)
+    previous_public_id = storage.public_id_from_url(current.logo_url)
+    if previous_public_id:
+        await storage.destroy(previous_public_id)
+    return updated
 
 
 @router.get("/overview", response_model=PlatformOverview)

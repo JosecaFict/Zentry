@@ -84,6 +84,20 @@ export class TenantContextService {
       .pipe(tap((tenant) => this.setTenant(tenant)));
   }
 
+  uploadLogo(file: File): Observable<TenantBrand> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http
+      .post<TenantBrand>(`${API_BASE_URL}/tenant/brand/logo`, formData)
+      .pipe(tap((tenant) => this.setTenant(tenant)));
+  }
+
+  deleteLogo(): Observable<TenantBrand> {
+    return this.http
+      .delete<TenantBrand>(`${API_BASE_URL}/tenant/brand/logo`)
+      .pipe(tap((tenant) => this.setTenant(tenant)));
+  }
+
   private setTenant(tenant: TenantBrand): void {
     this.state.set(tenant);
     document.documentElement.style.setProperty('--accent', tenant.color_primario);

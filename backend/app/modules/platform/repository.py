@@ -220,9 +220,16 @@ class PlatformRepository:
         if tenant is None:
             return False
         tenant.nombre = payload.nombre
-        tenant.logo_url = payload.logo_url
         tenant.color_primario = payload.color_primario.upper()
         tenant.color_primario_oscuro = payload.color_primario_oscuro.upper()
+        await self.session.flush()
+        return True
+
+    async def update_tenant_logo(self, tenant_id: int, logo_url: str | None) -> bool:
+        tenant = await self.session.get(Tenant, tenant_id)
+        if tenant is None:
+            return False
+        tenant.logo_url = logo_url
         await self.session.flush()
         return True
 

@@ -14,7 +14,6 @@ export interface TenantBrand {
 
 export interface TenantBrandUpdate {
   nombre: string;
-  logo_url: string | null;
   color_primario: string;
   color_primario_oscuro: string;
 }

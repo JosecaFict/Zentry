@@ -80,6 +80,18 @@ class PlatformService:
         await self.repository.commit()
         return await self.tenant_context(tenant_id)
 
+    async def update_tenant_logo(
+        self, tenant_id: int, logo_url: str | None
+    ) -> TenantContextResponse:
+        updated = await self.repository.update_tenant_logo(tenant_id, logo_url)
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Empresa no encontrada",
+            )
+        await self.repository.commit()
+        return await self.tenant_context(tenant_id)
+
     async def list_plans(self) -> list[PlanResponse]:
         plans = await self.repository.list_plans()
         return [PlanResponse.model_validate(plan, from_attributes=True) for plan in plans]
