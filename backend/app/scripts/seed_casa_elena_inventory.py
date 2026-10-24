@@ -345,6 +345,17 @@ def tenant_prefix(slug: str) -> str:
     return "".join(character for character in slug.upper() if character.isalnum())[:8]
 
 
+def internal_ean13(tenant_id: int, product_number: int, size_number: int, color_number: int) -> str:
+    """Genera un EAN-13 de uso interno, único para una variante demo."""
+    if tenant_id > 9999:
+        raise SeedError("El identificador de empresa excede el rango del código de barras demo.")
+    base = f"29{tenant_id:04d}{product_number:02d}{size_number}{color_number}00"
+    checksum = (
+        10 - sum(int(digit) * (1 if index % 2 == 0 else 3) for index, digit in enumerate(base)) % 10
+    ) % 10
+    return f"{base}{checksum}"
+
+
 async def run_seed(tenant_slug: str = TENANT_SLUG) -> tuple[str, dict[str, int]]:
     async with async_session_factory() as session:
         tenant = await session.scalar(
@@ -542,9 +553,11 @@ async def run_seed(tenant_slug: str = TENANT_SLUG) -> tuple[str, dict[str, int]]
                     )
                     for color_index, color_name in enumerate(garment.colors, start=1):
                         sku = f"{prefix}-{garment.code}-{size_code}-{color_index:02d}"
-                        barcode = (
-                            f"779{tenant.id_tenant:04d}{product_count:02d}"
-                            f"{size_index + 1}{color_index}26"
+                        barcode = internal_ean13(
+                            tenant.id_tenant,
+                            product_count,
+                            size_index + 1,
+                            color_index,
                         )
                         variant = await add(
                             session,

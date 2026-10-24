@@ -4,6 +4,7 @@ from app.scripts.seed_casa_elena_inventory import (
     REMAINING_DEMO_SLUGS,
     SIZES,
     SUPPLIERS,
+    internal_ean13,
     tenant_prefix,
 )
 
@@ -33,3 +34,16 @@ def test_remaining_tenants_have_distinct_global_prefixes() -> None:
     assert len(REMAINING_DEMO_SLUGS) == 9
     assert len(prefixes) == len(set(prefixes))
     assert "casa-elena" not in REMAINING_DEMO_SLUGS
+
+
+def test_internal_barcodes_are_valid_and_unique_between_tenants() -> None:
+    codes = {
+        internal_ean13(tenant_id, product, size, color)
+        for tenant_id in range(1, 11)
+        for product in range(1, 13)
+        for size in range(1, 6)
+        for color in range(1, 3)
+    }
+
+    assert len(codes) == 1200
+    assert all(len(code) == 13 and code.startswith("29") for code in codes)
