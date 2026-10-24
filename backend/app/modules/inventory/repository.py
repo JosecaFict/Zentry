@@ -209,6 +209,7 @@ class InventoryRepository:
             .join(Talla, Talla.id_talla == VarianteProducto.id_talla)
             .join(Color, Color.id_color == VarianteProducto.id_color)
             .join(Categoria, Categoria.id_categoria == Producto.id_categoria)
+            .where(Producto.activo.is_(True), VarianteProducto.activo.is_(True))
         )
 
     async def list_inventory(self, **filters: Any) -> list[Any]:
@@ -325,7 +326,10 @@ class InventoryRepository:
         return list(
             (
                 await self.session.execute(
-                    statement.order_by(LoteInventario.fecha_ingreso.desc(), LoteInventario.id_lote.desc())
+                    statement.order_by(
+                        LoteInventario.fecha_ingreso.desc(),
+                        LoteInventario.id_lote.desc(),
+                    )
                 )
             ).all()
         )
