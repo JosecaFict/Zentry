@@ -49,7 +49,15 @@ class TenantPathMiddleware:
         clear_tenant_context()
         match = TENANT_PATH.match(scope["path"])
         header_slug = self._header_slug(scope)
-        slug = match.group("slug") if match is not None else header_slug
+        path_slug = match.group("slug") if match is not None else None
+        if path_slug is not None and header_slug is not None and path_slug != header_slug:
+            response = JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"detail": "La URL y la cabecera indican empresas diferentes"},
+            )
+            await response(scope, receive, send)
+            return
+        slug = path_slug or header_slug
         if slug is None or (match is None and scope["path"].startswith(GLOBAL_PREFIXES)):
             try:
                 await self.app(scope, receive, send)

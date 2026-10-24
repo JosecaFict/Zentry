@@ -163,7 +163,7 @@ async def get_current_principal(
         ):
             raise InactiveUserError("SUSCRIPCION_NO_VIGENTE")
         requested_slug = getattr(request.state, "tenant_slug", None)
-        if requested_slug is not None and requested_slug != tenant_access.slug:
+        if requested_slug != tenant_access.slug:
             raise PermissionDeniedError
         set_tenant_context(user.id_tenant)
 
@@ -233,7 +233,7 @@ async def get_optional_principal(
         ):
             return None
         requested_slug = getattr(request.state, "tenant_slug", None)
-        if requested_slug is not None and requested_slug != tenant_access.slug:
+        if requested_slug != tenant_access.slug:
             return None
         set_tenant_context(user.id_tenant)
 

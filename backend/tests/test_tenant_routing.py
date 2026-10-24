@@ -64,6 +64,23 @@ async def test_tenant_header_sets_context_without_rewriting_path(monkeypatch) ->
 
 
 @pytest.mark.asyncio
+async def test_tenant_route_rejects_conflicting_header(monkeypatch) -> None:
+    async def should_not_resolve(_: str) -> ResolvedTenant:
+        raise AssertionError("A conflicting tenant identity must be rejected first")
+
+    monkeypatch.setattr("app.middleware.tenant.resolve_tenant_slug", should_not_resolve)
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"X-Tenant-Slug": "otra-tienda"},
+    ) as client:
+        response = await client.get("/api/v1/t/capricho-store/health")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "La URL y la cabecera indican empresas diferentes"
+
+
+@pytest.mark.asyncio
 async def test_platform_routes_ignore_tenant_header(monkeypatch) -> None:
     async def should_not_resolve(_: str) -> ResolvedTenant:
         raise AssertionError("Platform routes must remain global")
