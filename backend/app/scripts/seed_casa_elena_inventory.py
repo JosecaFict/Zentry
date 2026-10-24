@@ -187,7 +187,7 @@ GARMENTS = (
         "171",
         6,
         "Pantalón sastre de tiro alto y pierna recta.",
-        (None, "36", "102", None),
+        (None, None, "102", None),
     ),
     Garment(
         "PA02",
@@ -200,7 +200,7 @@ GARMENTS = (
         "189",
         7,
         "Jean de tiro alto con corte recto.",
-        (None, "35", "104", None),
+        (None, None, "104", None),
     ),
     Garment(
         "FA01",
@@ -213,7 +213,7 @@ GARMENTS = (
         "142",
         5,
         "Falda midi plisada con pretina cómoda.",
-        (None, "34", "78", None),
+        (None, None, "78", None),
     ),
     Garment(
         "FA02",
@@ -226,7 +226,7 @@ GARMENTS = (
         "147",
         5,
         "Falda evasé de lino con bolsillos laterales.",
-        (None, "35", "75", None),
+        (None, None, "75", None),
     ),
     Garment(
         "CH01",
