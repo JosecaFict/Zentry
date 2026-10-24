@@ -75,6 +75,20 @@ async def add(session, entity):
     return entity
 
 
+async def get_or_create_customer_role(session) -> Rol:
+    role = await session.scalar(
+        select(Rol).where(func.upper(Rol.nombre) == "CLIENTE", Rol.activo.is_(True))
+    )
+    if role is not None:
+        return role
+    return await add(session, Rol(
+        alcance="TENANT",
+        nombre="CLIENTE",
+        descripcion="Cliente de la tienda",
+        activo=True,
+    ))
+
+
 async def consume_fifo(session, stock: StockRow, quantity: int, movement_id: int) -> None:
     remaining = quantity
     lots = list((await session.scalars(
@@ -179,11 +193,9 @@ async def seed_tenant(tenant: Tenant) -> dict[str, int]:
             branch = await session.scalar(
                 select(Sucursal).where(Sucursal.activo.is_(True)).order_by(Sucursal.id_sucursal)
             )
-            role = await session.scalar(
-                select(Rol).where(func.upper(Rol.nombre) == "CLIENTE", Rol.activo.is_(True))
-            )
-            if branch is None or role is None:
-                raise SeedError("Falta una sucursal activa o el rol CLIENTE.")
+            if branch is None:
+                raise SeedError(f"{tenant.slug}: falta una sucursal activa.")
+            role = await get_or_create_customer_role(session)
             stocks = await available_stock(session, branch.id_sucursal)
             if len(stocks) < 10:
                 raise SeedError("Se requieren al menos 10 variantes con inventario.")

@@ -168,6 +168,15 @@ class PlatformRepository:
         self.session.add_all(
             [RolPermiso(id_rol=admin_role.id_rol, id_permiso=value) for value in permission_ids]
         )
+        self.session.add(
+            Rol(
+                id_tenant=tenant.id_tenant,
+                alcance="TENANT",
+                nombre="CLIENTE",
+                descripcion="Cliente de la tienda",
+                activo=True,
+            )
+        )
 
         admin = payload.administrador
         user = Usuario(
