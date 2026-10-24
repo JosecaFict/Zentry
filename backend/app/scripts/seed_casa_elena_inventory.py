@@ -14,11 +14,12 @@ from datetime import date, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.audit_context import AuditContext, apply_audit_context
 from app.db.session import async_session_factory, engine
-from app.db.tenant_context import clear_tenant_context, set_tenant_context
+from app.db.tenant_context import clear_tenant_context, current_tenant_id, set_tenant_context
 from app.modules.auth.models import Ciudad, Sucursal, Usuario
 from app.modules.catalog.models import (
     Categoria,
@@ -313,8 +314,25 @@ async def add(session, model):
 
 
 async def get_or_add(session, model_type, condition, **values):
-    existing = await session.scalar(select(model_type).where(condition))
-    return existing if existing is not None else await add(session, model_type(**values))
+    tenant_id = current_tenant_id()
+    if tenant_id is None:
+        raise SeedError("Falta el contexto de empresa para buscar datos existentes.")
+    lookup = (
+        select(model_type)
+        .where(condition, model_type.id_tenant == tenant_id)
+        .execution_options(include_all_tenants=True)
+    )
+    existing = await session.scalar(lookup)
+    if existing is not None:
+        return existing
+    await session.execute(
+        pg_insert(model_type).values(id_tenant=tenant_id, **values).on_conflict_do_nothing()
+    )
+    await session.flush()
+    existing = await session.scalar(lookup)
+    if existing is None:
+        raise SeedError(f"No se pudo crear ni recuperar {model_type.__name__}.")
+    return existing
 
 
 def tenant_prefix(slug: str) -> str:
