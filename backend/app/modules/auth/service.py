@@ -178,8 +178,11 @@ class AuthService:
                 request_id=audit_context.request_id,
             )
             await apply_audit_context(self.session, authenticated_context)
-            user.ultimo_acceso = datetime.now(UTC)
-            await self.repository.update_last_access(user)
+            # Las cuentas globales no pertenecen a un tenant. Su autenticación
+            # no debe depender de una escritura en tablas auditadas por tenant.
+            if user.id_tenant is not None:
+                user.ultimo_acceso = datetime.now(UTC)
+                await self.repository.update_last_access(user)
             await self.session.commit()
         except (
             AccountTemporarilyLockedError,

@@ -182,12 +182,33 @@ async def test_auth_service_successful_login_clears_throttler() -> None:
         LoginRequest(correo=user.correo, password="CorrectPassword123!"), audit
     )
     assert success.access_token is not None
+    repository.update_last_access.assert_not_awaited()
 
     # Verificar que el throttler quedó completamente limpio
     assert await throttler.get_cooldown_remaining(user.correo) is None
     # Un nuevo fallo empezará desde intento 1
     att, _ = await throttler.record_failed_attempt(user.correo)
     assert att == 1
+
+
+@pytest.mark.asyncio
+async def test_tenant_login_records_last_access() -> None:
+    user = make_test_user(estado="ACTIVO", password="CorrectPassword123!")
+    user.id_tenant = 7
+    session = AsyncMock()
+    repository = AsyncMock()
+    repository.get_user_by_email.return_value = user
+    service = AuthService(session=session, repository=repository)
+
+    result = await service.login(
+        LoginRequest(correo=user.correo, password="CorrectPassword123!"),
+        make_audit_context(),
+    )
+
+    assert result.access_token is not None
+    assert user.ultimo_acceso is not None
+    repository.update_last_access.assert_awaited_once_with(user)
+    session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
