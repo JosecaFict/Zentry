@@ -267,6 +267,13 @@ export const routes: Routes = [
           import('./features/admin/commerce-admin').then((m) => m.SupplierHistoryAdmin),
       },
       {
+        path: 'reportes',
+        title: 'Reportes comerciales | Zentry',
+        canActivate: [requireAnyPermission('ventas.ver')],
+        loadComponent: () =>
+          import('./features/admin/reports-admin').then((m) => m.ReportsAdmin),
+      },
+      {
         path: 'historial-ventas', // [CU-11] Reporte y bitácora de ventas
         canActivate: [requireAnyPermission('ventas.ver')],
         loadComponent: () =>
