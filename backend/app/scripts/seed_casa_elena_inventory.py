@@ -552,7 +552,7 @@ async def run_seed(tenant_slug: str = TENANT_SLUG) -> tuple[str, dict[str, int]]
                         ),
                     )
                     for color_index, color_name in enumerate(garment.colors, start=1):
-                        sku = f"{prefix}-{garment.code}-{size_code}-{color_index:02d}"
+                        sku = f"{prefix}-SUP2-{garment.code}-{size_code}-{color_index:02d}"
                         barcode = internal_ean13(
                             tenant.id_tenant,
                             product_count,

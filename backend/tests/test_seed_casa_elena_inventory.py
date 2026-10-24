@@ -47,3 +47,16 @@ def test_internal_barcodes_are_valid_and_unique_between_tenants() -> None:
 
     assert len(codes) == 1200
     assert all(len(code) == 13 and code.startswith("29") for code in codes)
+
+
+def test_new_catalog_sku_namespace_does_not_reuse_legacy_codes() -> None:
+    prefixes = [tenant_prefix(slug) for slug in REMAINING_DEMO_SLUGS]
+    skus = {
+        f"{prefix}-SUP2-{garment.code}-{size}-01"
+        for prefix in prefixes
+        for garment in GARMENTS
+        for size, _ in SIZES
+    }
+
+    assert len(skus) == len(prefixes) * len(GARMENTS) * len(SIZES)
+    assert all("-SUP2-" in sku for sku in skus)
