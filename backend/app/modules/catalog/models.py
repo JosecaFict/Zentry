@@ -13,6 +13,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -23,6 +24,7 @@ from app.db.base import Base
 
 class Categoria(Base):
     __tablename__ = "categoria"
+    __table_args__ = (UniqueConstraint("id_tenant", "nombre", name="uq_categoria_tenant_nombre"),)
 
     id_categoria: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     id_tenant: Mapped[int] = mapped_column(
@@ -31,7 +33,7 @@ class Categoria(Base):
         nullable=False,
         server_default=text("capricho.fn_tenant_actual()"),
     )
-    nombre: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    nombre: Mapped[str] = mapped_column(String(80), nullable=False)
     descripcion: Mapped[str | None] = mapped_column(String(250))
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -40,6 +42,7 @@ class Categoria(Base):
 
 class Marca(Base):
     __tablename__ = "marca"
+    __table_args__ = (UniqueConstraint("id_tenant", "nombre", name="uq_marca_tenant_nombre"),)
 
     id_marca: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     id_tenant: Mapped[int] = mapped_column(
@@ -48,7 +51,7 @@ class Marca(Base):
         nullable=False,
         server_default=text("capricho.fn_tenant_actual()"),
     )
-    nombre: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    nombre: Mapped[str] = mapped_column(String(100), nullable=False)
     descripcion: Mapped[str | None] = mapped_column(String(250))
     pais_origen: Mapped[str | None] = mapped_column(String(100))
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
@@ -58,6 +61,10 @@ class Marca(Base):
 
 class Talla(Base):
     __tablename__ = "talla"
+    __table_args__ = (
+        UniqueConstraint("id_tenant", "codigo", name="uq_talla_tenant_codigo"),
+        UniqueConstraint("id_tenant", "orden", name="uq_talla_tenant_orden"),
+    )
 
     id_talla: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     id_tenant: Mapped[int] = mapped_column(
@@ -66,13 +73,14 @@ class Talla(Base):
         nullable=False,
         server_default=text("capricho.fn_tenant_actual()"),
     )
-    codigo: Mapped[str] = mapped_column(String(10), nullable=False, unique=True)
-    orden: Mapped[int] = mapped_column(SmallInteger, nullable=False, unique=True)
+    codigo: Mapped[str] = mapped_column(String(10), nullable=False)
+    orden: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
 
 
 class Color(Base):
     __tablename__ = "color"
+    __table_args__ = (UniqueConstraint("id_tenant", "nombre", name="uq_color_tenant_nombre"),)
 
     id_color: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     id_tenant: Mapped[int] = mapped_column(
@@ -81,7 +89,7 @@ class Color(Base):
         nullable=False,
         server_default=text("capricho.fn_tenant_actual()"),
     )
-    nombre: Mapped[str] = mapped_column(String(60), nullable=False, unique=True)
+    nombre: Mapped[str] = mapped_column(String(60), nullable=False)
     codigo_hex: Mapped[str | None] = mapped_column(String(7))
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
 

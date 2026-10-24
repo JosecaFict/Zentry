@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     Time,
+    UniqueConstraint,
     func,
     text,
 )
@@ -167,6 +168,11 @@ class Ciudad(Base):
 
 class Sucursal(Base):
     __tablename__ = "sucursal"
+    __table_args__ = (
+        UniqueConstraint(
+            "id_tenant", "id_ciudad", "nombre", name="uq_sucursal_tenant_ciudad_nombre"
+        ),
+    )
 
     id_sucursal: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     id_tenant: Mapped[int] = mapped_column(
