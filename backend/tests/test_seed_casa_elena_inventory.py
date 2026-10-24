@@ -15,13 +15,16 @@ def test_casa_elena_seed_dataset_is_consistent() -> None:
     assert all(len(item.colors) == 2 for item in GARMENTS)
     assert all(color in COLORS for item in GARMENTS for color in item.colors)
     assert all(item.supplier in SUPPLIERS for item in GARMENTS)
+    assert {item.category for item in GARMENTS} == {"Poleras", "Polos", "Blusas", "Camisas"}
+    assert {item.audience for item in GARMENTS} == {"HOMBRE", "MUJER"}
+    assert all(item.audience == "MUJER" for item in GARMENTS if item.category == "Blusas")
 
 
 def test_casa_elena_seed_produces_expected_variant_count() -> None:
     expected_variants = sum(len(item.colors) * len(SIZES) for item in GARMENTS)
 
     assert expected_variants == 120
-    assert sum(item.stock * len(item.colors) * len(SIZES) for item in GARMENTS) == 580
+    assert sum(item.stock * len(item.colors) * len(SIZES) for item in GARMENTS) == 670
 
 
 def test_remaining_tenants_have_distinct_global_prefixes() -> None:

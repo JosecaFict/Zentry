@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import date, time, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.audit_context import AuditContext, apply_audit_context
@@ -45,7 +45,11 @@ from app.modules.inventory.models import (
 from app.modules.platform.models import Tenant
 
 TENANT_SLUG = "casa-elena"
-SEED_MARKER = "CARGA INICIAL ZENTRY 2026-01"
+SEED_MARKER = "CARGA CATALOGO SUPERIOR ZENTRY 2026-02"
+PREVIOUS_SEED_MARKERS = (
+    "CARGA INICIAL CASA ELENA 2026-01",
+    "CARGA INICIAL ZENTRY 2026-01",
+)
 REMAINING_DEMO_SLUGS = (
     "nova-moda",
     "urban-style",
@@ -72,6 +76,7 @@ class Garment:
     code: str
     name: str
     category: str
+    audience: str
     brand: str
     supplier: str
     colors: tuple[str, str]
@@ -94,31 +99,146 @@ COLORS = {
     "Celeste": "#8EC5E8",
 }
 CATEGORIES = {
-    "Blusas": "Blusas femeninas para uso casual y formal.",
-    "Camisas": "Camisas femeninas de corte clásico y relajado.",
-    "Vestidos": "Vestidos para ocasiones casuales y especiales.",
-    "Pantalones": "Pantalones femeninos de distintos cortes.",
-    "Faldas": "Faldas femeninas casuales y formales.",
-    "Chaquetas": "Prendas exteriores y de media estación.",
+    "Poleras": "Poleras de uso diario para hombre y mujer.",
+    "Polos": "Polos casuales con cuello para hombre y mujer.",
+    "Blusas": "Blusas de uso casual y formal para mujer.",
+    "Camisas": "Camisas casuales y formales para hombre y mujer.",
 }
 BRANDS = {
-    "Elena Studio": ("Bolivia", "Línea contemporánea exclusiva de Casa Elena."),
-    "Aura Mujer": ("Colombia", "Diseños femeninos versátiles y urbanos."),
-    "Lino Sur": ("Perú", "Prendas frescas con fibras naturales."),
-    "Nativa Denim": ("Bolivia", "Denim y prendas casuales de producción regional."),
+    "Zenda Basics": ("Bolivia", "Prendas básicas y versátiles de uso diario."),
+    "Aura Mujer": ("Colombia", "Blusas y camisas femeninas contemporáneas."),
+    "Lino Sur": ("Perú", "Camisas frescas con fibras ligeras."),
+    "Norte Casual": ("Bolivia", "Poleras y polos urbanos para hombre y mujer."),
 }
 SUPPLIERS = {
     "Textiles Andinos": ("Textiles Andinos S.R.L.", "CE-PROV-001", "María Fernanda Ríos"),
     "Moda Latina": ("Importadora Moda Latina Ltda.", "CE-PROV-002", "Carolina Suárez"),
-    "Denim Bolivia": ("Confecciones Denim Bolivia S.R.L.", "CE-PROV-003", "Andrea Molina"),
+    "Confecciones Oriente": (
+        "Confecciones Oriente S.R.L.",
+        "CE-PROV-003",
+        "Andrea Molina",
+    ),
 }
 GARMENTS = (
+    Garment(
+        "PO01",
+        "Polera Esencial Mujer",
+        "Poleras",
+        "MUJER",
+        "Zenda Basics",
+        "Textiles Andinos",
+        ("Blanco", "Negro"),
+        "149",
+        "70",
+        7,
+        "Polera de algodón suave y corte femenino regular.",
+        ("36", "44", "60", "18"),
+    ),
+    Garment(
+        "PO02",
+        "Polera Esencial Hombre",
+        "Poleras",
+        "HOMBRE",
+        "Zenda Basics",
+        "Textiles Andinos",
+        ("Blanco", "Azul marino"),
+        "149",
+        "70",
+        7,
+        "Polera de algodón suave y corte masculino regular.",
+        ("42", "51", "70", "21"),
+    ),
+    Garment(
+        "PO03",
+        "Polera Oversize Mujer",
+        "Poleras",
+        "MUJER",
+        "Norte Casual",
+        "Confecciones Oriente",
+        ("Beige", "Verde oliva"),
+        "179",
+        "84",
+        6,
+        "Polera amplia de hombro caído para mujer.",
+        ("48", "56", "67", "22"),
+    ),
+    Garment(
+        "PO04",
+        "Polera Oversize Hombre",
+        "Poleras",
+        "HOMBRE",
+        "Norte Casual",
+        "Confecciones Oriente",
+        ("Negro", "Verde oliva"),
+        "179",
+        "84",
+        6,
+        "Polera amplia de hombro caído para hombre.",
+        ("52", "60", "75", "25"),
+    ),
+    Garment(
+        "PL01",
+        "Polo Clásico Mujer",
+        "Polos",
+        "MUJER",
+        "Zenda Basics",
+        "Textiles Andinos",
+        ("Blanco", "Rosa palo"),
+        "219",
+        "105",
+        5,
+        "Polo piqué de corte femenino con cuello estructurado.",
+        ("37", "46", "62", "19"),
+    ),
+    Garment(
+        "PL02",
+        "Polo Clásico Hombre",
+        "Polos",
+        "HOMBRE",
+        "Zenda Basics",
+        "Textiles Andinos",
+        ("Blanco", "Azul marino"),
+        "219",
+        "105",
+        5,
+        "Polo piqué de corte masculino con cuello estructurado.",
+        ("43", "52", "71", "22"),
+    ),
+    Garment(
+        "PL03",
+        "Polo Urban Mujer",
+        "Polos",
+        "MUJER",
+        "Norte Casual",
+        "Confecciones Oriente",
+        ("Negro", "Rojo vino"),
+        "239",
+        "116",
+        5,
+        "Polo casual femenino de tejido liviano.",
+        ("38", "48", "64", "20"),
+    ),
+    Garment(
+        "PL04",
+        "Polo Urban Hombre",
+        "Polos",
+        "HOMBRE",
+        "Norte Casual",
+        "Confecciones Oriente",
+        ("Negro", "Verde oliva"),
+        "239",
+        "116",
+        5,
+        "Polo casual masculino de tejido liviano.",
+        ("44", "54", "73", "23"),
+    ),
     Garment(
         "BL01",
         "Blusa Siena",
         "Blusas",
-        "Elena Studio",
-        "Textiles Andinos",
+        "MUJER",
+        "Aura Mujer",
+        "Moda Latina",
         ("Blanco", "Rosa palo"),
         "229",
         "112",
@@ -130,6 +250,7 @@ GARMENTS = (
         "BL02",
         "Blusa Alma",
         "Blusas",
+        "MUJER",
         "Aura Mujer",
         "Moda Latina",
         ("Negro", "Beige"),
@@ -141,133 +262,31 @@ GARMENTS = (
     ),
     Garment(
         "CM01",
-        "Camisa Clara",
+        "Camisa Oxford Mujer",
         "Camisas",
+        "MUJER",
         "Lino Sur",
-        "Textiles Andinos",
+        "Moda Latina",
         ("Blanco", "Celeste"),
         "279",
         "137",
         5,
-        "Camisa de lino suave con botones nacarados.",
+        "Camisa clásica de corte femenino y manga larga.",
         ("38", "48", "66", "59"),
     ),
     Garment(
         "CM02",
-        "Camisa Olivia",
+        "Camisa Oxford Hombre",
         "Camisas",
-        "Elena Studio",
-        "Textiles Andinos",
-        ("Verde oliva", "Beige"),
-        "269",
-        "132",
-        4,
-        "Camisa relajada con bolsillos frontales.",
-        ("39", "50", "68", "57"),
-    ),
-    Garment(
-        "VE01",
-        "Vestido Aurora",
-        "Vestidos",
-        "Aura Mujer",
+        "HOMBRE",
+        "Lino Sur",
         "Moda Latina",
-        ("Rojo vino", "Negro"),
-        "459",
-        "226",
-        4,
-        "Vestido midi cruzado con cintura ajustable.",
-        ("36", "45", "118", "25"),
-    ),
-    Garment(
-        "VE02",
-        "Vestido Magnolia",
-        "Vestidos",
-        "Elena Studio",
-        "Moda Latina",
-        ("Rosa palo", "Beige"),
-        "429",
-        "211",
-        4,
-        "Vestido camisero midi de caída ligera.",
-        ("37", "47", "115", "23"),
-    ),
-    Garment(
-        "PA01",
-        "Pantalón Victoria",
-        "Pantalones",
-        "Aura Mujer",
-        "Moda Latina",
-        ("Negro", "Beige"),
-        "349",
-        "171",
-        6,
-        "Pantalón sastre de tiro alto y pierna recta.",
-        (None, None, "102", None),
-    ),
-    Garment(
-        "PA02",
-        "Jean Emilia",
-        "Pantalones",
-        "Nativa Denim",
-        "Denim Bolivia",
-        ("Azul marino", "Negro"),
-        "379",
-        "189",
-        7,
-        "Jean de tiro alto con corte recto.",
-        (None, None, "104", None),
-    ),
-    Garment(
-        "FA01",
-        "Falda Julieta",
-        "Faldas",
-        "Elena Studio",
-        "Textiles Andinos",
-        ("Negro", "Rojo vino"),
+        ("Blanco", "Celeste"),
         "289",
         "142",
         5,
-        "Falda midi plisada con pretina cómoda.",
-        (None, None, "78", None),
-    ),
-    Garment(
-        "FA02",
-        "Falda Serena",
-        "Faldas",
-        "Lino Sur",
-        "Textiles Andinos",
-        ("Beige", "Verde oliva"),
-        "299",
-        "147",
-        5,
-        "Falda evasé de lino con bolsillos laterales.",
-        (None, None, "75", None),
-    ),
-    Garment(
-        "CH01",
-        "Blazer Renata",
-        "Chaquetas",
-        "Aura Mujer",
-        "Moda Latina",
-        ("Negro", "Beige"),
-        "549",
-        "269",
-        3,
-        "Blazer estructurado de un botón y corte moderno.",
-        ("39", "48", "70", "60"),
-    ),
-    Garment(
-        "CH02",
-        "Chaqueta Amelia",
-        "Chaquetas",
-        "Nativa Denim",
-        "Denim Bolivia",
-        ("Azul marino", "Blanco"),
-        "489",
-        "241",
-        4,
-        "Chaqueta denim corta de acabado suave.",
-        ("40", "49", "55", "58"),
+        "Camisa clásica de corte masculino y manga larga.",
+        ("45", "55", "76", "64"),
     ),
 )
 
@@ -291,6 +310,11 @@ async def add(session, model):
     session.add(model)
     await session.flush()
     return model
+
+
+async def get_or_add(session, model_type, condition, **values):
+    existing = await session.scalar(select(model_type).where(condition))
+    return existing if existing is not None else await add(session, model_type(**values))
 
 
 def tenant_prefix(slug: str) -> str:
@@ -321,6 +345,32 @@ async def run_seed(tenant_slug: str = TENANT_SLUG) -> tuple[str, dict[str, int]]
                     request_id=f"seed-inventory-{tenant.slug}-v1",
                 ),
             )
+            previous_product_ids = list(
+                (
+                    await session.scalars(
+                        select(Producto.id_producto)
+                        .join(VarianteProducto)
+                        .join(
+                            DetalleOrdenCompra,
+                            DetalleOrdenCompra.id_variante == VarianteProducto.id_variante,
+                        )
+                        .join(OrdenCompra)
+                        .where(OrdenCompra.observacion.in_(PREVIOUS_SEED_MARKERS))
+                        .distinct()
+                    )
+                ).all()
+            )
+            if previous_product_ids:
+                await session.execute(
+                    update(VarianteProducto)
+                    .where(VarianteProducto.id_producto.in_(previous_product_ids))
+                    .values(activo=False)
+                )
+                await session.execute(
+                    update(Producto)
+                    .where(Producto.id_producto.in_(previous_product_ids))
+                    .values(activo=False)
+                )
             previous = await session.scalar(
                 select(OrdenCompra.id_orden_compra).where(OrdenCompra.observacion == SEED_MARKER)
             )
@@ -363,38 +413,61 @@ async def run_seed(tenant_slug: str = TENANT_SLUG) -> tuple[str, dict[str, int]]
                 )
             )
             categories = {
-                name: await add(session, Categoria(nombre=name, descripcion=description))
+                name: await get_or_add(
+                    session,
+                    Categoria,
+                    Categoria.nombre == name,
+                    nombre=name,
+                    descripcion=description,
+                )
                 for name, description in CATEGORIES.items()
             }
             brands = {
-                name: await add(
+                name: await get_or_add(
                     session,
-                    Marca(nombre=name, pais_origen=data[0], descripcion=data[1]),
+                    Marca,
+                    Marca.nombre == name,
+                    nombre=name,
+                    pais_origen=data[0],
+                    descripcion=data[1],
                 )
                 for name, data in BRANDS.items()
             }
             sizes = {
-                code: await add(session, Talla(codigo=code, orden=order)) for code, order in SIZES
+                code: await get_or_add(
+                    session,
+                    Talla,
+                    Talla.codigo == code,
+                    codigo=code,
+                    orden=order,
+                )
+                for code, order in SIZES
             }
             colors = {
-                name: await add(session, Color(nombre=name, codigo_hex=hex_code))
+                name: await get_or_add(
+                    session,
+                    Color,
+                    Color.nombre == name,
+                    nombre=name,
+                    codigo_hex=hex_code,
+                )
                 for name, hex_code in COLORS.items()
             }
             suppliers = {}
             for index, (name, data) in enumerate(SUPPLIERS.items(), start=1):
-                suppliers[name] = await add(
+                suppliers[name] = await get_or_add(
                     session,
-                    Proveedor(
-                        id_ciudad=city.id_ciudad,
-                        nombre_comercial=name,
-                        razon_social=data[0],
-                        nit=f"{prefix}-{data[1].removeprefix('CE-')}",
-                        telefono=f"69{tenant.id_tenant:04d}{index:02d}"[-8:],
-                        correo=f"ventas{index}+{tenant.slug}@proveedor-demo.test",
-                        direccion=f"Parque Industrial, módulo {index}",
-                        nombre_contacto=data[2],
-                        telefono_contacto=f"68{tenant.id_tenant:04d}{index:02d}"[-8:],
-                    ),
+                    Proveedor,
+                    Proveedor.nombre_comercial == name,
+                    id_ciudad=city.id_ciudad,
+                    nombre_comercial=name,
+                    razon_social=data[0],
+                    nit=f"{prefix}-{data[1].removeprefix('CE-')}",
+                    telefono=f"69{tenant.id_tenant:04d}{index:02d}"[-8:],
+                    correo=f"ventas{index}+{tenant.slug}@proveedor-demo.test",
+                    direccion=f"Parque Industrial, módulo {index}",
+                    nombre_contacto=data[2],
+                    telefono_contacto=f"68{tenant.id_tenant:04d}{index:02d}"[-8:],
                 )
 
             purchase_lines: dict[str, list[tuple[VarianteProducto, Garment]]] = {
@@ -409,7 +482,7 @@ async def run_seed(tenant_slug: str = TENANT_SLUG) -> tuple[str, dict[str, int]]
                         id_marca=brands[garment.brand].id_marca,
                         nombre=garment.name,
                         descripcion=garment.description,
-                        publico_objetivo="MUJER",
+                        publico_objetivo=garment.audience,
                         permite_vestidor=True,
                     ),
                 )
