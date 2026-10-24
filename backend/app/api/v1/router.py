@@ -15,9 +15,10 @@ from app.modules.commerce.router import router as commerce_router
 from app.modules.customers.router import router as customers_router
 from app.modules.employees.router import router as employee_router
 from app.modules.inventory.router import router as inventory_router
-from app.modules.platform.router import router as platform_router
 from app.modules.platform.router import public_router, tenant_router
+from app.modules.platform.router import router as platform_router
 from app.modules.recommendations.router import router as recommendations_router
+from app.modules.reports.router import router as reports_router
 from app.modules.virtual_tryon.router import router as tryon_router
 
 router = APIRouter()
@@ -33,6 +34,7 @@ router.include_router(tenant_router)
 router.include_router(public_router)
 router.include_router(audit_router)
 router.include_router(recommendations_router)
+router.include_router(reports_router)
 router.include_router(tryon_router)
 
 
