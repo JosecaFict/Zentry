@@ -125,14 +125,28 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
           child: Semantics(
             header: true,
             label: 'Zentry',
-            child: const Text(
-              'Zentry',
-              style: TextStyle(
-                fontSize: 34,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -1.2,
-                color: AppColors.ink,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Image.asset(
+                    'assets/images/zentry-mark.png',
+                    width: 72,
+                    height: 72,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Text(
+                  'Zentry',
+                  style: TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -1.2,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
