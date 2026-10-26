@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.security import hash_password
 from app.db.audit_context import AuditContext, apply_audit_context
@@ -110,13 +111,13 @@ async def consume_fifo(session, stock: StockRow, quantity: int, movement_id: int
     for lot in lots:
         used = min(remaining, lot.cantidad_disponible)
         if used:
-            lot.cantidad_disponible -= used
             await add(session, MovimientoLote(
                 id_movimiento=movement_id,
                 id_lote=lot.id_lote,
                 cantidad=used,
                 costo_unitario=lot.costo_unitario,
             ))
+            set_committed_value(lot, "cantidad_disponible", lot.cantidad_disponible - used)
             remaining -= used
         if remaining == 0:
             break

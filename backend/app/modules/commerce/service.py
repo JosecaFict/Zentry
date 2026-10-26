@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.integrations.openrouteservice import OpenRouteServiceClient
 from app.integrations.stripe_checkout import StripeCheckoutGateway
@@ -662,7 +663,6 @@ class CommerceService:
         for lot in await self.repository.fifo_lots(inventory.id_sucursal, inventory.id_variante):
             used = min(remaining, lot.cantidad_disponible)
             if used:
-                lot.cantidad_disponible -= used
                 await self.repository.add(
                     MovimientoLote(
                         id_movimiento=movement_id,
@@ -671,6 +671,7 @@ class CommerceService:
                         costo_unitario=lot.costo_unitario,
                     )
                 )
+                set_committed_value(lot, "cantidad_disponible", lot.cantidad_disponible - used)
                 remaining -= used
             if remaining == 0:
                 break
