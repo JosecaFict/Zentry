@@ -19,10 +19,11 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.security import hash_password
 from app.db.audit_context import AuditContext, apply_audit_context
 from app.db.session import async_session_factory, engine
 from app.db.tenant_context import clear_tenant_context, set_tenant_context
-from app.modules.auth.models import Ciudad, Cliente, Sucursal
+from app.modules.auth.models import Ciudad, Cliente, Sucursal, Usuario, UsuarioRol
 from app.modules.catalog.models import (
     HistorialPrecio,
     InventarioSucursal,
@@ -41,7 +42,17 @@ from app.modules.inventory.models import (
     RecepcionMercaderia,
 )
 from app.modules.platform.models import Plan, Subscription, Tenant
-from app.scripts.seed_demo_sales import DEMO_SLUGS, SeedError, StockRow, add, consume_fifo
+from app.scripts.seed_demo_sales import (
+    CUSTOMER_PASSWORD,
+    CUSTOMERS,
+    DEMO_SLUGS,
+    SeedError,
+    StockRow,
+    add,
+    consume_fifo,
+    customer_email,
+    get_or_create_customer_role,
+)
 
 SEED_PREFIX = "ZENTRY-DEMO-MULTIBRANCH-V1"
 MONTHS = 6
@@ -115,6 +126,52 @@ async def ensure_branches(session, tenant: Tenant, count: int) -> list[Sucursal]
             )
         branches.append(branch)
     return branches
+
+
+async def ensure_customers(session, tenant: Tenant) -> list[Cliente]:
+    role = await get_or_create_customer_role(session)
+    password_hash = hash_password(CUSTOMER_PASSWORD)
+    clients = []
+    for index, (first_name, last_name) in enumerate(CUSTOMERS, start=1):
+        email = customer_email(tenant.slug, index)
+        user = await session.scalar(select(Usuario).where(func.lower(Usuario.correo) == email))
+        if user is None:
+            user = await add(
+                session,
+                Usuario(
+                    nombres=first_name,
+                    apellidos=last_name,
+                    ci=f"DEMO-{tenant.id_tenant:04d}-CLI-{index:02d}",
+                    correo=email,
+                    telefono=f"72{tenant.id_tenant:04d}{index:02d}"[-8:],
+                    password_hash=password_hash,
+                    estado="ACTIVO",
+                ),
+            )
+        else:
+            user.estado = "ACTIVO"
+        role_link = await session.scalar(
+            select(UsuarioRol).where(
+                UsuarioRol.id_usuario == user.id_usuario,
+                UsuarioRol.id_rol == role.id_rol,
+            )
+        )
+        if role_link is None:
+            await add(session, UsuarioRol(id_usuario=user.id_usuario, id_rol=role.id_rol))
+        client = await session.scalar(select(Cliente).where(Cliente.id_usuario == user.id_usuario))
+        if client is None:
+            client = await add(
+                session,
+                Cliente(
+                    id_usuario=user.id_usuario,
+                    fecha_nacimiento=date(1988 + index, (index * 2 - 1) % 12 + 1, 10 + index),
+                    estado="ACTIVO",
+                ),
+            )
+        else:
+            client.estado = "ACTIVO"
+        clients.append(client)
+    return clients
 
 
 async def provision_branch_stock(session, tenant: Tenant, branches: list[Sucursal]) -> None:
@@ -261,10 +318,9 @@ async def branch_stock(session, branch_id: int) -> list[StockRow]:
     ]
 
 
-async def create_sales(session, tenant: Tenant, branches: list[Sucursal]) -> int:
-    clients = list((await session.scalars(select(Cliente).where(Cliente.estado == "ACTIVO"))).all())
-    if not clients:
-        raise SeedError(f"{tenant.slug}: faltan clientes activos.")
+async def create_sales(
+    session, tenant: Tenant, branches: list[Sucursal], clients: list[Cliente]
+) -> int:
     method = await session.scalar(select(MetodoPago).where(MetodoPago.codigo == "EFECTIVO"))
     if method is None:
         method = await add(
@@ -392,8 +448,9 @@ async def seed_tenant(tenant: Tenant, plan_code: str) -> tuple[int, int, bool]:
                 return int(count or 0), 0, True
             branch_count = target_branch_count(tenant.slug, plan_code)
             branches = await ensure_branches(session, tenant, branch_count)
+            clients = await ensure_customers(session, tenant)
             await provision_branch_stock(session, tenant, branches)
-            sales = await create_sales(session, tenant, branches)
+            sales = await create_sales(session, tenant, branches, clients)
             await session.commit()
             return len(branches), sales, False
     finally:
