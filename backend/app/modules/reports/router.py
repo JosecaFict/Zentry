@@ -1,10 +1,12 @@
 from datetime import date, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.modules.auth.dependencies import CurrentPrincipal, require_permission
+from app.modules.auth.exceptions import PermissionDeniedError
 from app.modules.reports.dependencies import get_reports_service
+from app.modules.reports.export import generate_excel, generate_pdf
 from app.modules.reports.schemas import CustomerReport, InventoryReport, ProductReport, SalesReport
 from app.modules.reports.service import ReportsService
 
@@ -76,3 +78,36 @@ async def customers_report(
 ):
     start, end = _dates(desde, hasta)
     return await service.customers(start, end, _branch(principal, id_sucursal), limite)
+
+
+@router.get("/export/{file_format}")
+async def export_report(
+    file_format: Literal["xlsx", "pdf"],
+    principal: SalesPrincipal,
+    service: Reports,
+    desde: date | None = None,
+    hasta: date | None = None,
+    id_sucursal: int | None = Query(default=None, gt=0),
+):
+    if "inventario.ver" not in principal.permissions and "ADMIN" not in principal.roles:
+        raise PermissionDeniedError
+    start, end = _dates(desde, hasta)
+    branch_id = _branch(principal, id_sucursal)
+    sales = await service.sales(start, end, branch_id)
+    products = await service.products(start, end, branch_id, 100)
+    inventory = await service.inventory(branch_id, False)
+    customers = await service.customers(start, end, branch_id, 100)
+    filename = f"reporte-comercial-{start:%Y%m%d}-{end:%Y%m%d}.{file_format}"
+    if file_format == "xlsx":
+        content = generate_excel(sales, products, inventory, customers)
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        content = generate_pdf(
+            sales, products, inventory, customers, principal.tenant_slug or "Zentry"
+        )
+        media_type = "application/pdf"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

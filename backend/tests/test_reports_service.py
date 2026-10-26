@@ -3,7 +3,9 @@ from decimal import Decimal
 
 import pytest
 
+from app.modules.reports.export import generate_excel, generate_pdf
 from app.modules.reports.router import _dates
+from app.modules.reports.schemas import CustomerReport, ProductReport
 from app.modules.reports.service import ReportsService
 
 
@@ -73,3 +75,20 @@ def test_report_date_range_rejects_reversed_dates() -> None:
     with pytest.raises(Exception) as error:
         _dates(date(2026, 10, 2), date(2026, 10, 1))
     assert getattr(error.value, "status_code", None) == 422
+
+
+def test_report_exports_generate_valid_files() -> None:
+    date_from = date(2026, 10, 1)
+    date_to = date(2026, 10, 31)
+    sales = ReportsService.summarize_sales(date_from, date_to, [])
+    inventory = ReportsService.summarize_inventory([])
+    products = ProductReport(desde=date_from, hasta=date_to, productos=[])
+    customers = CustomerReport(desde=date_from, hasta=date_to, clientes=[])
+
+    excel = generate_excel(sales, products, inventory, customers)
+    pdf = generate_pdf(sales, products, inventory, customers, "Casa Elena")
+
+    assert excel.startswith(b"PK")
+    assert b"xl/workbook.xml" in excel
+    assert pdf.startswith(b"%PDF-")
+    assert len(pdf) > 1000

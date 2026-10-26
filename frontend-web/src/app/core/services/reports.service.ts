@@ -34,4 +34,9 @@ export class ReportsService {
       params: this.params(filters, { limite: 10 }),
     });
   }
+  export(filters: ReportFilters, format: 'xlsx' | 'pdf') {
+    return this.http.get(`${API_BASE_URL}/admin/reports/export/${format}`, {
+      params: this.params(filters), responseType: 'blob', observe: 'response',
+    });
+  }
 }
