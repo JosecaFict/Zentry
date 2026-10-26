@@ -75,13 +75,14 @@ async def add(session, entity):
     return entity
 
 
-async def get_or_create_customer_role(session) -> Rol:
+async def get_or_create_customer_role(session, tenant_id: int) -> Rol:
     role = await session.scalar(
         select(Rol).where(func.upper(Rol.nombre) == "CLIENTE", Rol.activo.is_(True))
     )
     if role is not None:
         return role
     return await add(session, Rol(
+        id_tenant=tenant_id,
         alcance="TENANT",
         nombre="CLIENTE",
         descripcion="Cliente de la tienda",
@@ -195,7 +196,7 @@ async def seed_tenant(tenant: Tenant) -> dict[str, int]:
             )
             if branch is None:
                 raise SeedError(f"{tenant.slug}: falta una sucursal activa.")
-            role = await get_or_create_customer_role(session)
+            role = await get_or_create_customer_role(session, tenant.id_tenant)
             stocks = await available_stock(session, branch.id_sucursal)
             if len(stocks) < 10:
                 raise SeedError("Se requieren al menos 10 variantes con inventario.")

@@ -129,7 +129,7 @@ async def ensure_branches(session, tenant: Tenant, count: int) -> list[Sucursal]
 
 
 async def ensure_customers(session, tenant: Tenant) -> list[Cliente]:
-    role = await get_or_create_customer_role(session)
+    role = await get_or_create_customer_role(session, tenant.id_tenant)
     password_hash = hash_password(CUSTOMER_PASSWORD)
     clients = []
     for index, (first_name, last_name) in enumerate(CUSTOMERS, start=1):
