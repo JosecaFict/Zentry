@@ -4,6 +4,7 @@ from app.scripts.seed_demo_sales import (
     DEMO_SLUGS,
     SALES_PER_TENANT,
     customer_email,
+    delivery_mode,
 )
 
 
@@ -25,3 +26,8 @@ def test_customer_credentials_are_unique_between_tenants() -> None:
     assert len(emails) == 60
     assert "cliente01+casa-elena@zentrysaas.store" in emails
     assert "cliente06+altura-comercial@zentrysaas.store" in emails
+
+
+def test_sale_delivery_modes_match_database_constraint() -> None:
+    assert delivery_mode("PRESENCIAL") == "ENTREGA_DIRECTA"
+    assert delivery_mode("WEB") == "RETIRO_SUCURSAL"

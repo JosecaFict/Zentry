@@ -51,6 +51,7 @@ from app.scripts.seed_demo_sales import (
     add,
     consume_fifo,
     customer_email,
+    delivery_mode,
     get_or_create_customer_role,
 )
 
@@ -356,7 +357,7 @@ async def create_sales(
                     id_cliente=rng.choice(clients).id_cliente,
                     id_sucursal=branch.id_sucursal,
                     canal_venta=channel,
-                    modalidad_entrega="MOSTRADOR" if channel == "PRESENCIAL" else "RETIRO_SUCURSAL",
+                    modalidad_entrega=delivery_mode(channel),
                     estado="PAGADA",
                     subtotal=subtotal,
                     descuento_total=Decimal("0.00"),

@@ -69,6 +69,10 @@ def customer_email(tenant_slug: str, customer_number: int) -> str:
     return f"cliente{customer_number:02d}+{tenant_slug}@zentrysaas.store"
 
 
+def delivery_mode(channel: str) -> str:
+    return "ENTREGA_DIRECTA" if channel == "PRESENCIAL" else "RETIRO_SUCURSAL"
+
+
 async def add(session, entity):
     session.add(entity)
     await session.flush()
@@ -233,9 +237,7 @@ async def seed_tenant(tenant: Tenant) -> dict[str, int]:
                     id_cliente=rng.choice(clients).id_cliente,
                     id_sucursal=branch.id_sucursal,
                     canal_venta=channel,
-                    modalidad_entrega=(
-                        "MOSTRADOR" if channel == "PRESENCIAL" else "RETIRO_SUCURSAL"
-                    ),
+                    modalidad_entrega=delivery_mode(channel),
                     estado="PAGADA",
                     subtotal=subtotal,
                     descuento_total=Decimal("0.00"),
