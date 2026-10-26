@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { API_BASE_URL } from '../config/api.config';
-import { CustomerReport, InventoryReport, ProductReport, SalesReport } from '../models/reports.model';
+import { AIReportResponse, CustomerReport, InventoryReport, ProductReport, SalesReport } from '../models/reports.model';
 
 export interface ReportFilters { desde: string; hasta: string; id_sucursal?: number | null; }
 
@@ -37,6 +37,12 @@ export class ReportsService {
   export(filters: ReportFilters, format: 'xlsx' | 'pdf') {
     return this.http.get(`${API_BASE_URL}/admin/reports/export/${format}`, {
       params: this.params(filters), responseType: 'blob', observe: 'response',
+    });
+  }
+  askAssistant(question: string, branchId?: number | null) {
+    return this.http.post<AIReportResponse>(`${API_BASE_URL}/admin/reports/ai/query`, {
+      pregunta: question,
+      id_sucursal: branchId || null,
     });
   }
 }

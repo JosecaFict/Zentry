@@ -20,3 +20,11 @@ export interface CustomerPerformance {
   gasto_total: number; ticket_promedio: number; ultima_compra: string;
 }
 export interface CustomerReport { desde: string; hasta: string; clientes: CustomerPerformance[]; }
+export type AIReportType = 'VENTAS' | 'PRODUCTOS' | 'INVENTARIO' | 'CLIENTES' | 'RESUMEN';
+export interface AIReportPlan {
+  tipo_reporte: AIReportType; dias: number; limite: number; solo_criticos: boolean;
+}
+export interface AIReportResponse {
+  pregunta: string; interpretacion: AIReportPlan; titulo: string; resumen: string;
+  datos: Record<string, unknown>;
+}

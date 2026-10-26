@@ -5,13 +5,22 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.modules.auth.dependencies import CurrentPrincipal, require_permission
 from app.modules.auth.exceptions import PermissionDeniedError
-from app.modules.reports.dependencies import get_reports_service
+from app.modules.reports.ai import AIReportInterpreter, AIReportInterpreterError
+from app.modules.reports.dependencies import get_ai_report_interpreter, get_reports_service
 from app.modules.reports.export import generate_excel, generate_pdf
-from app.modules.reports.schemas import CustomerReport, InventoryReport, ProductReport, SalesReport
+from app.modules.reports.schemas import (
+    AIReportRequest,
+    AIReportResponse,
+    CustomerReport,
+    InventoryReport,
+    ProductReport,
+    SalesReport,
+)
 from app.modules.reports.service import ReportsService
 
 router = APIRouter(prefix="/admin/reports", tags=["reports"])
 Reports = Annotated[ReportsService, Depends(get_reports_service)]
+AIInterpreter = Annotated[AIReportInterpreter | None, Depends(get_ai_report_interpreter)]
 SalesPrincipal = Annotated[CurrentPrincipal, Depends(require_permission("ventas.ver"))]
 InventoryPrincipal = Annotated[CurrentPrincipal, Depends(require_permission("inventario.ver"))]
 
@@ -30,6 +39,83 @@ def _branch(principal: CurrentPrincipal, requested: int | None) -> int | None:
     if "ventas.sucursales_todas" in principal.permissions or "ADMIN" in principal.roles:
         return requested
     return principal.id_sucursal
+
+
+def _summary(report_type: str, data: dict) -> tuple[str, str]:
+    if report_type == "VENTAS":
+        return (
+            "Rendimiento de ventas",
+            f"Se registraron {data['total_ventas']} ventas por Bs {data['ingresos']}.",
+        )
+    if report_type == "PRODUCTOS":
+        return "Productos destacados", f"Se encontraron {len(data['productos'])} productos."
+    if report_type == "INVENTARIO":
+        return (
+            "Estado del inventario",
+            f"Hay {data['unidades_disponibles']} unidades y "
+            f"{data['items_criticos']} ítems críticos.",
+        )
+    if report_type == "CLIENTES":
+        return "Clientes destacados", f"Se encontraron {len(data['clientes'])} clientes."
+    return "Resumen ejecutivo", "Resumen comercial consolidado del período solicitado."
+
+
+@router.post("/ai/query", response_model=AIReportResponse)
+async def ai_report_query(
+    payload: AIReportRequest,
+    principal: SalesPrincipal,
+    service: Reports,
+    interpreter: AIInterpreter,
+):
+    if not principal.permite_reportes_ia:
+        raise HTTPException(
+            status_code=403,
+            detail="Los reportes con IA están disponibles en el plan Profesional",
+        )
+    if interpreter is None:
+        raise HTTPException(status_code=503, detail="El asistente de IA no está configurado")
+    if "inventario.ver" not in principal.permissions and "ADMIN" not in principal.roles:
+        raise PermissionDeniedError
+    question = payload.pregunta.strip()
+    if not question:
+        raise HTTPException(status_code=422, detail="Escribe una pregunta para el asistente")
+    try:
+        plan = await interpreter.interpret(question)
+    except AIReportInterpreterError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    end = date.today()
+    start = end - timedelta(days=plan.dias - 1)
+    branch_id = _branch(principal, payload.id_sucursal)
+    if plan.tipo_reporte == "VENTAS":
+        data = (await service.sales(start, end, branch_id)).model_dump(mode="json")
+    elif plan.tipo_reporte == "PRODUCTOS":
+        data = (await service.products(start, end, branch_id, plan.limite)).model_dump(mode="json")
+    elif plan.tipo_reporte == "INVENTARIO":
+        data = (await service.inventory(branch_id, plan.solo_criticos)).model_dump(mode="json")
+    elif plan.tipo_reporte == "CLIENTES":
+        data = (await service.customers(start, end, branch_id, plan.limite)).model_dump(mode="json")
+    else:
+        data = {
+            "ventas": (await service.sales(start, end, branch_id)).model_dump(mode="json"),
+            "productos": (
+                await service.products(start, end, branch_id, plan.limite)
+            ).model_dump(mode="json"),
+            "inventario": (
+                await service.inventory(branch_id, plan.solo_criticos)
+            ).model_dump(mode="json"),
+            "clientes": (
+                await service.customers(start, end, branch_id, plan.limite)
+            ).model_dump(mode="json"),
+        }
+    title, summary = _summary(plan.tipo_reporte, data)
+    return AIReportResponse(
+        pregunta=question,
+        interpretacion=plan,
+        titulo=title,
+        resumen=summary,
+        datos=data,
+    )
 
 
 @router.get("/sales", response_model=SalesReport)

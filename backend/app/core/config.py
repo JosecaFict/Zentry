@@ -72,6 +72,10 @@ class Settings(BaseSettings):
         ge=30,
         le=1440,
     )
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    openai_reports_model: str = Field(
+        default="gpt-5-nano", alias="OPENAI_REPORTS_MODEL"
+    )
     openrouteservice_api_key: str | None = Field(
         default=None, alias="OPENROUTESERVICE_API_KEY"
     )

@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { Branch } from '../../core/models/catalog.model';
-import { CustomerReport, InventoryReport, ProductReport, SalesReport } from '../../core/models/reports.model';
+import { AIReportResponse, CustomerReport, InventoryReport, ProductReport, SalesReport } from '../../core/models/reports.model';
 import { CatalogService } from '../../core/services/catalog.service';
 import { ReportFilters, ReportsService } from '../../core/services/reports.service';
 import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
@@ -42,6 +42,29 @@ import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
         </label>
         <button type="submit" [disabled]="loading() || !dateFrom || !dateTo">Aplicar filtros</button>
       </form>
+
+      <section class="ai-assistant" aria-labelledby="ai-report-title">
+        <div class="ai-copy">
+          <span>PLAN PROFESIONAL · ASISTENTE DE IA</span>
+          <h2 id="ai-report-title">Pregunta por tu operación</h2>
+          <p>Describe el reporte que necesitas. Zentry interpretará la consulta y usará únicamente datos autorizados de esta empresa.</p>
+        </div>
+        <form class="ai-form" (ngSubmit)="askAssistant()">
+          <label for="ai-question">Tu consulta</label>
+          <div>
+            <input id="ai-question" name="aiQuestion" [(ngModel)]="aiQuestion" maxlength="500" placeholder="Ej.: ¿Cuáles fueron mis productos más vendidos este mes?" />
+            <button type="submit" [disabled]="aiLoading() || !aiQuestion.trim()">{{ aiLoading() ? 'Analizando…' : 'Consultar' }}</button>
+          </div>
+          <small>La IA interpreta filtros; nunca escribe ni ejecuta consultas SQL.</small>
+        </form>
+        @if (aiError()) { <p class="ai-error" role="alert">{{ aiError() }}</p> }
+        @if (aiResult(); as result) {
+          <article class="ai-result">
+            <div><span>{{ result.interpretacion.tipo_reporte }} · {{ result.interpretacion.dias }} días</span><h3>{{ result.titulo }}</h3></div>
+            <p>{{ result.resumen }}</p>
+          </article>
+        }
+      </section>
 
       @if (error()) {
         <section class="report-state report-state--error" role="alert">
@@ -117,7 +140,7 @@ import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
     </main>
   `,
   styles: [`
-    :host{display:block;color:#121418}.reports-page{max-width:1400px;margin:0 auto;padding:2.5rem 2rem 5rem}.reports-heading{display:flex;align-items:end;justify-content:space-between;gap:2rem;padding-bottom:1.75rem;border-bottom:1px solid #cbd0d6}.reports-heading h1{margin:0;font-size:clamp(2.25rem,4vw,3.7rem);line-height:1;letter-spacing:-.035em}.reports-heading p,.report-panel p,.report-table-section p{margin:.7rem 0 0;color:#565d67}.report-actions{display:flex;gap:.65rem}.refresh,.export{display:inline-flex;align-items:center;justify-content:center;gap:.65rem;min-height:48px;padding:.7rem 1rem;border:1px solid #121418;border-radius:8px;background:transparent;font:inherit;font-weight:700;cursor:pointer}.export{border-color:#064fe8;color:#064fe8}.refresh svg{width:19px;fill:none;stroke:currentColor;stroke-width:1.8}.refresh:hover{background:#121418;color:white}.export:hover{background:#064fe8;color:white}.refresh:disabled,.export:disabled{cursor:wait;opacity:.55}.report-filters{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr)) auto;gap:1rem;align-items:end;padding:1.4rem 0 2.5rem}.report-filters label{display:grid;gap:.45rem;font-size:.83rem;font-weight:700}.report-filters input,.report-filters select{min-height:48px;padding:.65rem .8rem;border:1px solid #aab1ba;border-radius:8px;background:#fff;color:#121418;font:inherit}.report-filters button,.report-state button{min-height:48px;padding:.7rem 1.35rem;border:1px solid #064fe8;border-radius:8px;background:#064fe8;color:#fff;font:inherit;font-weight:700;cursor:pointer}.report-filters :focus-visible,.refresh:focus-visible,.export:focus-visible,.report-state button:focus-visible{outline:3px solid rgba(6,79,232,.28);outline-offset:2px}.report-summary{display:grid;grid-template-columns:minmax(280px,.85fr) 1.5fr;background:#121720;color:#fff}.summary-primary{display:flex;flex-direction:column;justify-content:center;min-height:220px;padding:2rem 2.4rem;border-right:1px solid #3a414d}.summary-primary span{color:#b8c1ce;font-size:.85rem;font-weight:700}.summary-primary strong{margin:.45rem 0;font-size:clamp(2.7rem,5vw,4.8rem);line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.04em}.summary-primary small{color:#b8c1ce}.report-summary dl{display:grid;grid-template-columns:repeat(2,1fr);margin:0}.report-summary dl div{display:flex;flex-direction:column;justify-content:center;padding:1.7rem 2rem;border-bottom:1px solid #3a414d}.report-summary dl div:nth-child(odd){border-right:1px solid #3a414d}.report-summary dl div:nth-child(n+3){border-bottom:0}.report-summary dt{color:#b8c1ce;font-size:.82rem}.report-summary dd{margin:.35rem 0 0;font-size:1.55rem;font-weight:700;font-variant-numeric:tabular-nums}.reports-grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,.75fr);border-bottom:1px solid #cbd0d6}.report-panel{min-height:340px;padding:2rem 0}.report-panel+ .report-panel{padding-left:2rem;border-left:1px solid #cbd0d6}.report-panel:first-child{padding-right:2rem}.report-panel h2,.report-table-section h2{margin:0;font-size:1.45rem;letter-spacing:-.025em}.bars{display:flex;align-items:end;gap:max(5px,1.1vw);height:220px;margin-top:2rem;padding-top:2rem;border-bottom:1px solid #aab1ba;overflow-x:auto}.bar-column{display:grid;grid-template-rows:24px 1fr 28px;align-items:end;justify-items:center;min-width:max(42px,calc((100% - 2rem)/var(--bar-count)));height:100%}.bar-column i{display:block;width:min(28px,65%);min-height:3px;background:#064fe8}.bar-column time{padding-top:.55rem;color:#565d67;font-size:.72rem}.bar-value{opacity:0;font-size:.68rem;white-space:nowrap;transition:opacity .15s}.bar-column:hover .bar-value{opacity:1}.stock-reading{display:flex;align-items:baseline;gap:.7rem;margin-top:4rem}.stock-reading strong{font-size:3.5rem;line-height:1;font-variant-numeric:tabular-nums}.stock-reading span{color:#565d67}.stock-rule{height:8px;margin:1.5rem 0;background:#dfe3e8}.stock-rule span{display:block;height:100%;background:#064fe8}.report-table-section{padding:2.5rem 0;border-bottom:1px solid #cbd0d6}.report-table-section header{margin-bottom:1.5rem}.table-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:1rem .85rem;border-bottom:1px solid #dfe3e8;text-align:left}th{color:#565d67;font-size:.76rem;text-transform:uppercase;letter-spacing:.06em}td small{display:block;margin-top:.25rem;color:#68717d}.numeric{text-align:right}.empty,.empty-cell{padding:3rem 1rem!important;color:#68717d;text-align:center!important}.report-state{display:flex;align-items:center;justify-content:center;min-height:280px;border-top:1px solid #cbd0d6;border-bottom:1px solid #cbd0d6}.report-state--error{flex-direction:column;gap:.7rem;color:#8f1d14}.report-state--error span{color:#565d67}.report-state--error button{margin-top:.5rem}@media(max-width:900px){.reports-page{padding:2rem 1rem 4rem}.report-filters{grid-template-columns:repeat(2,1fr)}.report-summary{grid-template-columns:1fr}.summary-primary{border-right:0;border-bottom:1px solid #3a414d}.reports-grid{grid-template-columns:1fr}.report-panel+ .report-panel{padding-left:0;border-left:0;border-top:1px solid #cbd0d6}.report-panel:first-child{padding-right:0}}@media(max-width:560px){.reports-heading{align-items:start;flex-direction:column}.report-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}.refresh{grid-column:1/-1}.report-filters{grid-template-columns:1fr}.report-filters button{width:100%}.report-summary dl{grid-template-columns:1fr}.report-summary dl div,.report-summary dl div:nth-child(odd){border-right:0;border-bottom:1px solid #3a414d}.summary-primary{padding:1.6rem}.report-summary dl div{padding:1.25rem 1.6rem}.bars{gap:10px}.bar-column{min-width:44px}}
+    :host{display:block;color:#121418}.reports-page{max-width:1400px;margin:0 auto;padding:2.5rem 2rem 5rem}.reports-heading{display:flex;align-items:end;justify-content:space-between;gap:2rem;padding-bottom:1.75rem;border-bottom:1px solid #cbd0d6}.reports-heading h1{margin:0;font-size:clamp(2.25rem,4vw,3.7rem);line-height:1;letter-spacing:-.035em}.reports-heading p,.report-panel p,.report-table-section p{margin:.7rem 0 0;color:#565d67}.report-actions{display:flex;gap:.65rem}.refresh,.export{display:inline-flex;align-items:center;justify-content:center;gap:.65rem;min-height:48px;padding:.7rem 1rem;border:1px solid #121418;border-radius:8px;background:transparent;font:inherit;font-weight:700;cursor:pointer}.export{border-color:#064fe8;color:#064fe8}.refresh svg{width:19px;fill:none;stroke:currentColor;stroke-width:1.8}.refresh:hover{background:#121418;color:white}.export:hover{background:#064fe8;color:white}.refresh:disabled,.export:disabled{cursor:wait;opacity:.55}.report-filters{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr)) auto;gap:1rem;align-items:end;padding:1.4rem 0 2rem}.report-filters label{display:grid;gap:.45rem;font-size:.83rem;font-weight:700}.report-filters input,.report-filters select{min-height:48px;padding:.65rem .8rem;border:1px solid #aab1ba;border-radius:8px;background:#fff;color:#121418;font:inherit}.report-filters button,.report-state button{min-height:48px;padding:.7rem 1.35rem;border:1px solid #064fe8;border-radius:8px;background:#064fe8;color:#fff;font:inherit;font-weight:700;cursor:pointer}.ai-assistant{display:grid;grid-template-columns:minmax(240px,.7fr) minmax(360px,1.3fr);gap:2rem;margin-bottom:2.5rem;padding:2rem;background:#eef3ff;border:1px solid #b9c9ef}.ai-copy span,.ai-result span{color:#064fe8;font-size:.72rem;font-weight:800;letter-spacing:.1em}.ai-copy h2{margin:.55rem 0;font-size:1.75rem}.ai-copy p{margin:0;color:#505a68;line-height:1.55}.ai-form label{display:block;margin-bottom:.5rem;font-size:.82rem;font-weight:800}.ai-form>div{display:flex}.ai-form input{width:100%;min-height:52px;padding:0 .9rem;border:1px solid #7f8ba0;border-right:0;border-radius:7px 0 0 7px;font:inherit}.ai-form button{min-width:120px;border:0;border-radius:0 7px 7px 0;background:#064fe8;color:white;font:inherit;font-weight:800}.ai-form button:disabled{opacity:.55}.ai-form small{display:block;margin-top:.55rem;color:#647086}.ai-error{grid-column:1/-1;margin:0;color:#9c2218}.ai-result{grid-column:1/-1;display:flex;justify-content:space-between;gap:2rem;padding-top:1.3rem;border-top:1px solid #b9c9ef}.ai-result h3{margin:.3rem 0 0}.ai-result p{max-width:580px;margin:0;color:#344055}.report-filters :focus-visible,.refresh:focus-visible,.export:focus-visible,.report-state button:focus-visible,.ai-form :focus-visible{outline:3px solid rgba(6,79,232,.28);outline-offset:2px}.report-summary{display:grid;grid-template-columns:minmax(280px,.85fr) 1.5fr;background:#121720;color:#fff}.summary-primary{display:flex;flex-direction:column;justify-content:center;min-height:220px;padding:2rem 2.4rem;border-right:1px solid #3a414d}.summary-primary span{color:#b8c1ce;font-size:.85rem;font-weight:700}.summary-primary strong{margin:.45rem 0;font-size:clamp(2.7rem,5vw,4.8rem);line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.04em}.summary-primary small{color:#b8c1ce}.report-summary dl{display:grid;grid-template-columns:repeat(2,1fr);margin:0}.report-summary dl div{display:flex;flex-direction:column;justify-content:center;padding:1.7rem 2rem;border-bottom:1px solid #3a414d}.report-summary dl div:nth-child(odd){border-right:1px solid #3a414d}.report-summary dl div:nth-child(n+3){border-bottom:0}.report-summary dt{color:#b8c1ce;font-size:.82rem}.report-summary dd{margin:.35rem 0 0;font-size:1.55rem;font-weight:700;font-variant-numeric:tabular-nums}.reports-grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,.75fr);border-bottom:1px solid #cbd0d6}.report-panel{min-height:340px;padding:2rem 0}.report-panel+ .report-panel{padding-left:2rem;border-left:1px solid #cbd0d6}.report-panel:first-child{padding-right:2rem}.report-panel h2,.report-table-section h2{margin:0;font-size:1.45rem;letter-spacing:-.025em}.bars{display:flex;align-items:end;gap:max(5px,1.1vw);height:220px;margin-top:2rem;padding-top:2rem;border-bottom:1px solid #aab1ba;overflow-x:auto}.bar-column{display:grid;grid-template-rows:24px 1fr 28px;align-items:end;justify-items:center;min-width:max(42px,calc((100% - 2rem)/var(--bar-count)));height:100%}.bar-column i{display:block;width:min(28px,65%);min-height:3px;background:#064fe8}.bar-column time{padding-top:.55rem;color:#565d67;font-size:.72rem}.bar-value{opacity:0;font-size:.68rem;white-space:nowrap;transition:opacity .15s}.bar-column:hover .bar-value{opacity:1}.stock-reading{display:flex;align-items:baseline;gap:.7rem;margin-top:4rem}.stock-reading strong{font-size:3.5rem;line-height:1;font-variant-numeric:tabular-nums}.stock-reading span{color:#565d67}.stock-rule{height:8px;margin:1.5rem 0;background:#dfe3e8}.stock-rule span{display:block;height:100%;background:#064fe8}.report-table-section{padding:2.5rem 0;border-bottom:1px solid #cbd0d6}.report-table-section header{margin-bottom:1.5rem}.table-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:1rem .85rem;border-bottom:1px solid #dfe3e8;text-align:left}th{color:#565d67;font-size:.76rem;text-transform:uppercase;letter-spacing:.06em}td small{display:block;margin-top:.25rem;color:#68717d}.numeric{text-align:right}.empty,.empty-cell{padding:3rem 1rem!important;color:#68717d;text-align:center!important}.report-state{display:flex;align-items:center;justify-content:center;min-height:280px;border-top:1px solid #cbd0d6;border-bottom:1px solid #cbd0d6}.report-state--error{flex-direction:column;gap:.7rem;color:#8f1d14}.report-state--error span{color:#565d67}.report-state--error button{margin-top:.5rem}@media(max-width:900px){.reports-page{padding:2rem 1rem 4rem}.report-filters{grid-template-columns:repeat(2,1fr)}.ai-assistant{grid-template-columns:1fr}.ai-result{grid-column:1}.report-summary{grid-template-columns:1fr}.summary-primary{border-right:0;border-bottom:1px solid #3a414d}.reports-grid{grid-template-columns:1fr}.report-panel+ .report-panel{padding-left:0;border-left:0;border-top:1px solid #cbd0d6}.report-panel:first-child{padding-right:0}}@media(max-width:560px){.reports-heading{align-items:start;flex-direction:column}.report-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}.refresh{grid-column:1/-1}.report-filters{grid-template-columns:1fr}.report-filters button{width:100%}.ai-assistant{padding:1.3rem}.ai-form>div,.ai-result{flex-direction:column}.ai-form input{border-right:1px solid #7f8ba0;border-radius:7px}.ai-form button{min-height:48px;border-radius:7px}.report-summary dl{grid-template-columns:1fr}.report-summary dl div,.report-summary dl div:nth-child(odd){border-right:0;border-bottom:1px solid #3a414d}.summary-primary{padding:1.6rem}.report-summary dl div{padding:1.25rem 1.6rem}.bars{gap:10px}.bar-column{min-width:44px}}
   `],
 })
 export class ReportsAdmin implements OnInit {
@@ -131,6 +154,9 @@ export class ReportsAdmin implements OnInit {
   readonly loading = signal(false);
   readonly exporting = signal<'' | 'xlsx' | 'pdf'>('');
   readonly error = signal('');
+  readonly aiLoading = signal(false);
+  readonly aiError = signal('');
+  readonly aiResult = signal<AIReportResponse | null>(null);
   readonly healthyStockPercent = computed(() => {
     const report = this.inventory();
     if (!report?.items.length) return 0;
@@ -139,6 +165,7 @@ export class ReportsAdmin implements OnInit {
   dateFrom = this.isoDate(new Date(new Date().setDate(new Date().getDate() - 89)));
   dateTo = this.isoDate(new Date());
   branchId: number | null = null;
+  aiQuestion = '';
 
   ngOnInit() {
     this.catalogService.branches().subscribe({ next: (items) => this.branches.set(items) });
@@ -173,6 +200,18 @@ export class ReportsAdmin implements OnInit {
       },
       error: (error) => this.error.set(error?.error?.detail ?? 'No pudimos exportar el reporte.'),
     });
+  }
+
+  askAssistant() {
+    const question = this.aiQuestion.trim();
+    if (!question) return;
+    this.aiLoading.set(true); this.aiError.set(''); this.aiResult.set(null);
+    this.reportsService.askAssistant(question, this.branchId)
+      .pipe(finalize(() => this.aiLoading.set(false)))
+      .subscribe({
+        next: (result) => this.aiResult.set(result),
+        error: (error) => this.aiError.set(error?.error?.detail ?? 'No pudimos consultar al asistente.'),
+      });
   }
 
   barHeight(value: number) {

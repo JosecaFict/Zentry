@@ -1,7 +1,8 @@
 from datetime import date
 from decimal import Decimal
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SalesPoint(BaseModel):
@@ -71,3 +72,23 @@ class CustomerReport(BaseModel):
     desde: date
     hasta: date
     clientes: list[CustomerPerformance]
+
+
+class AIReportRequest(BaseModel):
+    pregunta: str = Field(min_length=1, max_length=500)
+    id_sucursal: int | None = Field(default=None, gt=0)
+
+
+class AIReportPlan(BaseModel):
+    tipo_reporte: Literal["VENTAS", "PRODUCTOS", "INVENTARIO", "CLIENTES", "RESUMEN"]
+    dias: int = Field(default=90, ge=1, le=731)
+    limite: int = Field(default=20, ge=1, le=100)
+    solo_criticos: bool = False
+
+
+class AIReportResponse(BaseModel):
+    pregunta: str
+    interpretacion: AIReportPlan
+    titulo: str
+    resumen: str
+    datos: dict[str, Any]
