@@ -31,7 +31,7 @@ REPORT_PLAN_SCHEMA: dict[str, Any] = {
 }
 
 
-class OpenAIReportInterpreter:
+class GroqReportInterpreter:
     def __init__(self, api_key: str, model: str, timeout_seconds: float = 20.0) -> None:
         self.api_key = api_key
         self.model = model
@@ -39,46 +39,46 @@ class OpenAIReportInterpreter:
 
     @staticmethod
     def _output_text(payload: dict[str, Any]) -> str:
-        for output in payload.get("output", []):
-            for content in output.get("content", []):
-                if content.get("type") == "output_text" and content.get("text"):
-                    return str(content["text"])
-        raise AIReportInterpreterError("OpenAI no devolvió una interpretación utilizable")
+        try:
+            content = payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise AIReportInterpreterError(
+                "Groq no devolvió una interpretación utilizable"
+            ) from exc
+        if not content:
+            raise AIReportInterpreterError("Groq no devolvió una interpretación utilizable")
+        return str(content)
 
     async def interpret(self, question: str) -> AIReportPlan:
         body = {
             "model": self.model,
-            "input": [
+            "messages": [
                 {
                     "role": "system",
-                    "content": [{
-                        "type": "input_text",
-                        "text": (
-                            "Interpreta consultas de reportes comerciales en español. "
-                            "Elige exactamente un reporte permitido. No generes SQL, código, "
-                            "IDs de tenant ni sucursales. RESUMEN combina todos los reportes. "
-                            "Si no indican período usa 90 días y límite 20."
-                        ),
-                    }],
+                    "content": (
+                        "Interpreta consultas de reportes comerciales en español. "
+                        "Elige exactamente un reporte permitido. No generes SQL, código, "
+                        "IDs de tenant ni sucursales. RESUMEN combina todos los reportes. "
+                        "Si no indican período usa 90 días y límite 20."
+                    ),
                 },
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": question}],
-                },
+                {"role": "user", "content": question},
             ],
-            "text": {
-                "format": {
-                    "type": "json_schema",
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
                     "name": "zentry_report_plan",
                     "strict": True,
                     "schema": REPORT_PLAN_SCHEMA,
-                }
+                },
             },
+            "reasoning_effort": "low",
+            "temperature": 0,
         }
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.post(
-                    "https://api.openai.com/v1/responses",
+                    "https://api.groq.com/openai/v1/chat/completions",
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
@@ -89,7 +89,7 @@ class OpenAIReportInterpreter:
             return AIReportPlan.model_validate_json(self._output_text(response.json()))
         except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
             raise AIReportInterpreterError(
-                "No se pudo interpretar la consulta con el asistente de IA"
+                "No se pudo interpretar la consulta con Groq"
             ) from exc
 
 

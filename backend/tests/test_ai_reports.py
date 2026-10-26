@@ -1,6 +1,6 @@
 import pytest
 
-from app.modules.reports.ai import LocalReportInterpreter, OpenAIReportInterpreter
+from app.modules.reports.ai import GroqReportInterpreter, LocalReportInterpreter
 
 
 @pytest.mark.asyncio
@@ -22,19 +22,22 @@ async def test_local_interpreter_understands_customers_and_year() -> None:
     assert plan.dias == 365
 
 
-def test_openai_output_parser_reads_structured_response() -> None:
+def test_groq_output_parser_reads_structured_response() -> None:
     payload = {
-        "output": [{
-            "content": [{
-                "type": "output_text",
+        "choices": [{
+            "message": {
                 "text": (
                     '{"tipo_reporte":"VENTAS","dias":7,'
                     '"limite":20,"solo_criticos":false}'
                 ),
-            }]
+                "content": (
+                    '{"tipo_reporte":"VENTAS","dias":7,'
+                    '"limite":20,"solo_criticos":false}'
+                ),
+            }
         }]
     }
 
-    text = OpenAIReportInterpreter._output_text(payload)
+    text = GroqReportInterpreter._output_text(payload)
 
     assert '"VENTAS"' in text
