@@ -13,6 +13,7 @@ import {
 } from '../../core/models/platform.model';
 import { ApiErrorService } from '../../core/services/api-error.service';
 import { PlatformService } from '../../core/services/platform.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-platform-overview',
@@ -132,6 +133,7 @@ export class PlatformOverviewPage implements OnInit {
           <thead>
             <tr>
               <th>Empresa</th>
+              <th>Dominio</th>
               <th>Estado</th>
               <th>Plan</th>
               <th>Sucursales</th>
@@ -149,6 +151,20 @@ export class PlatformOverviewPage implements OnInit {
                   ><small>{{ tenant.slug }}</small>
                 </td>
                 <td>
+                  <a
+                    class="platform-domain-link"
+                    [href]="tenantUrl(tenant.slug)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    [attr.aria-label]="'Abrir la tienda de ' + tenant.nombre + ' en una pestaña nueva'"
+                  >
+                    <span>{{ tenant.slug }}.{{ tenantBaseDomain }}</span>
+                    <svg viewBox="0 0 20 20" aria-hidden="true">
+                      <path d="M7 5h8v8M15 5 5 15" />
+                    </svg>
+                  </a>
+                </td>
+                <td>
                   <span class="platform-status" [class.is-paused]="tenant.estado !== 'ACTIVO'">{{
                     tenant.estado
                   }}</span>
@@ -164,7 +180,7 @@ export class PlatformOverviewPage implements OnInit {
             } @empty {
               @if (!loading()) {
                 <tr>
-                  <td colspan="5" class="platform-empty">No hay empresas registradas.</td>
+                  <td colspan="6" class="platform-empty">No hay empresas registradas.</td>
                 </tr>
               }
             }
@@ -183,6 +199,13 @@ export class PlatformTenantsPage implements OnInit {
   readonly tenants = signal<PlatformTenant[]>([]);
   readonly loading = signal(true);
   readonly error = signal('');
+  readonly tenantBaseDomain: string = environment.tenantBaseDomain || 'localhost';
+
+  tenantUrl(slug: string): string {
+    const protocol = this.tenantBaseDomain === 'localhost' ? 'http' : 'https';
+    return `${protocol}://${slug}.${this.tenantBaseDomain}`;
+  }
+
   ngOnInit(): void {
     this.platform.tenants().subscribe({
       next: (value) => {
