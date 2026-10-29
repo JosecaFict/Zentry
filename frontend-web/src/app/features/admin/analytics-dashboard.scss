@@ -1,0 +1,250 @@
+:host {
+  container-type: inline-size;
+  display: block;
+  min-width: 0;
+}
+
+.analytics-shell {
+  width: min(100%, 1600px);
+  max-width: none;
+  padding: clamp(2.5rem, 4vw, 5rem) clamp(1rem, 3vw, 3.5rem) 6rem;
+}
+
+.analytics-heading h1 {
+  max-width: 12ch;
+  text-wrap: balance;
+}
+
+.analytics-heading > div:first-child > p {
+  max-width: 62ch;
+}
+
+.analytics-controls select,
+.analytics-controls button {
+  width: 100%;
+}
+
+.analytics-controls button:focus-visible,
+.analytics-controls select:focus-visible,
+.state button:focus-visible {
+  outline: 3px solid rgb(6 79 232 / 22%);
+  outline-offset: 2px;
+}
+
+.model-strip strong,
+.forecast-grid b,
+.segment dd {
+  font-variant-numeric: tabular-nums;
+}
+
+.forecast-grid article {
+  display: flex;
+  min-width: 0;
+  min-height: 280px;
+  flex-direction: column;
+}
+
+.forecast-grid article > strong {
+  font-size: clamp(2.6rem, 5cqi, 4.5rem);
+}
+
+.range {
+  display: flex;
+  height: 54px;
+  align-items: end;
+  border-bottom: 0;
+  background: #eceef1;
+}
+
+.range::after {
+  position: absolute;
+  right: 0;
+  bottom: 10px;
+  left: 0;
+  height: 1px;
+  background: #9aa3ad;
+  content: '';
+}
+
+.range i {
+  right: auto;
+  bottom: 6px;
+  left: 0;
+  z-index: 1;
+  width: var(--range);
+  height: 9px;
+  min-width: 8px;
+}
+
+.range small {
+  z-index: 2;
+  padding-left: 0.35rem;
+  background: #f7f6f3;
+}
+
+.forecast-grid article > b {
+  margin-top: auto;
+  padding-top: 0.75rem;
+}
+
+.model-quality p {
+  align-content: center;
+  margin: 0;
+}
+
+.segment {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.segment > p {
+  min-height: auto;
+}
+
+.segment footer {
+  margin-top: auto;
+}
+
+@container (max-width: 1120px) {
+  .analytics-heading {
+    display: grid;
+    gap: 2rem;
+  }
+
+  .analytics-controls {
+    width: min(100%, 620px);
+    min-width: 0;
+  }
+
+  .model-strip,
+  .forecast-grid,
+  .model-quality {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-strip div:nth-child(2n),
+  .forecast-grid article:nth-child(2n),
+  .model-quality > :nth-child(2n) {
+    border-right: 0;
+  }
+
+  .model-strip div:nth-child(-n + 2),
+  .forecast-grid article:nth-child(-n + 2),
+  .model-quality > :nth-child(-n + 2) {
+    border-bottom: 1px solid #cbd0d6;
+  }
+
+  .segment-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .segment {
+    display: grid;
+    grid-template-columns: minmax(150px, 0.65fr) minmax(240px, 1fr) minmax(250px, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .segment > header {
+    grid-column: 1 / -1;
+  }
+
+  .segment-count,
+  .segment > p,
+  .segment dl,
+  .segment footer {
+    margin: 0;
+  }
+}
+
+@container (max-width: 720px) {
+  .analytics-shell {
+    padding-inline: 1rem;
+  }
+
+  .analytics-heading h1 {
+    font-size: clamp(2.5rem, 13cqi, 3.7rem);
+  }
+
+  .analytics-controls,
+  .model-strip,
+  .forecast-grid,
+  .model-quality {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .analytics-controls label,
+  .analytics-controls button {
+    grid-column: 1;
+  }
+
+  .model-strip div,
+  .forecast-grid article,
+  .model-quality > * {
+    border-right: 0;
+    border-bottom: 1px solid #cbd0d6;
+  }
+
+  .forecast,
+  .segments {
+    margin-top: 3.5rem;
+  }
+
+  .forecast > header,
+  .segments > header {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .confidence {
+    text-align: left;
+  }
+
+  .forecast-grid article {
+    min-height: 250px;
+    padding-inline: 0.75rem;
+  }
+
+  .segment {
+    display: flex;
+    padding: 1.25rem;
+  }
+
+  .segment-count {
+    margin-top: 1.25rem;
+  }
+
+  .segment > p {
+    margin-top: 0.75rem;
+  }
+
+  .segment dl {
+    margin: 1.25rem 0;
+  }
+
+  .method-note {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+}
+
+@container (max-width: 420px) {
+  .analytics-shell {
+    padding-inline: 0.75rem;
+  }
+
+  .analytics-heading h1 {
+    overflow-wrap: anywhere;
+  }
+
+  .segment dl div {
+    align-items: start;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .segment dd {
+    text-align: left;
+  }
+}
