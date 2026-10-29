@@ -274,6 +274,13 @@ export const routes: Routes = [
           import('./features/admin/reports-admin').then((m) => m.ReportsAdmin),
       },
       {
+        path: 'analitica',
+        title: 'Analítica inteligente | Zentry',
+        canActivate: [requireAllPermissions('ventas.ver', 'inventario.ver')],
+        loadComponent: () =>
+          import('./features/admin/analytics-dashboard').then((m) => m.AnalyticsDashboardPage),
+      },
+      {
         path: 'historial-ventas', // [CU-11] Reporte y bitácora de ventas
         canActivate: [requireAnyPermission('ventas.ver')],
         loadComponent: () =>

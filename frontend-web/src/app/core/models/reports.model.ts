@@ -48,3 +48,24 @@ export interface AIReportResponse {
   pregunta: string; interpretacion: AIReportPlan; titulo: string; resumen: string;
   datos: Record<string, unknown>;
 }
+export interface ForecastPoint {
+  semana: string; unidades_estimadas: number; ingresos_estimados: number;
+  intervalo_inferior: number; intervalo_superior: number;
+}
+export interface DemandForecast {
+  modelo: string; objetivo: string; semanas_entrenamiento: number; fecha_entrenamiento: string;
+  mae_unidades: number; r2_unidades: number; tendencia_por_semana: number;
+  confianza: 'ALTA' | 'MEDIA' | 'BAJA'; advertencia: string | null; pronostico: ForecastPoint[];
+}
+export interface CustomerSegment {
+  segmento: 'LEALES' | 'POTENCIALES' | 'EN_RIESGO'; descripcion: string; clientes: number;
+  porcentaje: number; recencia_promedio_dias: number; frecuencia_promedio: number;
+  gasto_promedio: number; accion_recomendada: string;
+}
+export interface CustomerSegmentation {
+  modelo: string; variables: string[]; clientes_analizados: number; segmentos: CustomerSegment[];
+}
+export interface AnalyticsDashboard {
+  generado_en: string; periodo_desde: string; periodo_hasta: string; sucursal: string;
+  prediccion_demanda: DemandForecast; segmentacion_clientes: CustomerSegmentation;
+}

@@ -1,7 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { API_BASE_URL } from '../config/api.config';
-import { AIReportResponse, CustomerReport, InventoryReport, ProductReport, SalesReport } from '../models/reports.model';
+import { AIReportResponse, AnalyticsDashboard, CustomerReport, InventoryReport, ProductReport, SalesReport } from '../models/reports.model';
 
 export interface ReportFilters { desde: string; hasta: string; id_sucursal?: number | null; }
 
@@ -50,5 +50,10 @@ export class ReportsService {
       interpretacion: result.interpretacion,
       id_sucursal: branchId || null,
     }, { responseType: 'blob', observe: 'response' });
+  }
+  analyticsDashboard(branchId?: number | null) {
+    let params = new HttpParams();
+    if (branchId) params = params.set('id_sucursal', branchId);
+    return this.http.get<AnalyticsDashboard>(`${API_BASE_URL}/admin/analytics/dashboard`, { params });
   }
 }
