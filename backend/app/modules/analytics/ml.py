@@ -68,11 +68,14 @@ def forecast_demand(
     for offset, forecast_date in enumerate(future_dates, start=1):
         x = len(units) - 1 + offset
         estimate = max(0, round(unit_intercept + unit_slope * x))
+        revenue_estimate = round(max(0, revenue_intercept + revenue_slope * x), 2)
+        if estimate == 0:
+            revenue_estimate = 0.0
         points.append(
             ForecastPoint(
                 fecha=forecast_date,
                 unidades_estimadas=estimate,
-                ingresos_estimados=round(max(0, revenue_intercept + revenue_slope * x), 2),
+                ingresos_estimados=revenue_estimate,
                 intervalo_inferior=max(0, round(estimate - margin)),
                 intervalo_superior=max(0, round(estimate + margin)),
             )

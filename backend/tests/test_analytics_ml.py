@@ -90,6 +90,30 @@ def test_forecast_demand_is_explicit_when_history_is_insufficient():
     assert result.advertencia
 
 
+def test_forecast_never_reports_revenue_when_estimated_units_are_zero():
+    rows = [
+        {
+            "fecha": date(2026, 10, 22) + timedelta(days=index),
+            "unidades": units,
+            "ingresos": revenue,
+        }
+        for index, (units, revenue) in enumerate(
+            [(4, 400), (2, 220), (1, 120), (0, 0), (0, 0), (0, 0), (0, 0)]
+        )
+    ]
+
+    result = forecast_demand(
+        rows,
+        generated_on=date(2026, 10, 29),
+        future_dates=[date(2026, 10, 30)],
+        granularidad="DIA",
+        objetivo="Unidades vendidas por día",
+    )
+
+    assert result.pronostico[0].unidades_estimadas == 0
+    assert result.pronostico[0].ingresos_estimados == 0
+
+
 def test_segmentation_produces_three_explainable_rfm_cohorts():
     rows = [
         {"recencia": 2, "frecuencia": 18, "gasto": 9500},
