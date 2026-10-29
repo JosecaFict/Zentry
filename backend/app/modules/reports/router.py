@@ -86,12 +86,21 @@ async def ai_report_query(
     if not question:
         raise HTTPException(status_code=422, detail="Escribe una pregunta para el asistente")
     try:
-        plan = await interpreter.interpret(question)
+        plan = await interpreter.interpret(question, reference_date=date.today())
     except AIReportInterpreterError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    end = date.today()
-    start = end - timedelta(days=plan.dias - 1)
+    if plan.necesita_aclaracion:
+        return AIReportResponse(
+            pregunta=question,
+            interpretacion=plan,
+            titulo="Necesito un dato más",
+            resumen=plan.pregunta_aclaracion or "Aclara los filtros del reporte.",
+            datos={},
+        )
+
+    end = plan.fecha_hasta or date.today()
+    start = plan.fecha_desde or (end - timedelta(days=plan.dias - 1))
     tenant_id = _tenant(principal)
     branch_id = _branch(principal, payload.id_sucursal)
     if plan.tipo_reporte == "VENTAS":
@@ -108,7 +117,7 @@ async def ai_report_query(
         data = (
             await service.customers(tenant_id, start, end, branch_id, plan.limite)
         ).model_dump(mode="json")
-    else:
+    elif plan.tipo_reporte == "RESUMEN":
         data = {
             "ventas": (
                 await service.sales(tenant_id, start, end, branch_id)
@@ -123,6 +132,11 @@ async def ai_report_query(
                 await service.customers(tenant_id, start, end, branch_id, plan.limite)
             ).model_dump(mode="json"),
         }
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="El reporte de ingresos por categoría todavía no está disponible",
+        )
     title, summary = _summary(plan.tipo_reporte, data)
     return AIReportResponse(
         pregunta=question,

@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SalesPoint(BaseModel):
@@ -80,10 +80,47 @@ class AIReportRequest(BaseModel):
 
 
 class AIReportPlan(BaseModel):
-    tipo_reporte: Literal["VENTAS", "PRODUCTOS", "INVENTARIO", "CLIENTES", "RESUMEN"]
+    tipo_reporte: Literal[
+        "VENTAS",
+        "PRODUCTOS",
+        "INVENTARIO",
+        "CLIENTES",
+        "INGRESOS_CATEGORIA",
+        "RESUMEN",
+    ]
     dias: int = Field(default=90, ge=1, le=731)
+    fecha_desde: date | None = None
+    fecha_hasta: date | None = None
+    sucursal: str | None = Field(default=None, max_length=120)
+    categoria: str | None = Field(default=None, max_length=120)
+    producto: str | None = Field(default=None, max_length=160)
+    agrupacion: Literal[
+        "DIA", "SEMANA", "MES", "SUCURSAL", "CATEGORIA", "PRODUCTO", "NINGUNA"
+    ] = "NINGUNA"
+    visualizacion: Literal["TABLA", "BARRAS", "LINEAS", "CIRCULAR", "INDICADORES"] = (
+        "TABLA"
+    )
+    ordenar_por: Literal["INGRESOS", "UNIDADES", "VENTAS", "STOCK", "NOMBRE"] = (
+        "INGRESOS"
+    )
+    direccion: Literal["ASC", "DESC"] = "DESC"
     limite: int = Field(default=20, ge=1, le=100)
     solo_criticos: bool = False
+    necesita_aclaracion: bool = False
+    pregunta_aclaracion: str | None = Field(default=None, max_length=300)
+
+    @model_validator(mode="after")
+    def validate_dates_and_clarification(self):
+        if (self.fecha_desde is None) != (self.fecha_hasta is None):
+            raise ValueError("fecha_desde y fecha_hasta deben informarse juntas")
+        if self.fecha_desde and self.fecha_hasta:
+            if self.fecha_desde > self.fecha_hasta:
+                raise ValueError("fecha_desde no puede ser posterior a fecha_hasta")
+            if (self.fecha_hasta - self.fecha_desde).days > 730:
+                raise ValueError("el período máximo permitido es de 731 días")
+        if self.necesita_aclaracion and not self.pregunta_aclaracion:
+            raise ValueError("una consulta ambigua debe incluir pregunta_aclaracion")
+        return self
 
 
 class AIReportResponse(BaseModel):

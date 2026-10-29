@@ -20,9 +20,14 @@ export interface CustomerPerformance {
   gasto_total: number; ticket_promedio: number; ultima_compra: string;
 }
 export interface CustomerReport { desde: string; hasta: string; clientes: CustomerPerformance[]; }
-export type AIReportType = 'VENTAS' | 'PRODUCTOS' | 'INVENTARIO' | 'CLIENTES' | 'RESUMEN';
+export type AIReportType = 'VENTAS' | 'PRODUCTOS' | 'INVENTARIO' | 'CLIENTES' | 'INGRESOS_CATEGORIA' | 'RESUMEN';
 export interface AIReportPlan {
-  tipo_reporte: AIReportType; dias: number; limite: number; solo_criticos: boolean;
+  tipo_reporte: AIReportType; dias: number; fecha_desde: string | null; fecha_hasta: string | null;
+  sucursal: string | null; categoria: string | null; producto: string | null;
+  agrupacion: 'DIA' | 'SEMANA' | 'MES' | 'SUCURSAL' | 'CATEGORIA' | 'PRODUCTO' | 'NINGUNA';
+  visualizacion: 'TABLA' | 'BARRAS' | 'LINEAS' | 'CIRCULAR' | 'INDICADORES';
+  ordenar_por: 'INGRESOS' | 'UNIDADES' | 'VENTAS' | 'STOCK' | 'NOMBRE'; direccion: 'ASC' | 'DESC';
+  limite: number; solo_criticos: boolean; necesita_aclaracion: boolean; pregunta_aclaracion: string | null;
 }
 export interface AIReportResponse {
   pregunta: string; interpretacion: AIReportPlan; titulo: string; resumen: string;

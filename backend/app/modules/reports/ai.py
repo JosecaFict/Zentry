@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import date
 from typing import Any, Protocol
 
 import httpx
@@ -12,7 +13,9 @@ class AIReportInterpreterError(RuntimeError):
 
 
 class AIReportInterpreter(Protocol):
-    async def interpret(self, question: str) -> AIReportPlan: ...
+    async def interpret(
+        self, question: str, reference_date: date | None = None
+    ) -> AIReportPlan: ...
 
 
 REPORT_PLAN_SCHEMA: dict[str, Any] = {
@@ -21,13 +24,41 @@ REPORT_PLAN_SCHEMA: dict[str, Any] = {
     "properties": {
         "tipo_reporte": {
             "type": "string",
-            "enum": ["VENTAS", "PRODUCTOS", "INVENTARIO", "CLIENTES", "RESUMEN"],
+            "enum": [
+                "VENTAS", "PRODUCTOS", "INVENTARIO", "CLIENTES",
+                "INGRESOS_CATEGORIA", "RESUMEN",
+            ],
         },
         "dias": {"type": "integer", "minimum": 1, "maximum": 731},
+        "fecha_desde": {"type": ["string", "null"]},
+        "fecha_hasta": {"type": ["string", "null"]},
+        "sucursal": {"type": ["string", "null"]},
+        "categoria": {"type": ["string", "null"]},
+        "producto": {"type": ["string", "null"]},
+        "agrupacion": {
+            "type": "string",
+            "enum": ["DIA", "SEMANA", "MES", "SUCURSAL", "CATEGORIA", "PRODUCTO", "NINGUNA"],
+        },
+        "visualizacion": {
+            "type": "string",
+            "enum": ["TABLA", "BARRAS", "LINEAS", "CIRCULAR", "INDICADORES"],
+        },
+        "ordenar_por": {
+            "type": "string",
+            "enum": ["INGRESOS", "UNIDADES", "VENTAS", "STOCK", "NOMBRE"],
+        },
+        "direccion": {"type": "string", "enum": ["ASC", "DESC"]},
         "limite": {"type": "integer", "minimum": 1, "maximum": 100},
         "solo_criticos": {"type": "boolean"},
+        "necesita_aclaracion": {"type": "boolean"},
+        "pregunta_aclaracion": {"type": ["string", "null"]},
     },
-    "required": ["tipo_reporte", "dias", "limite", "solo_criticos"],
+    "required": [
+        "tipo_reporte", "dias", "fecha_desde", "fecha_hasta", "sucursal",
+        "categoria", "producto", "agrupacion", "visualizacion", "ordenar_por",
+        "direccion", "limite", "solo_criticos", "necesita_aclaracion",
+        "pregunta_aclaracion",
+    ],
 }
 
 
@@ -49,7 +80,10 @@ class GroqReportInterpreter:
             raise AIReportInterpreterError("Groq no devolvió una interpretación utilizable")
         return str(content)
 
-    async def interpret(self, question: str) -> AIReportPlan:
+    async def interpret(
+        self, question: str, reference_date: date | None = None
+    ) -> AIReportPlan:
+        today = reference_date or date.today()
         body = {
             "model": self.model,
             "messages": [
@@ -57,9 +91,17 @@ class GroqReportInterpreter:
                     "role": "system",
                     "content": (
                         "Interpreta consultas de reportes comerciales en español. "
-                        "Elige exactamente un reporte permitido. No generes SQL, código, "
-                        "IDs de tenant ni sucursales. RESUMEN combina todos los reportes. "
-                        "Si no indican período usa 90 días y límite 20."
+                        f"La fecha actual es {today.isoformat()}. "
+                        "Elige exactamente un reporte permitido y devuelve solo el plan. "
+                        "No generes SQL, código, IDs de tenant ni IDs de sucursal. "
+                        "Puedes extraer el nombre escrito de una sucursal, categoría o producto; "
+                        "el servidor comprobará que pertenezca a la empresa autenticada. "
+                        "Convierte períodos explícitos a fechas ISO. Si solo hay un período "
+                        "relativo, usa dias y deja ambas fechas en null. Para inventario actual "
+                        "no hace falta un período. Si una solicitud de ventas, productos, clientes "
+                        "o ingresos por categoría no permite determinar un período, marca "
+                        "necesita_aclaracion y formula una pregunta concreta. No inventes filtros. "
+                        "RESUMEN combina todos los reportes. Si no indican límite usa 20."
                     ),
                 },
                 {"role": "user", "content": question},
@@ -96,7 +138,9 @@ class GroqReportInterpreter:
 class LocalReportInterpreter:
     """Intérprete determinista para desarrollo y pruebas, nunca para producción."""
 
-    async def interpret(self, question: str) -> AIReportPlan:
+    async def interpret(
+        self, question: str, reference_date: date | None = None
+    ) -> AIReportPlan:
         normalized = question.casefold()
         report_type = "RESUMEN"
         if any(word in normalized for word in ("inventario", "stock", "agot")):
@@ -105,6 +149,10 @@ class LocalReportInterpreter:
             report_type = "PRODUCTOS"
         elif any(word in normalized for word in ("cliente", "comprador")):
             report_type = "CLIENTES"
+        elif "categor" in normalized and any(
+            word in normalized for word in ("ingreso", "venta", "factur")
+        ):
+            report_type = "INGRESOS_CATEGORIA"
         elif any(word in normalized for word in ("venta", "ingreso", "ticket")):
             report_type = "VENTAS"
 
@@ -119,9 +167,35 @@ class LocalReportInterpreter:
         elif "año" in normalized or "anual" in normalized:
             days = 365
 
+        explicit_period = bool(
+            match
+            or any(word in normalized for word in ("semana", "mes", "año", "anual", "hoy"))
+        )
+        needs_period = report_type in {
+            "VENTAS", "PRODUCTOS", "CLIENTES", "INGRESOS_CATEGORIA", "RESUMEN"
+        }
+        needs_clarification = needs_period and not explicit_period
+        grouping = "NINGUNA"
+        if "sucursal" in normalized:
+            grouping = "SUCURSAL"
+        elif "categor" in normalized:
+            grouping = "CATEGORIA"
+        elif "semana" in normalized:
+            grouping = "SEMANA"
+        elif report_type == "VENTAS":
+            grouping = "DIA"
+
         return AIReportPlan(
             tipo_reporte=report_type,
             dias=days,
+            agrupacion=grouping,
+            visualizacion=("LINEAS" if grouping in {"DIA", "SEMANA", "MES"} else "BARRAS"),
             limite=20,
             solo_criticos=any(word in normalized for word in ("crítico", "critico", "bajo")),
+            necesita_aclaracion=needs_clarification,
+            pregunta_aclaracion=(
+                "¿De qué período deseas consultar la información?"
+                if needs_clarification
+                else None
+            ),
         )
