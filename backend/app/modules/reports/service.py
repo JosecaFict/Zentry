@@ -5,6 +5,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.reports.schemas import (
+    BranchSalesItem,
+    BranchSalesReport,
+    CategoryRevenueItem,
+    CategoryRevenueReport,
     CustomerPerformance,
     CustomerReport,
     InventoryItem,
@@ -85,6 +89,60 @@ class ReportsService:
         rows = result.mappings().all()
         return self.summarize_sales(date_from, date_to, rows)
 
+    async def sales_by_branch(
+        self,
+        tenant_id: int,
+        date_from: date,
+        date_to: date,
+        branch_id: int | None,
+    ) -> BranchSalesReport:
+        start, end = self._range(date_from, date_to)
+        rows = (await self.session.execute(text("""
+            SELECT s.id_sucursal, s.nombre AS sucursal,
+                   count(DISTINCT v.id_venta)::int AS ventas,
+                   coalesce(sum(d.cantidad), 0)::int AS unidades,
+                   coalesce(sum(d.subtotal), 0)::numeric(12,2) AS ingresos
+              FROM capricho.venta v
+              JOIN capricho.sucursal s ON s.id_sucursal = v.id_sucursal
+              JOIN capricho.detalle_venta d ON d.id_venta = v.id_venta
+             WHERE v.estado = 'PAGADA'
+               AND v.id_tenant = :tenant_id
+               AND s.id_tenant = :tenant_id
+               AND v.fecha_venta BETWEEN :start AND :end
+               AND (CAST(:branch_id AS BIGINT) IS NULL OR v.id_sucursal = :branch_id)
+             GROUP BY s.id_sucursal, s.nombre
+             ORDER BY ingresos DESC, ventas DESC, s.nombre
+        """), {
+            "tenant_id": tenant_id,
+            "start": start,
+            "end": end,
+            "branch_id": branch_id,
+        })).mappings().all()
+        total_revenue = sum((row["ingresos"] for row in rows), ZERO)
+        total_sales = sum(row["ventas"] for row in rows)
+        total_units = sum(row["unidades"] for row in rows)
+        items = [
+            BranchSalesItem(
+                **row,
+                participacion=(
+                    (row["ingresos"] * Decimal("100") / total_revenue).quantize(
+                        Decimal("0.01")
+                    )
+                    if total_revenue
+                    else ZERO
+                ),
+            )
+            for row in rows
+        ]
+        return BranchSalesReport(
+            desde=date_from,
+            hasta=date_to,
+            total_ventas=total_sales,
+            total_unidades=total_units,
+            ingresos=total_revenue,
+            sucursales=items,
+        )
+
     async def products(
         self,
         tenant_id: int,
@@ -92,6 +150,8 @@ class ReportsService:
         date_to: date,
         branch_id: int | None,
         limit: int,
+        category: str | None = None,
+        product: str | None = None,
     ) -> ProductReport:
         start, end = self._range(date_from, date_to)
         result = await self.session.execute(text("""
@@ -107,6 +167,8 @@ class ReportsService:
                AND v.id_tenant = :tenant_id
                AND v.fecha_venta BETWEEN :start AND :end
                AND (CAST(:branch_id AS BIGINT) IS NULL OR v.id_sucursal = :branch_id)
+               AND (CAST(:category AS VARCHAR) IS NULL OR lower(c.nombre) = lower(:category))
+               AND (CAST(:product AS VARCHAR) IS NULL OR lower(p.nombre) = lower(:product))
              GROUP BY p.id_producto, p.nombre, c.nombre
              ORDER BY ingresos DESC, unidades DESC, p.nombre
              LIMIT :limit
@@ -115,20 +177,31 @@ class ReportsService:
             "start": start,
             "end": end,
             "branch_id": branch_id,
+            "category": category,
+            "product": product,
             "limit": limit,
         })
         rows = result.mappings().all()
         return ProductReport(
             desde=date_from,
             hasta=date_to,
-            productos=[ProductPerformance(**row) for row in rows],
+            productos=[
+                ProductPerformance(posicion=index, **row)
+                for index, row in enumerate(rows, start=1)
+            ],
         )
 
     async def inventory(
-        self, tenant_id: int, branch_id: int | None, critical_only: bool
+        self,
+        tenant_id: int,
+        branch_id: int | None,
+        critical_only: bool,
+        category: str | None = None,
+        product: str | None = None,
     ) -> InventoryReport:
         rows = (await self.session.execute(text("""
-            SELECT vp.id_variante, p.nombre AS producto, vp.sku, s.nombre AS sucursal,
+            SELECT vp.id_variante, p.nombre AS producto, c.nombre AS categoria,
+                   t.codigo AS talla, co.nombre AS color, vp.sku, s.nombre AS sucursal,
                    i.stock_fisico, i.stock_reservado,
                    (i.stock_fisico - i.stock_reservado)::int AS stock_disponible,
                    i.stock_minimo,
@@ -141,6 +214,9 @@ class ReportsService:
               JOIN capricho.sucursal s ON s.id_sucursal = i.id_sucursal
               JOIN capricho.variante_producto vp ON vp.id_variante = i.id_variante
               JOIN capricho.producto p ON p.id_producto = vp.id_producto
+              JOIN capricho.categoria c ON c.id_categoria = p.id_categoria
+              JOIN capricho.talla t ON t.id_talla = vp.id_talla
+              JOIN capricho.color co ON co.id_color = vp.id_color
               LEFT JOIN LATERAL (
                   SELECT sum(li.cantidad_disponible * li.costo_unitario)
                              / nullif(sum(li.cantidad_disponible), 0) AS costo_promedio
@@ -151,7 +227,11 @@ class ReportsService:
               ) l ON true
              WHERE p.activo = true AND vp.activo = true
                AND i.id_tenant = :tenant_id
+               AND p.id_tenant = :tenant_id
+               AND c.id_tenant = :tenant_id
                AND (CAST(:branch_id AS BIGINT) IS NULL OR i.id_sucursal = :branch_id)
+               AND (CAST(:category AS VARCHAR) IS NULL OR lower(c.nombre) = lower(:category))
+               AND (CAST(:product AS VARCHAR) IS NULL OR lower(p.nombre) = lower(:product))
                AND (CAST(:critical_only AS BOOLEAN) = false
                     OR i.stock_fisico - i.stock_reservado <= i.stock_minimo)
              ORDER BY critico DESC, stock_disponible, p.nombre, vp.sku
@@ -159,8 +239,80 @@ class ReportsService:
             "tenant_id": tenant_id,
             "branch_id": branch_id,
             "critical_only": critical_only,
+            "category": category,
+            "product": product,
         })).mappings().all()
         return self.summarize_inventory(rows)
+
+    async def revenue_by_category(
+        self,
+        tenant_id: int,
+        date_from: date,
+        date_to: date,
+        branch_id: int | None,
+        category: str | None = None,
+    ) -> CategoryRevenueReport:
+        start, end = self._range(date_from, date_to)
+        rows = (await self.session.execute(text("""
+            SELECT c.id_categoria, c.nombre AS categoria,
+                   coalesce(sum(d.cantidad), 0)::int AS unidades,
+                   coalesce(sum(d.subtotal), 0)::numeric(12,2) AS ingresos
+              FROM capricho.venta v
+              JOIN capricho.detalle_venta d ON d.id_venta = v.id_venta
+              JOIN capricho.variante_producto vp ON vp.id_variante = d.id_variante
+              JOIN capricho.producto p ON p.id_producto = vp.id_producto
+              JOIN capricho.categoria c ON c.id_categoria = p.id_categoria
+             WHERE v.estado = 'PAGADA'
+               AND v.id_tenant = :tenant_id
+               AND p.id_tenant = :tenant_id
+               AND c.id_tenant = :tenant_id
+               AND v.fecha_venta BETWEEN :start AND :end
+               AND (CAST(:branch_id AS BIGINT) IS NULL OR v.id_sucursal = :branch_id)
+               AND (CAST(:category AS VARCHAR) IS NULL OR lower(c.nombre) = lower(:category))
+             GROUP BY c.id_categoria, c.nombre
+             ORDER BY ingresos DESC, unidades DESC, c.nombre
+        """), {
+            "tenant_id": tenant_id,
+            "start": start,
+            "end": end,
+            "branch_id": branch_id,
+            "category": category,
+        })).mappings().all()
+        total_revenue = sum((row["ingresos"] for row in rows), ZERO)
+        total_units = sum(row["unidades"] for row in rows)
+        items = [
+            CategoryRevenueItem(
+                **row,
+                participacion=(
+                    (row["ingresos"] * Decimal("100") / total_revenue).quantize(
+                        Decimal("0.01")
+                    )
+                    if total_revenue
+                    else ZERO
+                ),
+            )
+            for row in rows
+        ]
+        return CategoryRevenueReport(
+            desde=date_from,
+            hasta=date_to,
+            total_unidades=total_units,
+            ingresos=total_revenue,
+            categorias=items,
+        )
+
+    async def resolve_branch_id(self, tenant_id: int, branch_name: str) -> int | None:
+        result = await self.session.execute(text("""
+            SELECT id_sucursal
+              FROM capricho.sucursal
+             WHERE id_tenant = :tenant_id
+               AND activo = true
+               AND regexp_replace(lower(nombre), '^sucursal[[:space:]]+', '') =
+                   regexp_replace(lower(:branch_name), '^sucursal[[:space:]]+', '')
+             LIMIT 1
+        """), {"tenant_id": tenant_id, "branch_name": branch_name.strip()})
+        value = result.scalar_one_or_none()
+        return int(value) if value is not None else None
 
     async def customers(
         self,

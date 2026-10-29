@@ -22,7 +22,26 @@ class SalesReport(BaseModel):
     serie: list[SalesPoint]
 
 
+class BranchSalesItem(BaseModel):
+    id_sucursal: int
+    sucursal: str
+    ventas: int
+    unidades: int
+    ingresos: Decimal
+    participacion: Decimal
+
+
+class BranchSalesReport(BaseModel):
+    desde: date
+    hasta: date
+    total_ventas: int
+    total_unidades: int
+    ingresos: Decimal
+    sucursales: list[BranchSalesItem]
+
+
 class ProductPerformance(BaseModel):
+    posicion: int
     id_producto: int
     producto: str
     categoria: str
@@ -39,6 +58,9 @@ class ProductReport(BaseModel):
 class InventoryItem(BaseModel):
     id_variante: int
     producto: str
+    categoria: str
+    talla: str
+    color: str
     sku: str
     sucursal: str
     stock_fisico: int
@@ -72,6 +94,22 @@ class CustomerReport(BaseModel):
     desde: date
     hasta: date
     clientes: list[CustomerPerformance]
+
+
+class CategoryRevenueItem(BaseModel):
+    id_categoria: int
+    categoria: str
+    unidades: int
+    ingresos: Decimal
+    participacion: Decimal
+
+
+class CategoryRevenueReport(BaseModel):
+    desde: date
+    hasta: date
+    total_unidades: int
+    ingresos: Decimal
+    categorias: list[CategoryRevenueItem]
 
 
 class AIReportRequest(BaseModel):

@@ -96,6 +96,10 @@ class GroqReportInterpreter:
                         "No generes SQL, código, IDs de tenant ni IDs de sucursal. "
                         "Puedes extraer el nombre escrito de una sucursal, categoría o producto; "
                         "el servidor comprobará que pertenezca a la empresa autenticada. "
+                        "Usa VENTAS con agrupacion SUCURSAL para ventas o comparaciones por "
+                        "sucursal; PRODUCTOS para rankings de productos; INVENTARIO para stock "
+                        "y existencias; e INGRESOS_CATEGORIA para ingresos o participación por "
+                        "categoría. "
                         "Convierte períodos explícitos a fechas ISO. Si solo hay un período "
                         "relativo, usa dias y deja ambas fechas en null. Para inventario actual "
                         "no hace falta un período. Si una solicitud de ventas, productos, clientes "
@@ -145,14 +149,14 @@ class LocalReportInterpreter:
         report_type = "RESUMEN"
         if any(word in normalized for word in ("inventario", "stock", "agot")):
             report_type = "INVENTARIO"
-        elif any(word in normalized for word in ("producto", "prenda", "vendido")):
-            report_type = "PRODUCTOS"
-        elif any(word in normalized for word in ("cliente", "comprador")):
-            report_type = "CLIENTES"
         elif "categor" in normalized and any(
             word in normalized for word in ("ingreso", "venta", "factur")
         ):
             report_type = "INGRESOS_CATEGORIA"
+        elif any(word in normalized for word in ("producto", "prenda", "vendido")):
+            report_type = "PRODUCTOS"
+        elif any(word in normalized for word in ("cliente", "comprador")):
+            report_type = "CLIENTES"
         elif any(word in normalized for word in ("venta", "ingreso", "ticket")):
             report_type = "VENTAS"
 

@@ -58,6 +58,9 @@ def test_inventory_report_summarizes_valuation_and_critical_items() -> None:
         {
             "id_variante": 10,
             "producto": "Polo clásico mujer",
+            "categoria": "Polos",
+            "talla": "XS",
+            "color": "Azul",
             "sku": "POLO-M-XS-AZ",
             "sucursal": "Central",
             "stock_fisico": 8,
@@ -71,6 +74,9 @@ def test_inventory_report_summarizes_valuation_and_critical_items() -> None:
         {
             "id_variante": 11,
             "producto": "Blusa manga larga",
+            "categoria": "Blusas",
+            "talla": "S",
+            "color": "Blanco",
             "sku": "BLUSA-S-BC",
             "sucursal": "Central",
             "stock_fisico": 3,
@@ -121,11 +127,13 @@ async def test_every_report_query_filters_the_authenticated_tenant() -> None:
     end = date(2026, 10, 29)
 
     await service.sales(42, start, end, None)
+    await service.sales_by_branch(42, start, end, None)
     await service.products(42, start, end, None, 10)
     await service.inventory(42, None, False)
+    await service.revenue_by_category(42, start, end, None)
     await service.customers(42, start, end, None, 10)
 
-    assert len(session.calls) == 4
+    assert len(session.calls) == 6
     for statement, parameters in session.calls:
         assert "id_tenant = :tenant_id" in statement
         assert parameters["tenant_id"] == 42
