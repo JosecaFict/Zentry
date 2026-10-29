@@ -174,6 +174,10 @@ class AIReportResponse(BaseModel):
     datos: dict[str, Any]
 
 
+class VoiceTranscriptionResponse(BaseModel):
+    texto: str
+
+
 class AIReportExportRequest(BaseModel):
     interpretacion: AIReportPlan
     id_sucursal: int | None = Field(default=None, gt=0)

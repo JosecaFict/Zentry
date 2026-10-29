@@ -2,12 +2,17 @@ import logging
 from datetime import date, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 
+from app.core.config import get_settings
 from app.modules.auth.dependencies import CurrentPrincipal, require_permission
 from app.modules.auth.exceptions import PermissionDeniedError
 from app.modules.reports.ai import AIReportInterpreter, AIReportInterpreterError
-from app.modules.reports.dependencies import get_ai_report_interpreter, get_reports_service
+from app.modules.reports.dependencies import (
+    get_ai_report_interpreter,
+    get_reports_service,
+    get_speech_transcriber,
+)
 from app.modules.reports.export import (
     generate_ai_excel,
     generate_ai_pdf,
@@ -25,13 +30,16 @@ from app.modules.reports.schemas import (
     InventoryReport,
     ProductReport,
     SalesReport,
+    VoiceTranscriptionResponse,
 )
 from app.modules.reports.service import ReportsService
+from app.modules.reports.speech import GroqSpeechTranscriber, SpeechTranscriptionError
 
 router = APIRouter(prefix="/admin/reports", tags=["reports"])
 logger = logging.getLogger("zentry.reports")
 Reports = Annotated[ReportsService, Depends(get_reports_service)]
 AIInterpreter = Annotated[AIReportInterpreter | None, Depends(get_ai_report_interpreter)]
+SpeechTranscriber = Annotated[GroqSpeechTranscriber | None, Depends(get_speech_transcriber)]
 SalesPrincipal = Annotated[CurrentPrincipal, Depends(require_permission("ventas.ver"))]
 InventoryPrincipal = Annotated[CurrentPrincipal, Depends(require_permission("inventario.ver"))]
 
@@ -175,6 +183,74 @@ async def _execute_ai_plan(
             ).model_dump(mode="json"),
         }
     raise HTTPException(status_code=422, detail="Tipo de reporte no soportado")
+
+
+@router.post("/ai/transcribe", response_model=VoiceTranscriptionResponse)
+async def transcribe_ai_question(
+    principal: SalesPrincipal,
+    service: Reports,
+    transcriber: SpeechTranscriber,
+    audio: Annotated[UploadFile, File()],
+):
+    if not principal.permite_reportes_ia:
+        raise HTTPException(
+            status_code=403,
+            detail="La consulta por voz está disponible en el plan Profesional",
+        )
+    if "inventario.ver" not in principal.permissions and "ADMIN" not in principal.roles:
+        raise PermissionDeniedError
+    if transcriber is None:
+        raise HTTPException(status_code=503, detail="La consulta por voz no está configurada")
+
+    allowed_types = {
+        "audio/flac",
+        "audio/m4a",
+        "audio/mp4",
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/ogg",
+        "audio/wav",
+        "audio/webm",
+        "audio/x-m4a",
+        "audio/x-wav",
+    }
+    content_type = (audio.content_type or "").lower().split(";", 1)[0]
+    if content_type not in allowed_types:
+        raise HTTPException(status_code=415, detail="El formato de audio no es compatible")
+
+    max_bytes = get_settings().voice_max_file_size_mb * 1024 * 1024
+    content = await audio.read(max_bytes + 1)
+    if not content:
+        raise HTTPException(status_code=422, detail="La grabación está vacía")
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=413, detail="La grabación supera el tamaño permitido")
+
+    try:
+        text = await transcriber.transcribe(
+            audio.filename or "consulta.webm",
+            content_type,
+            content,
+        )
+    except SpeechTranscriptionError as exc:
+        logger.warning("No se pudo transcribir una consulta (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail="No pudimos transcribir la grabación en este momento",
+        ) from exc
+
+    await _audit(
+        service,
+        principal,
+        action="TRANSCRIBIR",
+        entity="REPORTE_IA",
+        record_id="VOZ",
+        metadata={
+            "tipo_audio": content_type,
+            "bytes": len(content),
+            "modelo": transcriber.model,
+        },
+    )
+    return VoiceTranscriptionResponse(texto=text)
 
 
 @router.post("/ai/query", response_model=AIReportResponse)

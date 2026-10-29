@@ -9,6 +9,7 @@ import {
   InventoryReport,
   ProductReport,
   SalesReport,
+  VoiceTranscriptionResponse,
 } from '../models/reports.model';
 
 export interface ReportFilters {
@@ -60,6 +61,15 @@ export class ReportsService {
       pregunta: question,
       id_sucursal: branchId || null,
     });
+  }
+  transcribeVoice(audio: Blob) {
+    const body = new FormData();
+    const extension = audio.type.includes('ogg') ? 'ogg' : audio.type.includes('mp4') ? 'm4a' : 'webm';
+    body.append('audio', audio, `consulta.${extension}`);
+    return this.http.post<VoiceTranscriptionResponse>(
+      `${API_BASE_URL}/admin/reports/ai/transcribe`,
+      body,
+    );
   }
   exportAssistant(result: AIReportResponse, branchId: number | null, format: 'xlsx' | 'pdf') {
     return this.http.post(

@@ -119,6 +119,9 @@ export interface AIReportResponse {
   resumen: string;
   datos: Record<string, unknown>;
 }
+export interface VoiceTranscriptionResponse {
+  texto: string;
+}
 export interface ForecastPoint {
   fecha: string;
   unidades_estimadas: number;

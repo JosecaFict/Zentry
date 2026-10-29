@@ -73,7 +73,10 @@ GET /api/v1/admin/analytics/dashboard?id_sucursal=12&periodo=TRIMESTRAL
 - Una confianza baja es un resultado válido y debe mostrarse, no ocultarse.
 - La regresión lineal no modela por sí sola estacionalidad, promociones o eventos externos.
 - K-means necesita al menos tres clientes con compras para formar los segmentos.
-- La voz se incorporará como una capa de entrada; no cambiará las reglas de autorización ni permitirá ejecutar SQL generado por IA.
+- La entrada por voz usa Groq Whisper para convertir una grabación breve en texto editable.
+- La transcripción nunca ejecuta una consulta automáticamente: el usuario debe revisarla y confirmarla.
+- El audio se procesa en memoria y no se conserva; la auditoría registra únicamente metadatos
+  técnicos sanitizados, sin audio ni transcripción.
 
 ## Validación automatizada
 

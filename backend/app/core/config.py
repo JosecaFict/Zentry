@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     groq_reports_model: str = Field(
         default="openai/gpt-oss-20b", alias="GROQ_REPORTS_MODEL"
     )
+    groq_speech_model: str = Field(
+        default="whisper-large-v3-turbo", alias="GROQ_SPEECH_MODEL"
+    )
+    voice_max_file_size_mb: int = Field(
+        default=10, alias="VOICE_MAX_FILE_SIZE_MB", ge=1, le=25
+    )
     openrouteservice_api_key: str | None = Field(
         default=None, alias="OPENROUTESERVICE_API_KEY"
     )
