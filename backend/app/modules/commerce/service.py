@@ -412,7 +412,7 @@ class CommerceService:
             )
 
     async def create_reservation(
-        self, user_id: int, payload: ReservationCreate
+        self, user_id: int, payload: ReservationCreate, *, commit: bool = True
     ) -> ReservationResponse:
         customer = await self._customer(user_id)
         self._validate_unique_lines(payload.items)
@@ -490,9 +490,11 @@ class CommerceService:
                     "route": "/reservas",
                 },
             )
-            await self.session.commit()
+            if commit:
+                await self.session.commit()
         except Exception:
-            await self.session.rollback()
+            if commit:
+                await self.session.rollback()
             raise
         return await self._reservation_response(reservation)
 
@@ -810,7 +812,12 @@ class CommerceService:
         return sale
 
     async def create_pos_sale(
-        self, user_id: int, payload: SaleCreate, *, all_branches: bool = False
+        self,
+        user_id: int,
+        payload: SaleCreate,
+        *,
+        all_branches: bool = False,
+        commit: bool = True,
     ) -> SaleResponse:
         employee = await self._employee(user_id)
         if not all_branches and employee.id_sucursal != payload.id_sucursal:
@@ -850,12 +857,14 @@ class CommerceService:
             )
             if reservation:
                 reservation.estado = "CONVERTIDA"
-            await self.session.commit()
+            if commit:
+                await self.session.commit()
         except Exception:
-            await self.session.rollback()
+            if commit:
+                await self.session.rollback()
             raise
 
-        if sale.id_cliente:
+        if commit and sale.id_cliente:
             await self._dispatch_order_invoice_email(None, sale)
 
         return await self._sale_response(sale)
