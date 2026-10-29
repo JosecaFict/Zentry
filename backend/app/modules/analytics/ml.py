@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from math import sqrt
 from statistics import fmean, pstdev
 
@@ -34,21 +34,27 @@ def _linear_regression(values: list[float]) -> tuple[float, float, float, float]
 
 
 def forecast_demand(
-    weekly_rows: list[dict], *, generated_on: date, horizon: int = 4
+    rows: list[dict],
+    *,
+    generated_on: date,
+    future_dates: list[date],
+    granularidad: str,
+    objetivo: str,
 ) -> DemandForecast:
-    units = [float(row["unidades"]) for row in weekly_rows]
-    revenue = [float(row["ingresos"]) for row in weekly_rows]
+    units = [float(row["unidades"]) for row in rows]
+    revenue = [float(row["ingresos"]) for row in rows]
     if len(units) < 4:
         return DemandForecast(
             modelo="Regresión lineal temporal",
-            objetivo="Unidades vendidas por semana",
-            semanas_entrenamiento=len(units),
+            objetivo=objetivo,
+            granularidad=granularidad,
+            observaciones_entrenamiento=len(units),
             fecha_entrenamiento=generated_on,
             mae_unidades=0,
             r2_unidades=0,
-            tendencia_por_semana=0,
+            tendencia_por_periodo=0,
             confianza="BAJA",
-            advertencia="Se requieren al menos cuatro semanas con ventas para proyectar demanda.",
+            advertencia="Se requieren al menos cuatro periodos con ventas para proyectar demanda.",
             pronostico=[],
         )
 
@@ -58,18 +64,13 @@ def forecast_demand(
         [value - (unit_intercept + unit_slope * index) for index, value in enumerate(units)]
     )
     margin = max(1.0, 1.96 * residual_sigma)
-    last_week = weekly_rows[-1]["semana"]
-    # Never present the current, partially elapsed week as a future result.
-    next_week = generated_on + timedelta(days=7 - generated_on.weekday())
     points: list[ForecastPoint] = []
-    for offset in range(horizon):
-        forecast_week = next_week + timedelta(days=7 * offset)
-        elapsed_weeks = max(1, (forecast_week - last_week).days // 7)
-        x = len(units) - 1 + elapsed_weeks
+    for offset, forecast_date in enumerate(future_dates, start=1):
+        x = len(units) - 1 + offset
         estimate = max(0, round(unit_intercept + unit_slope * x))
         points.append(
             ForecastPoint(
-                semana=forecast_week,
+                fecha=forecast_date,
                 unidades_estimadas=estimate,
                 ingresos_estimados=round(max(0, revenue_intercept + revenue_slope * x), 2),
                 intervalo_inferior=max(0, round(estimate - margin)),
@@ -90,12 +91,13 @@ def forecast_demand(
     )
     return DemandForecast(
         modelo="Regresión lineal temporal",
-        objetivo="Unidades vendidas por semana",
-        semanas_entrenamiento=len(units),
+        objetivo=objetivo,
+        granularidad=granularidad,
+        observaciones_entrenamiento=len(units),
         fecha_entrenamiento=generated_on,
         mae_unidades=round(mae, 2),
         r2_unidades=round(r2, 3),
-        tendencia_por_semana=round(unit_slope, 2),
+        tendencia_por_periodo=round(unit_slope, 2),
         confianza=confidence,
         advertencia=warning,
         pronostico=points,

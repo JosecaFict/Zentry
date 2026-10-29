@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class ForecastPoint(BaseModel):
-    semana: date
+    fecha: date
     unidades_estimadas: int
     ingresos_estimados: float
     intervalo_inferior: int
@@ -15,11 +15,12 @@ class ForecastPoint(BaseModel):
 class DemandForecast(BaseModel):
     modelo: str
     objetivo: str
-    semanas_entrenamiento: int
+    granularidad: Literal["DIA", "SEMANA", "MES"]
+    observaciones_entrenamiento: int
     fecha_entrenamiento: date
     mae_unidades: float
     r2_unidades: float
-    tendencia_por_semana: float
+    tendencia_por_periodo: float
     confianza: Literal["ALTA", "MEDIA", "BAJA"]
     advertencia: str | None
     pronostico: list[ForecastPoint]
@@ -48,5 +49,6 @@ class AnalyticsDashboard(BaseModel):
     periodo_desde: date
     periodo_hasta: date
     sucursal: str
+    periodo: Literal["SEMANAL", "MENSUAL", "TRIMESTRAL", "SEMESTRAL"]
     prediccion_demanda: DemandForecast
     segmentacion_clientes: CustomerSegmentation

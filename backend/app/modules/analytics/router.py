@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -18,6 +18,7 @@ async def analytics_dashboard(
     principal: Principal,
     service: Service,
     id_sucursal: int | None = Query(default=None, gt=0),
+    periodo: Literal["SEMANAL", "MENSUAL", "TRIMESTRAL", "SEMESTRAL"] = Query(default="SEMESTRAL"),
 ):
     if not principal.permite_reportes_ia:
         raise HTTPException(
@@ -35,4 +36,5 @@ async def analytics_dashboard(
         tenant_id=principal.id_tenant,
         branch_id=branch_id,
         branch_name=branch_name,
+        periodo=periodo,
     )

@@ -1,9 +1,21 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { API_BASE_URL } from '../config/api.config';
-import { AIReportResponse, AnalyticsDashboard, CustomerReport, InventoryReport, ProductReport, SalesReport } from '../models/reports.model';
+import {
+  AIReportResponse,
+  AnalyticsDashboard,
+  AnalyticsPeriod,
+  CustomerReport,
+  InventoryReport,
+  ProductReport,
+  SalesReport,
+} from '../models/reports.model';
 
-export interface ReportFilters { desde: string; hasta: string; id_sucursal?: number | null; }
+export interface ReportFilters {
+  desde: string;
+  hasta: string;
+  id_sucursal?: number | null;
+}
 
 @Injectable({ providedIn: 'root' })
 export class ReportsService {
@@ -17,7 +29,9 @@ export class ReportsService {
   }
 
   sales(filters: ReportFilters) {
-    return this.http.get<SalesReport>(`${API_BASE_URL}/admin/reports/sales`, { params: this.params(filters) });
+    return this.http.get<SalesReport>(`${API_BASE_URL}/admin/reports/sales`, {
+      params: this.params(filters),
+    });
   }
   products(filters: ReportFilters) {
     return this.http.get<ProductReport>(`${API_BASE_URL}/admin/reports/products`, {
@@ -36,7 +50,9 @@ export class ReportsService {
   }
   export(filters: ReportFilters, format: 'xlsx' | 'pdf') {
     return this.http.get(`${API_BASE_URL}/admin/reports/export/${format}`, {
-      params: this.params(filters), responseType: 'blob', observe: 'response',
+      params: this.params(filters),
+      responseType: 'blob',
+      observe: 'response',
     });
   }
   askAssistant(question: string, branchId?: number | null) {
@@ -46,14 +62,20 @@ export class ReportsService {
     });
   }
   exportAssistant(result: AIReportResponse, branchId: number | null, format: 'xlsx' | 'pdf') {
-    return this.http.post(`${API_BASE_URL}/admin/reports/ai/export/${format}`, {
-      interpretacion: result.interpretacion,
-      id_sucursal: branchId || null,
-    }, { responseType: 'blob', observe: 'response' });
+    return this.http.post(
+      `${API_BASE_URL}/admin/reports/ai/export/${format}`,
+      {
+        interpretacion: result.interpretacion,
+        id_sucursal: branchId || null,
+      },
+      { responseType: 'blob', observe: 'response' },
+    );
   }
-  analyticsDashboard(branchId?: number | null) {
-    let params = new HttpParams();
+  analyticsDashboard(branchId?: number | null, period: AnalyticsPeriod = 'SEMESTRAL') {
+    let params = new HttpParams().set('periodo', period);
     if (branchId) params = params.set('id_sucursal', branchId);
-    return this.http.get<AnalyticsDashboard>(`${API_BASE_URL}/admin/analytics/dashboard`, { params });
+    return this.http.get<AnalyticsDashboard>(`${API_BASE_URL}/admin/analytics/dashboard`, {
+      params,
+    });
   }
 }
