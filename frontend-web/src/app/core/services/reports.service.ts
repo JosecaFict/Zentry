@@ -45,4 +45,10 @@ export class ReportsService {
       id_sucursal: branchId || null,
     });
   }
+  exportAssistant(result: AIReportResponse, branchId: number | null, format: 'xlsx' | 'pdf') {
+    return this.http.post(`${API_BASE_URL}/admin/reports/ai/export/${format}`, {
+      interpretacion: result.interpretacion,
+      id_sucursal: branchId || null,
+    }, { responseType: 'blob', observe: 'response' });
+  }
 }

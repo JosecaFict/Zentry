@@ -1,6 +1,8 @@
 # ruff: noqa: E501
 
+from datetime import UTC, datetime
 from io import BytesIO
+from typing import Any
 from xml.sax.saxutils import escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -10,7 +12,13 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from app.modules.reports.schemas import CustomerReport, InventoryReport, ProductReport, SalesReport
+from app.modules.reports.schemas import (
+    AIReportPlan,
+    CustomerReport,
+    InventoryReport,
+    ProductReport,
+    SalesReport,
+)
 
 
 def _column_name(index: int) -> str:
@@ -118,6 +126,121 @@ def generate_excel(
         archive.writestr("xl/_rels/workbook.xml.rels", _workbook_rels(len(sheets)))
         for index, (_, rows) in enumerate(sheets, start=1):
             archive.writestr(f"xl/worksheets/sheet{index}.xml", _sheet(rows))
+    return output.getvalue()
+
+
+def _ai_rows(plan: AIReportPlan, data: dict[str, Any]) -> tuple[list[str], list[list[object]]]:
+    if plan.tipo_reporte == "VENTAS" and "sucursales" in data:
+        return ["Sucursal", "Ventas", "Unidades", "Ingresos (Bs)", "Participación (%)"], [
+            [item["sucursal"], item["ventas"], item["unidades"], float(item["ingresos"]), float(item["participacion"])]
+            for item in data["sucursales"]
+        ]
+    if plan.tipo_reporte == "VENTAS":
+        return ["Fecha", "Ventas", "Unidades", "Ingresos (Bs)"], [
+            [item["fecha"], item["ventas"], item["unidades"], float(item["ingresos"])]
+            for item in data.get("serie", [])
+        ]
+    if plan.tipo_reporte == "PRODUCTOS":
+        return ["Posición", "Producto", "Categoría", "Unidades", "Ingresos (Bs)"], [
+            [item["posicion"], item["producto"], item["categoria"], item["unidades"], float(item["ingresos"])]
+            for item in data.get("productos", [])
+        ]
+    if plan.tipo_reporte == "INVENTARIO":
+        return ["Producto", "Categoría", "Talla", "Color", "SKU", "Sucursal", "Disponible", "Mínimo", "Valor (Bs)"], [
+            [
+                item["producto"], item["categoria"], item["talla"], item["color"],
+                item["sku"], item["sucursal"], item["stock_disponible"],
+                item["stock_minimo"], float(item["valor_inventario"]),
+            ]
+            for item in data.get("items", [])
+        ]
+    if plan.tipo_reporte == "INGRESOS_CATEGORIA":
+        return ["Categoría", "Unidades", "Ingresos (Bs)", "Participación (%)"], [
+            [item["categoria"], item["unidades"], float(item["ingresos"]), float(item["participacion"])]
+            for item in data.get("categorias", [])
+        ]
+    if plan.tipo_reporte == "CLIENTES":
+        return ["Cliente", "Correo", "Compras", "Unidades", "Gasto (Bs)", "Última compra"], [
+            [
+                item["cliente"], item["correo"], item["compras"], item["unidades"],
+                float(item["gasto_total"]), item["ultima_compra"],
+            ]
+            for item in data.get("clientes", [])
+        ]
+    return ["Indicador", "Valor"], [["Resultado", "Resumen ejecutivo generado"]]
+
+
+def _ai_filters(plan: AIReportPlan) -> list[list[object]]:
+    return [
+        ["Desde", plan.fecha_desde.isoformat() if plan.fecha_desde else f"Últimos {plan.dias} días"],
+        ["Hasta", plan.fecha_hasta.isoformat() if plan.fecha_hasta else "Fecha actual"],
+        ["Sucursal", plan.sucursal or "Todas"],
+        ["Categoría", plan.categoria or "Todas"],
+        ["Producto", plan.producto or "Todos"],
+        ["Agrupación", plan.agrupacion],
+    ]
+
+
+def generate_ai_excel(
+    title: str,
+    tenant_name: str,
+    plan: AIReportPlan,
+    data: dict[str, Any],
+) -> bytes:
+    headers, detail_rows = _ai_rows(plan, data)
+    rows: list[list[object]] = [
+        [title],
+        ["Empresa", tenant_name],
+        ["Generado", datetime.now(UTC).strftime("%d/%m/%Y %H:%M UTC")],
+        [],
+        ["Filtros aplicados"],
+        *_ai_filters(plan),
+        [],
+        headers,
+        *detail_rows,
+    ]
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", _content_types(1))
+        archive.writestr("_rels/.rels", _root_rels())
+        archive.writestr("xl/workbook.xml", _workbook(["Reporte generado"]))
+        archive.writestr("xl/_rels/workbook.xml.rels", _workbook_rels(1))
+        archive.writestr("xl/worksheets/sheet1.xml", _sheet(rows))
+    return output.getvalue()
+
+
+def generate_ai_pdf(
+    title: str,
+    tenant_name: str,
+    plan: AIReportPlan,
+    data: dict[str, Any],
+) -> bytes:
+    headers, detail_rows = _ai_rows(plan, data)
+    output = BytesIO()
+    document = SimpleDocTemplate(
+        output,
+        pagesize=landscape(A4),
+        leftMargin=14 * mm,
+        rightMargin=14 * mm,
+        topMargin=13 * mm,
+        bottomMargin=13 * mm,
+    )
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph(escape(title), styles["Title"]),
+        Paragraph(f"Empresa: {escape(tenant_name)}", styles["Normal"]),
+        Paragraph(
+            f"Generado: {datetime.now(UTC):%d/%m/%Y %H:%M} UTC",
+            styles["Normal"],
+        ),
+        Spacer(1, 4 * mm),
+        Paragraph("Filtros aplicados", styles["Heading2"]),
+        _pdf_table(_ai_filters(plan)),
+        Spacer(1, 6 * mm),
+        Paragraph("Resultados", styles["Heading2"]),
+        _pdf_table([headers, *detail_rows]),
+    ]
+    document.build(story)
     return output.getvalue()
 
 

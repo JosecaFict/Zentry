@@ -172,3 +172,8 @@ class AIReportResponse(BaseModel):
     titulo: str
     resumen: str
     datos: dict[str, Any]
+
+
+class AIReportExportRequest(BaseModel):
+    interpretacion: AIReportPlan
+    id_sucursal: int | None = Field(default=None, gt=0)

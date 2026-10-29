@@ -1,11 +1,18 @@
 from datetime import date
 from decimal import Decimal
+from io import BytesIO
+from zipfile import ZipFile
 
 import pytest
 
-from app.modules.reports.export import generate_excel, generate_pdf
-from app.modules.reports.router import _dates
-from app.modules.reports.schemas import CustomerReport, ProductReport
+from app.modules.reports.export import (
+    generate_ai_excel,
+    generate_ai_pdf,
+    generate_excel,
+    generate_pdf,
+)
+from app.modules.reports.router import _dates, _summary
+from app.modules.reports.schemas import AIReportPlan, CustomerReport, ProductReport
 from app.modules.reports.service import ReportsService
 
 
@@ -117,6 +124,45 @@ def test_report_exports_generate_valid_files() -> None:
     assert b"xl/workbook.xml" in excel
     assert pdf.startswith(b"%PDF-")
     assert len(pdf) > 1000
+
+
+def test_generated_category_report_exports_the_same_dynamic_rows() -> None:
+    plan = AIReportPlan(
+        tipo_reporte="INGRESOS_CATEGORIA",
+        fecha_desde="2026-10-01",
+        fecha_hasta="2026-10-29",
+        agrupacion="CATEGORIA",
+        visualizacion="BARRAS",
+    )
+    data = {
+        "total_unidades": 18,
+        "ingresos": "5062.00",
+        "categorias": [{
+            "id_categoria": 1,
+            "categoria": "Camisas",
+            "unidades": 18,
+            "ingresos": "5062.00",
+            "participacion": "100.00",
+        }],
+    }
+
+    excel = generate_ai_excel("Ingresos por categoría", "altura-comercial", plan, data)
+    pdf = generate_ai_pdf("Ingresos por categoría", "altura-comercial", plan, data)
+
+    assert excel.startswith(b"PK")
+    with ZipFile(BytesIO(excel)) as workbook:
+        assert b"Camisas" in workbook.read("xl/worksheets/sheet1.xml")
+    assert pdf.startswith(b"%PDF-")
+    assert len(pdf) > 1000
+
+
+def test_ai_summary_formats_bolivianos_for_spanish_reading() -> None:
+    _, summary = _summary(
+        "INGRESOS_CATEGORIA",
+        {"ingresos": "16099.00", "categorias": []},
+    )
+
+    assert "Bs 16.099,00" in summary
 
 
 @pytest.mark.asyncio

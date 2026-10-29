@@ -7,8 +7,15 @@ from app.modules.auth.dependencies import CurrentPrincipal, require_permission
 from app.modules.auth.exceptions import PermissionDeniedError
 from app.modules.reports.ai import AIReportInterpreter, AIReportInterpreterError
 from app.modules.reports.dependencies import get_ai_report_interpreter, get_reports_service
-from app.modules.reports.export import generate_excel, generate_pdf
+from app.modules.reports.export import (
+    generate_ai_excel,
+    generate_ai_pdf,
+    generate_excel,
+    generate_pdf,
+)
 from app.modules.reports.schemas import (
+    AIReportExportRequest,
+    AIReportPlan,
     AIReportRequest,
     AIReportResponse,
     BranchSalesReport,
@@ -49,11 +56,16 @@ def _tenant(principal: CurrentPrincipal) -> int:
     return principal.id_tenant
 
 
+def _money(value: object) -> str:
+    formatted = f"{float(value):,.2f}"
+    return formatted.replace(",", "_").replace(".", ",").replace("_", ".")
+
+
 def _summary(report_type: str, data: dict) -> tuple[str, str]:
     if report_type == "VENTAS":
         return (
             "Rendimiento de ventas",
-            f"Se registraron {data['total_ventas']} ventas por Bs {data['ingresos']}.",
+            f"Se registraron {data['total_ventas']} ventas por Bs {_money(data['ingresos'])}.",
         )
     if report_type == "PRODUCTOS":
         return "Productos destacados", f"Se encontraron {len(data['productos'])} productos."
@@ -68,9 +80,79 @@ def _summary(report_type: str, data: dict) -> tuple[str, str]:
     if report_type == "INGRESOS_CATEGORIA":
         return (
             "Ingresos por categoría",
-            f"Las categorías generaron Bs {data['ingresos']} en el período solicitado.",
+            f"Las categorías generaron Bs {_money(data['ingresos'])} en el período solicitado.",
         )
     return "Resumen ejecutivo", "Resumen comercial consolidado del período solicitado."
+
+
+async def _execute_ai_plan(
+    plan: AIReportPlan,
+    principal: CurrentPrincipal,
+    service: ReportsService,
+    requested_branch: int | None,
+) -> dict:
+    today = date.today()
+    end = min(plan.fecha_hasta or today, today)
+    start = plan.fecha_desde or (end - timedelta(days=plan.dias - 1))
+    plan.fecha_hasta = end if plan.fecha_hasta else None
+    if start > end:
+        raise HTTPException(status_code=422, detail="El período solicitado todavía no ha comenzado")
+    tenant_id = _tenant(principal)
+    branch_id = _branch(principal, requested_branch)
+    if plan.sucursal:
+        resolved_branch = await service.resolve_branch_id(tenant_id, plan.sucursal)
+        if resolved_branch is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"No encontré la sucursal ‘{plan.sucursal}’ en esta empresa",
+            )
+        branch_id = _branch(principal, resolved_branch)
+
+    if plan.tipo_reporte == "VENTAS":
+        report = (
+            await service.sales_by_branch(tenant_id, start, end, branch_id)
+            if plan.agrupacion == "SUCURSAL"
+            else await service.sales(tenant_id, start, end, branch_id)
+        )
+        return report.model_dump(mode="json")
+    if plan.tipo_reporte == "PRODUCTOS":
+        return (
+            await service.products(
+                tenant_id, start, end, branch_id, plan.limite, plan.categoria, plan.producto
+            )
+        ).model_dump(mode="json")
+    if plan.tipo_reporte == "INVENTARIO":
+        return (
+            await service.inventory(
+                tenant_id, branch_id, plan.solo_criticos, plan.categoria, plan.producto
+            )
+        ).model_dump(mode="json")
+    if plan.tipo_reporte == "CLIENTES":
+        return (
+            await service.customers(tenant_id, start, end, branch_id, plan.limite)
+        ).model_dump(mode="json")
+    if plan.tipo_reporte == "INGRESOS_CATEGORIA":
+        return (
+            await service.revenue_by_category(
+                tenant_id, start, end, branch_id, plan.categoria
+            )
+        ).model_dump(mode="json")
+    if plan.tipo_reporte == "RESUMEN":
+        return {
+            "ventas": (await service.sales(tenant_id, start, end, branch_id)).model_dump(
+                mode="json"
+            ),
+            "productos": (
+                await service.products(tenant_id, start, end, branch_id, plan.limite)
+            ).model_dump(mode="json"),
+            "inventario": (
+                await service.inventory(tenant_id, branch_id, plan.solo_criticos)
+            ).model_dump(mode="json"),
+            "clientes": (
+                await service.customers(tenant_id, start, end, branch_id, plan.limite)
+            ).model_dump(mode="json"),
+        }
+    raise HTTPException(status_code=422, detail="Tipo de reporte no soportado")
 
 
 @router.post("/ai/query", response_model=AIReportResponse)
@@ -106,18 +188,12 @@ async def ai_report_query(
             datos={},
         )
 
-    end = plan.fecha_hasta or date.today()
-    start = plan.fecha_desde or (end - timedelta(days=plan.dias - 1))
-    tenant_id = _tenant(principal)
-    branch_id = _branch(principal, payload.id_sucursal)
-    if plan.sucursal:
-        resolved_branch = await service.resolve_branch_id(tenant_id, plan.sucursal)
-        if resolved_branch is None:
+    try:
+        data = await _execute_ai_plan(plan, principal, service, payload.id_sucursal)
+    except HTTPException as exc:
+        if plan.sucursal and exc.status_code == 422:
             plan.necesita_aclaracion = True
-            plan.pregunta_aclaracion = (
-                f"No encontré la sucursal ‘{plan.sucursal}’. "
-                "Indica una sucursal existente o selecciónala en el filtro."
-            )
+            plan.pregunta_aclaracion = f"{exc.detail}. Selecciona una sucursal disponible."
             return AIReportResponse(
                 pregunta=question,
                 interpretacion=plan,
@@ -125,55 +201,7 @@ async def ai_report_query(
                 resumen=plan.pregunta_aclaracion,
                 datos={},
             )
-        branch_id = _branch(principal, resolved_branch)
-    if plan.tipo_reporte == "VENTAS":
-        if plan.agrupacion == "SUCURSAL":
-            data = (
-                await service.sales_by_branch(tenant_id, start, end, branch_id)
-            ).model_dump(mode="json")
-        else:
-            data = (
-                await service.sales(tenant_id, start, end, branch_id)
-            ).model_dump(mode="json")
-    elif plan.tipo_reporte == "PRODUCTOS":
-        data = (
-            await service.products(
-                tenant_id, start, end, branch_id, plan.limite, plan.categoria, plan.producto
-            )
-        ).model_dump(mode="json")
-    elif plan.tipo_reporte == "INVENTARIO":
-        data = (
-            await service.inventory(
-                tenant_id, branch_id, plan.solo_criticos, plan.categoria, plan.producto
-            )
-        ).model_dump(mode="json")
-    elif plan.tipo_reporte == "CLIENTES":
-        data = (
-            await service.customers(tenant_id, start, end, branch_id, plan.limite)
-        ).model_dump(mode="json")
-    elif plan.tipo_reporte == "INGRESOS_CATEGORIA":
-        data = (
-            await service.revenue_by_category(
-                tenant_id, start, end, branch_id, plan.categoria
-            )
-        ).model_dump(mode="json")
-    elif plan.tipo_reporte == "RESUMEN":
-        data = {
-            "ventas": (
-                await service.sales(tenant_id, start, end, branch_id)
-            ).model_dump(mode="json"),
-            "productos": (
-                await service.products(tenant_id, start, end, branch_id, plan.limite)
-            ).model_dump(mode="json"),
-            "inventario": (
-                await service.inventory(tenant_id, branch_id, plan.solo_criticos)
-            ).model_dump(mode="json"),
-            "clientes": (
-                await service.customers(tenant_id, start, end, branch_id, plan.limite)
-            ).model_dump(mode="json"),
-        }
-    else:
-        raise HTTPException(status_code=422, detail="Tipo de reporte no soportado")
+        raise
     title, summary = _summary(plan.tipo_reporte, data)
     return AIReportResponse(
         pregunta=question,
@@ -181,6 +209,40 @@ async def ai_report_query(
         titulo=title,
         resumen=summary,
         datos=data,
+    )
+
+
+@router.post("/ai/export/{file_format}")
+async def export_ai_report(
+    file_format: Literal["xlsx", "pdf"],
+    payload: AIReportExportRequest,
+    principal: SalesPrincipal,
+    service: Reports,
+):
+    if not principal.permite_reportes_ia:
+        raise HTTPException(
+            status_code=403,
+            detail="Los reportes con IA están disponibles en el plan Profesional",
+        )
+    if "inventario.ver" not in principal.permissions and "ADMIN" not in principal.roles:
+        raise PermissionDeniedError
+    plan = payload.interpretacion.model_copy(deep=True)
+    if plan.necesita_aclaracion:
+        raise HTTPException(status_code=422, detail="Completa la consulta antes de exportarla")
+    data = await _execute_ai_plan(plan, principal, service, payload.id_sucursal)
+    title, _ = _summary(plan.tipo_reporte, data)
+    tenant_name = principal.tenant_slug or "Zentry"
+    filename = f"reporte-generado-{plan.tipo_reporte.lower().replace('_', '-')}.{file_format}"
+    if file_format == "xlsx":
+        content = generate_ai_excel(title, tenant_name, plan, data)
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        content = generate_ai_pdf(title, tenant_name, plan, data)
+        media_type = "application/pdf"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
