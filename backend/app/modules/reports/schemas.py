@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class SalesPoint(BaseModel):
@@ -146,6 +146,11 @@ class AIReportPlan(BaseModel):
     solo_criticos: bool = False
     necesita_aclaracion: bool = False
     pregunta_aclaracion: str | None = Field(default=None, max_length=300)
+
+    @field_validator("dias", mode="before")
+    @classmethod
+    def normalize_nullable_days(cls, value):
+        return 90 if value is None else value
 
     @model_validator(mode="after")
     def validate_dates_and_clarification(self):

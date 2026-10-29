@@ -47,6 +47,18 @@ def test_report_plan_accepts_complete_exact_period() -> None:
     assert plan.fecha_hasta.isoformat() == "2026-09-30"
 
 
+def test_report_plan_normalizes_null_days_from_exact_groq_period() -> None:
+    plan = AIReportPlan(
+        tipo_reporte="INGRESOS_CATEGORIA",
+        dias=None,
+        fecha_desde="2026-10-01",
+        fecha_hasta="2026-10-29",
+        agrupacion="CATEGORIA",
+    )
+
+    assert plan.dias == 90
+
+
 def test_report_plan_rejects_partial_exact_period() -> None:
     with pytest.raises(ValidationError):
         AIReportPlan(tipo_reporte="VENTAS", fecha_desde="2026-09-01")

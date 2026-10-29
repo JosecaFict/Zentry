@@ -32,7 +32,7 @@ REPORT_PLAN_SCHEMA: dict[str, Any] = {
                 "INGRESOS_CATEGORIA", "RESUMEN",
             ],
         },
-        "dias": {"type": "integer", "minimum": 1, "maximum": 731},
+        "dias": {"type": ["integer", "null"], "minimum": 1, "maximum": 731},
         "fecha_desde": {"type": ["string", "null"]},
         "fecha_hasta": {"type": ["string", "null"]},
         "sucursal": {"type": ["string", "null"]},
