@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from datetime import date
 from typing import Any, Protocol
@@ -6,6 +7,8 @@ from typing import Any, Protocol
 import httpx
 
 from app.modules.reports.schemas import AIReportPlan
+
+logger = logging.getLogger("zentry.reports.ai")
 
 
 class AIReportInterpreterError(RuntimeError):
@@ -131,6 +134,27 @@ class GroqReportInterpreter:
                     },
                     json=body,
                 )
+                if response.status_code == 400:
+                    logger.warning(
+                        "Groq rechazó el esquema estricto; se usará JSON Object Mode: %s",
+                        response.text[:500],
+                    )
+                    body["messages"][0]["content"] += (
+                        " Devuelve un objeto JSON con todos estos campos: tipo_reporte, dias, "
+                        "fecha_desde, fecha_hasta, sucursal, categoria, producto, agrupacion, "
+                        "visualizacion, ordenar_por, direccion, limite, solo_criticos, "
+                        "necesita_aclaracion y pregunta_aclaracion. Usa null en valores "
+                        "desconocidos y respeta exactamente los enums descritos."
+                    )
+                    body["response_format"] = {"type": "json_object"}
+                    response = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=body,
+                    )
             response.raise_for_status()
             return AIReportPlan.model_validate_json(self._output_text(response.json()))
         except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
