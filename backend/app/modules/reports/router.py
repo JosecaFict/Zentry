@@ -1,3 +1,4 @@
+import logging
 from datetime import date, timedelta
 from typing import Annotated, Literal
 
@@ -28,6 +29,7 @@ from app.modules.reports.schemas import (
 from app.modules.reports.service import ReportsService
 
 router = APIRouter(prefix="/admin/reports", tags=["reports"])
+logger = logging.getLogger("zentry.reports")
 Reports = Annotated[ReportsService, Depends(get_reports_service)]
 AIInterpreter = Annotated[AIReportInterpreter | None, Depends(get_ai_report_interpreter)]
 SalesPrincipal = Annotated[CurrentPrincipal, Depends(require_permission("ventas.ver"))]
@@ -54,6 +56,26 @@ def _tenant(principal: CurrentPrincipal) -> int:
     if principal.id_tenant is None:
         raise PermissionDeniedError
     return principal.id_tenant
+
+
+async def _audit(
+    service: ReportsService,
+    principal: CurrentPrincipal,
+    *,
+    action: str,
+    entity: str,
+    record_id: str | None,
+    metadata: dict,
+) -> None:
+    await service.audit_access(
+        tenant_id=_tenant(principal),
+        user_id=principal.user.id_usuario,
+        session_id=principal.session_id,
+        action=action,
+        entity=entity,
+        record_id=record_id,
+        metadata=metadata,
+    )
 
 
 def _money(value: object) -> str:
@@ -177,7 +199,14 @@ async def ai_report_query(
     try:
         plan = await interpreter.interpret(question, reference_date=date.today())
     except AIReportInterpreterError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        logger.warning(
+            "No se pudo interpretar una consulta generativa (%s)",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="El asistente no pudo procesar la consulta en este momento",
+        ) from exc
 
     if plan.necesita_aclaracion:
         return AIReportResponse(
@@ -203,6 +232,20 @@ async def ai_report_query(
             )
         raise
     title, summary = _summary(plan.tipo_reporte, data)
+    await _audit(
+        service,
+        principal,
+        action="CONSULTAR",
+        entity="REPORTE_IA",
+        record_id=plan.tipo_reporte,
+        metadata={
+            "id_sucursal": _branch(principal, payload.id_sucursal),
+            "fecha_desde": plan.fecha_desde,
+            "fecha_hasta": plan.fecha_hasta,
+            "agrupacion": plan.agrupacion,
+            "visualizacion": plan.visualizacion,
+        },
+    )
     return AIReportResponse(
         pregunta=question,
         interpretacion=plan,
@@ -239,6 +282,19 @@ async def export_ai_report(
     else:
         content = generate_ai_pdf(title, tenant_name, plan, data)
         media_type = "application/pdf"
+    await _audit(
+        service,
+        principal,
+        action="EXPORTAR",
+        entity="REPORTE_IA",
+        record_id=plan.tipo_reporte,
+        metadata={
+            "formato": file_format,
+            "id_sucursal": _branch(principal, payload.id_sucursal),
+            "fecha_desde": plan.fecha_desde,
+            "fecha_hasta": plan.fecha_hasta,
+        },
+    )
     return Response(
         content=content,
         media_type=media_type,
@@ -372,6 +428,19 @@ async def export_report(
             sales, products, inventory, customers, principal.tenant_slug or "Zentry"
         )
         media_type = "application/pdf"
+    await _audit(
+        service,
+        principal,
+        action="EXPORTAR",
+        entity="REPORTE_COMERCIAL",
+        record_id=file_format.upper(),
+        metadata={
+            "formato": file_format,
+            "id_sucursal": branch_id,
+            "fecha_desde": start,
+            "fecha_hasta": end,
+        },
+    )
     return Response(
         content=content,
         media_type=media_type,

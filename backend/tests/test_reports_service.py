@@ -29,10 +29,14 @@ class _EmptyResult:
 class _CapturingSession:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
+        self.commits = 0
 
     async def execute(self, statement, parameters):
         self.calls.append((str(statement), parameters))
         return _EmptyResult()
+
+    async def commit(self) -> None:
+        self.commits += 1
 
 
 def test_sales_report_calculates_totals_and_average() -> None:
@@ -183,3 +187,27 @@ async def test_every_report_query_filters_the_authenticated_tenant() -> None:
     for statement, parameters in session.calls:
         assert "id_tenant = :tenant_id" in statement
         assert parameters["tenant_id"] == 42
+
+
+@pytest.mark.asyncio
+async def test_report_audit_persists_only_sanitized_metadata() -> None:
+    session = _CapturingSession()
+    service = ReportsService(session)  # type: ignore[arg-type]
+
+    await service.audit_access(
+        tenant_id=42,
+        user_id=9,
+        session_id="session-1",
+        action="EXPORTAR",
+        entity="REPORTE_IA",
+        record_id="VENTAS",
+        metadata={"formato": "pdf", "id_sucursal": 3},
+    )
+
+    statement, parameters = session.calls[0]
+    assert "INSERT INTO capricho.bitacora" in statement
+    assert parameters["tenant_id"] == 42
+    assert parameters["user_id"] == 9
+    assert parameters["metadata"] == '{"formato": "pdf", "id_sucursal": 3}'
+    assert "pregunta" not in parameters["metadata"]
+    assert session.commits == 1

@@ -52,6 +52,12 @@ Los grupos se traducen en etiquetas explicables: `LEALES`, `POTENCIALES` y `EN_R
 - Un usuario sin alcance global queda limitado a su sucursal aunque intente enviar otra en la URL.
 - Solo administradores o usuarios con `ventas.sucursales_todas` pueden consultar todas las sucursales.
 - Los valores válidos de horizonte están restringidos a `SEMANAL`, `MENSUAL`, `TRIMESTRAL` y `SEMESTRAL`.
+- Las consultas generativas y las exportaciones exitosas generan un registro en la bitácora con
+  empresa, usuario, sesión, tipo, formato, sucursal y período.
+- La pregunta original y los resultados comerciales no se copian a la bitácora, reduciendo la
+  exposición de información sensible.
+- Los logs registran el tipo de fallo de Groq, pero no su respuesta ni el contenido de la consulta;
+  la API devuelve un mensaje estable que no revela tokens ni detalles técnicos.
 
 ## API
 

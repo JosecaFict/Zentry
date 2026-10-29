@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 
@@ -25,6 +26,44 @@ ZERO = Decimal("0.00")
 class ReportsService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    async def audit_access(
+        self,
+        *,
+        tenant_id: int,
+        user_id: int,
+        session_id: str,
+        action: str,
+        entity: str,
+        record_id: str | None,
+        metadata: dict,
+    ) -> None:
+        """Persist a sanitized audit event for sensitive report reads and exports."""
+        await self.session.execute(
+            text("""
+                INSERT INTO capricho.bitacora (
+                    id_tenant, id_usuario, id_sesion, accion, modulo, entidad,
+                    id_registro, datos_nuevos, direccion_ip, user_agent, origen, request_id
+                ) VALUES (
+                    :tenant_id, :user_id, :session_id, :action, 'REPORTES', :entity,
+                    :record_id, CAST(:metadata AS JSONB),
+                    NULLIF(current_setting('app.ip', true), '')::inet,
+                    NULLIF(current_setting('app.user_agent', true), ''),
+                    COALESCE(NULLIF(current_setting('app.origen', true), ''), 'API'),
+                    NULLIF(current_setting('app.request_id', true), '')
+                )
+            """),
+            {
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "session_id": session_id,
+                "action": action,
+                "entity": entity,
+                "record_id": record_id,
+                "metadata": json.dumps(metadata, ensure_ascii=False, default=str),
+            },
+        )
+        await self.session.commit()
 
     @staticmethod
     def _range(date_from: date, date_to: date) -> tuple[datetime, datetime]:
