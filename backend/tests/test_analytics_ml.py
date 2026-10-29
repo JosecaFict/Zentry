@@ -14,14 +14,34 @@ def test_forecast_demand_projects_four_weeks_and_reports_quality():
         for index in range(16)
     ]
 
-    result = forecast_demand(rows, generated_on=date(2026, 10, 29))
+    result = forecast_demand(rows, generated_on=date(2026, 8, 20))
 
     assert result.modelo == "Regresión lineal temporal"
     assert result.semanas_entrenamiento == 16
     assert result.r2_unidades == 1
     assert result.tendencia_por_semana == 2
     assert len(result.pronostico) == 4
+    assert result.pronostico[0].semana == date(2026, 8, 24)
     assert result.pronostico[0].unidades_estimadas == 52
+
+
+def test_forecast_does_not_label_a_weak_fit_as_medium_confidence():
+    start = date(2026, 5, 4)
+    values = [20, 35, 18, 31, 22, 29, 17, 34, 23, 28, 19, 32, 21, 30, 18, 33]
+    rows = [
+        {
+            "semana": start + timedelta(days=7 * index),
+            "unidades": units,
+            "ingresos": units * 200,
+        }
+        for index, units in enumerate(values)
+    ]
+
+    result = forecast_demand(rows, generated_on=date(2026, 8, 20))
+
+    assert result.r2_unidades < 0.25
+    assert result.confianza == "BAJA"
+    assert result.advertencia
 
 
 def test_forecast_demand_is_explicit_when_history_is_insufficient():

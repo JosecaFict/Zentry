@@ -29,6 +29,7 @@ class AnalyticsService:
               JOIN capricho.detalle_venta d ON d.id_venta = v.id_venta
              WHERE v.id_tenant = :tenant_id AND v.estado = 'PAGADA'
                AND v.fecha_venta BETWEEN :start AND :end
+               AND v.fecha_venta < date_trunc('week', CURRENT_DATE)
                AND (CAST(:branch_id AS BIGINT) IS NULL OR v.id_sucursal = :branch_id)
              GROUP BY date_trunc('week', v.fecha_venta)::date
              ORDER BY semana

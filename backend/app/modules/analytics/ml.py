@@ -59,13 +59,17 @@ def forecast_demand(
     )
     margin = max(1.0, 1.96 * residual_sigma)
     last_week = weekly_rows[-1]["semana"]
+    # Never present the current, partially elapsed week as a future result.
+    next_week = generated_on + timedelta(days=7 - generated_on.weekday())
     points: list[ForecastPoint] = []
-    for offset in range(1, horizon + 1):
-        x = len(units) - 1 + offset
+    for offset in range(horizon):
+        forecast_week = next_week + timedelta(days=7 * offset)
+        elapsed_weeks = max(1, (forecast_week - last_week).days // 7)
+        x = len(units) - 1 + elapsed_weeks
         estimate = max(0, round(unit_intercept + unit_slope * x))
         points.append(
             ForecastPoint(
-                semana=last_week + timedelta(days=7 * offset),
+                semana=forecast_week,
                 unidades_estimadas=estimate,
                 ingresos_estimados=round(max(0, revenue_intercept + revenue_slope * x), 2),
                 intervalo_inferior=max(0, round(estimate - margin)),
@@ -73,7 +77,11 @@ def forecast_demand(
             )
         )
     confidence = (
-        "ALTA" if len(units) >= 20 and r2 >= 0.55 else "MEDIA" if len(units) >= 12 else "BAJA"
+        "ALTA"
+        if len(units) >= 20 and r2 >= 0.65
+        else "MEDIA"
+        if len(units) >= 12 and r2 >= 0.25
+        else "BAJA"
     )
     warning = (
         None
