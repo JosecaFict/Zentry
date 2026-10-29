@@ -34,6 +34,39 @@ def _forecast_objective(granularity: str) -> str:
     return f"Unidades vendidas por {labels[granularity]}"
 
 
+def _bucket_start(value: date, granularity: str) -> date:
+    if granularity == "DIA":
+        return value
+    if granularity == "SEMANA":
+        return value - timedelta(days=value.weekday())
+    return value.replace(day=1)
+
+
+def _next_bucket(value: date, granularity: str) -> date:
+    if granularity == "DIA":
+        return value + timedelta(days=1)
+    if granularity == "SEMANA":
+        return value + timedelta(days=7)
+    return _add_months(value, 1)
+
+
+def _complete_periods(
+    rows: list[dict], *, date_from: date, date_until: date, granularity: str
+) -> list[dict]:
+    """Complete missing time buckets with zero sales for an honest continuous series."""
+    indexed = {row["fecha"]: row for row in rows}
+    current = _bucket_start(date_from, granularity)
+    limit = _bucket_start(date_until, granularity)
+    completed: list[dict] = []
+    while current < limit:
+        row = indexed.get(current)
+        completed.append(
+            dict(row) if row is not None else {"fecha": current, "unidades": 0, "ingresos": 0}
+        )
+        current = _next_bucket(current, granularity)
+    return completed
+
+
 class AnalyticsService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -76,6 +109,9 @@ class AnalyticsService:
             .mappings()
             .all()
         )
+        history = _complete_periods(
+            list(history), date_from=date_from, date_until=today, granularity=granularity
+        )
         customers = (
             (
                 await self.session.execute(
@@ -115,7 +151,7 @@ class AnalyticsService:
             sucursal=branch_name or "Todas las sucursales",
             periodo=periodo,
             prediccion_demanda=forecast_demand(
-                list(history),
+                history,
                 generated_on=today,
                 future_dates=_future_dates(today, granularity=granularity, horizon=horizon),
                 granularidad=granularity,

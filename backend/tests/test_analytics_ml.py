@@ -1,6 +1,26 @@
 from datetime import date, timedelta
 
 from app.modules.analytics.ml import forecast_demand, segment_customers
+from app.modules.analytics.service import _complete_periods
+
+
+def test_time_series_completes_days_without_sales_with_zero_values():
+    rows = [
+        {"fecha": date(2026, 10, 22), "unidades": 3, "ingresos": 300},
+        {"fecha": date(2026, 10, 25), "unidades": 2, "ingresos": 180},
+    ]
+
+    completed = _complete_periods(
+        rows,
+        date_from=date(2026, 10, 22),
+        date_until=date(2026, 10, 29),
+        granularity="DIA",
+    )
+
+    assert len(completed) == 7
+    assert completed[0]["unidades"] == 3
+    assert completed[1]["unidades"] == 0
+    assert completed[3]["unidades"] == 2
 
 
 def test_forecast_demand_projects_four_weeks_and_reports_quality():
