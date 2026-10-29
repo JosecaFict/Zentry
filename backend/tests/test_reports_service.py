@@ -9,6 +9,25 @@ from app.modules.reports.schemas import CustomerReport, ProductReport
 from app.modules.reports.service import ReportsService
 
 
+class _EmptyMappings:
+    def all(self) -> list[dict]:
+        return []
+
+
+class _EmptyResult:
+    def mappings(self) -> _EmptyMappings:
+        return _EmptyMappings()
+
+
+class _CapturingSession:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    async def execute(self, statement, parameters):
+        self.calls.append((str(statement), parameters))
+        return _EmptyResult()
+
+
 def test_sales_report_calculates_totals_and_average() -> None:
     rows = [
         {
@@ -92,3 +111,21 @@ def test_report_exports_generate_valid_files() -> None:
     assert b"xl/workbook.xml" in excel
     assert pdf.startswith(b"%PDF-")
     assert len(pdf) > 1000
+
+
+@pytest.mark.asyncio
+async def test_every_report_query_filters_the_authenticated_tenant() -> None:
+    session = _CapturingSession()
+    service = ReportsService(session)  # type: ignore[arg-type]
+    start = date(2026, 10, 1)
+    end = date(2026, 10, 29)
+
+    await service.sales(42, start, end, None)
+    await service.products(42, start, end, None, 10)
+    await service.inventory(42, None, False)
+    await service.customers(42, start, end, None, 10)
+
+    assert len(session.calls) == 4
+    for statement, parameters in session.calls:
+        assert "id_tenant = :tenant_id" in statement
+        assert parameters["tenant_id"] == 42

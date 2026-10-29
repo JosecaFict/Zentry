@@ -41,6 +41,12 @@ def _branch(principal: CurrentPrincipal, requested: int | None) -> int | None:
     return principal.id_sucursal
 
 
+def _tenant(principal: CurrentPrincipal) -> int:
+    if principal.id_tenant is None:
+        raise PermissionDeniedError
+    return principal.id_tenant
+
+
 def _summary(report_type: str, data: dict) -> tuple[str, str]:
     if report_type == "VENTAS":
         return (
@@ -86,26 +92,35 @@ async def ai_report_query(
 
     end = date.today()
     start = end - timedelta(days=plan.dias - 1)
+    tenant_id = _tenant(principal)
     branch_id = _branch(principal, payload.id_sucursal)
     if plan.tipo_reporte == "VENTAS":
-        data = (await service.sales(start, end, branch_id)).model_dump(mode="json")
+        data = (await service.sales(tenant_id, start, end, branch_id)).model_dump(mode="json")
     elif plan.tipo_reporte == "PRODUCTOS":
-        data = (await service.products(start, end, branch_id, plan.limite)).model_dump(mode="json")
+        data = (
+            await service.products(tenant_id, start, end, branch_id, plan.limite)
+        ).model_dump(mode="json")
     elif plan.tipo_reporte == "INVENTARIO":
-        data = (await service.inventory(branch_id, plan.solo_criticos)).model_dump(mode="json")
+        data = (
+            await service.inventory(tenant_id, branch_id, plan.solo_criticos)
+        ).model_dump(mode="json")
     elif plan.tipo_reporte == "CLIENTES":
-        data = (await service.customers(start, end, branch_id, plan.limite)).model_dump(mode="json")
+        data = (
+            await service.customers(tenant_id, start, end, branch_id, plan.limite)
+        ).model_dump(mode="json")
     else:
         data = {
-            "ventas": (await service.sales(start, end, branch_id)).model_dump(mode="json"),
+            "ventas": (
+                await service.sales(tenant_id, start, end, branch_id)
+            ).model_dump(mode="json"),
             "productos": (
-                await service.products(start, end, branch_id, plan.limite)
+                await service.products(tenant_id, start, end, branch_id, plan.limite)
             ).model_dump(mode="json"),
             "inventario": (
-                await service.inventory(branch_id, plan.solo_criticos)
+                await service.inventory(tenant_id, branch_id, plan.solo_criticos)
             ).model_dump(mode="json"),
             "clientes": (
-                await service.customers(start, end, branch_id, plan.limite)
+                await service.customers(tenant_id, start, end, branch_id, plan.limite)
             ).model_dump(mode="json"),
         }
     title, summary = _summary(plan.tipo_reporte, data)
@@ -127,7 +142,9 @@ async def sales_report(
     id_sucursal: int | None = Query(default=None, gt=0),
 ):
     start, end = _dates(desde, hasta)
-    return await service.sales(start, end, _branch(principal, id_sucursal))
+    return await service.sales(
+        _tenant(principal), start, end, _branch(principal, id_sucursal)
+    )
 
 
 @router.get("/products", response_model=ProductReport)
@@ -140,7 +157,9 @@ async def products_report(
     limite: int = Query(default=20, ge=1, le=100),
 ):
     start, end = _dates(desde, hasta)
-    return await service.products(start, end, _branch(principal, id_sucursal), limite)
+    return await service.products(
+        _tenant(principal), start, end, _branch(principal, id_sucursal), limite
+    )
 
 
 @router.get("/inventory", response_model=InventoryReport)
@@ -150,7 +169,9 @@ async def inventory_report(
     id_sucursal: int | None = Query(default=None, gt=0),
     solo_criticos: bool = False,
 ):
-    return await service.inventory(_branch(principal, id_sucursal), solo_criticos)
+    return await service.inventory(
+        _tenant(principal), _branch(principal, id_sucursal), solo_criticos
+    )
 
 
 @router.get("/customers", response_model=CustomerReport)
@@ -163,7 +184,9 @@ async def customers_report(
     limite: int = Query(default=20, ge=1, le=100),
 ):
     start, end = _dates(desde, hasta)
-    return await service.customers(start, end, _branch(principal, id_sucursal), limite)
+    return await service.customers(
+        _tenant(principal), start, end, _branch(principal, id_sucursal), limite
+    )
 
 
 @router.get("/export/{file_format}")
@@ -178,11 +201,12 @@ async def export_report(
     if "inventario.ver" not in principal.permissions and "ADMIN" not in principal.roles:
         raise PermissionDeniedError
     start, end = _dates(desde, hasta)
+    tenant_id = _tenant(principal)
     branch_id = _branch(principal, id_sucursal)
-    sales = await service.sales(start, end, branch_id)
-    products = await service.products(start, end, branch_id, 100)
-    inventory = await service.inventory(branch_id, False)
-    customers = await service.customers(start, end, branch_id, 100)
+    sales = await service.sales(tenant_id, start, end, branch_id)
+    products = await service.products(tenant_id, start, end, branch_id, 100)
+    inventory = await service.inventory(tenant_id, branch_id, False)
+    customers = await service.customers(tenant_id, start, end, branch_id, 100)
     filename = f"reporte-comercial-{start:%Y%m%d}-{end:%Y%m%d}.{file_format}"
     if file_format == "xlsx":
         content = generate_excel(sales, products, inventory, customers)

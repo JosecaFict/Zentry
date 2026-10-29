@@ -59,7 +59,9 @@ class ReportsService:
             items=items,
         )
 
-    async def sales(self, date_from: date, date_to: date, branch_id: int | None) -> SalesReport:
+    async def sales(
+        self, tenant_id: int, date_from: date, date_to: date, branch_id: int | None
+    ) -> SalesReport:
         start, end = self._range(date_from, date_to)
         result = await self.session.execute(text("""
             SELECT v.fecha_venta::date AS fecha,
@@ -69,16 +71,27 @@ class ReportsService:
               FROM capricho.venta v
               JOIN capricho.detalle_venta d ON d.id_venta = v.id_venta
              WHERE v.estado = 'PAGADA'
+               AND v.id_tenant = :tenant_id
                AND v.fecha_venta BETWEEN :start AND :end
                AND (CAST(:branch_id AS BIGINT) IS NULL OR v.id_sucursal = :branch_id)
              GROUP BY v.fecha_venta::date
              ORDER BY fecha
-        """), {"start": start, "end": end, "branch_id": branch_id})
+        """), {
+            "tenant_id": tenant_id,
+            "start": start,
+            "end": end,
+            "branch_id": branch_id,
+        })
         rows = result.mappings().all()
         return self.summarize_sales(date_from, date_to, rows)
 
     async def products(
-        self, date_from: date, date_to: date, branch_id: int | None, limit: int
+        self,
+        tenant_id: int,
+        date_from: date,
+        date_to: date,
+        branch_id: int | None,
+        limit: int,
     ) -> ProductReport:
         start, end = self._range(date_from, date_to)
         result = await self.session.execute(text("""
@@ -91,12 +104,19 @@ class ReportsService:
               JOIN capricho.producto p ON p.id_producto = vp.id_producto
               JOIN capricho.categoria c ON c.id_categoria = p.id_categoria
              WHERE v.estado = 'PAGADA'
+               AND v.id_tenant = :tenant_id
                AND v.fecha_venta BETWEEN :start AND :end
                AND (CAST(:branch_id AS BIGINT) IS NULL OR v.id_sucursal = :branch_id)
              GROUP BY p.id_producto, p.nombre, c.nombre
              ORDER BY ingresos DESC, unidades DESC, p.nombre
              LIMIT :limit
-        """), {"start": start, "end": end, "branch_id": branch_id, "limit": limit})
+        """), {
+            "tenant_id": tenant_id,
+            "start": start,
+            "end": end,
+            "branch_id": branch_id,
+            "limit": limit,
+        })
         rows = result.mappings().all()
         return ProductReport(
             desde=date_from,
@@ -104,7 +124,9 @@ class ReportsService:
             productos=[ProductPerformance(**row) for row in rows],
         )
 
-    async def inventory(self, branch_id: int | None, critical_only: bool) -> InventoryReport:
+    async def inventory(
+        self, tenant_id: int, branch_id: int | None, critical_only: bool
+    ) -> InventoryReport:
         rows = (await self.session.execute(text("""
             SELECT vp.id_variante, p.nombre AS producto, vp.sku, s.nombre AS sucursal,
                    i.stock_fisico, i.stock_reservado,
@@ -128,15 +150,25 @@ class ReportsService:
                      AND li.activo = true
               ) l ON true
              WHERE p.activo = true AND vp.activo = true
+               AND i.id_tenant = :tenant_id
                AND (CAST(:branch_id AS BIGINT) IS NULL OR i.id_sucursal = :branch_id)
                AND (CAST(:critical_only AS BOOLEAN) = false
                     OR i.stock_fisico - i.stock_reservado <= i.stock_minimo)
              ORDER BY critico DESC, stock_disponible, p.nombre, vp.sku
-        """), {"branch_id": branch_id, "critical_only": critical_only})).mappings().all()
+        """), {
+            "tenant_id": tenant_id,
+            "branch_id": branch_id,
+            "critical_only": critical_only,
+        })).mappings().all()
         return self.summarize_inventory(rows)
 
     async def customers(
-        self, date_from: date, date_to: date, branch_id: int | None, limit: int
+        self,
+        tenant_id: int,
+        date_from: date,
+        date_to: date,
+        branch_id: int | None,
+        limit: int,
     ) -> CustomerReport:
         start, end = self._range(date_from, date_to)
         result = await self.session.execute(text("""
@@ -155,11 +187,20 @@ class ReportsService:
                    GROUP BY id_venta
               ) d ON d.id_venta = v.id_venta
              WHERE v.fecha_venta BETWEEN :start AND :end
+               AND v.id_tenant = :tenant_id
+               AND c.id_tenant = :tenant_id
+               AND u.id_tenant = :tenant_id
                AND (CAST(:branch_id AS BIGINT) IS NULL OR v.id_sucursal = :branch_id)
              GROUP BY c.id_cliente, u.nombres, u.apellidos, u.correo
              ORDER BY gasto_total DESC, compras DESC
              LIMIT :limit
-        """), {"start": start, "end": end, "branch_id": branch_id, "limit": limit})
+        """), {
+            "tenant_id": tenant_id,
+            "start": start,
+            "end": end,
+            "branch_id": branch_id,
+            "limit": limit,
+        })
         rows = result.mappings().all()
         return CustomerReport(
             desde=date_from,
