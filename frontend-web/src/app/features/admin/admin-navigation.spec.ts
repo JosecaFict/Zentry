@@ -40,6 +40,7 @@ describe('admin navigation permissions', () => {
       'Lotes',
       'Movimientos',
       'Transferencias',
+      'Operación offline',
     ]);
   });
 

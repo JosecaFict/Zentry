@@ -5,6 +5,7 @@ import {
   CatalogSnapshot,
   LocalSyncBatch,
   OfflineCatalogItem,
+  OfflineOperationSummary,
   OfflineOperationType,
   OfflineScope,
   OfflineSyncMeta,
@@ -80,6 +81,21 @@ export class OfflineDatabaseService {
 
   async listCatalog(): Promise<OfflineCatalogItem[]> {
     return this.requireDatabase().catalogItems.orderBy('producto').toArray();
+  }
+
+  async currentMeta(): Promise<OfflineSyncMeta | null> {
+    return (await this.requireDatabase().syncMeta.get('scope')) ?? null;
+  }
+
+  async operationSummary(): Promise<OfflineOperationSummary> {
+    const operations = await this.requireDatabase().pendingOperations.toArray();
+    return {
+      pending: operations.filter((item) =>
+        item.estado === 'PENDIENTE' || item.estado === 'ENVIANDO',
+      ).length,
+      conflicts: operations.filter((item) => item.estado === 'CONFLICTO').length,
+      rejected: operations.filter((item) => item.estado === 'RECHAZADA').length,
+    };
   }
 
   async queueOperation(

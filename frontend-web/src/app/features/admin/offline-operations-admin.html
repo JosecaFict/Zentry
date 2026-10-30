@@ -1,0 +1,126 @@
+<div class="admin-page offline-page">
+  <header class="admin-page-heading offline-heading">
+    <div>
+      <p class="eyebrow">Inventario · PWA</p>
+      <h1>Operación offline</h1>
+      <p>Guarda el catálogo de una sucursal en este dispositivo y revisa su cola de sincronización.</p>
+    </div>
+    <span class="connection-status" [class.is-offline]="!connectivity.online()">
+      <span aria-hidden="true"></span>
+      {{ connectivity.online() ? 'En línea' : 'Sin conexión' }}
+    </span>
+  </header>
+
+  <section class="offline-setup" aria-labelledby="offline-setup-title">
+    <div>
+      <p class="step-label">01 · Contexto de trabajo</p>
+      <h2 id="offline-setup-title">Elige la sucursal de este dispositivo</h2>
+      <p>El catálogo, el stock y las operaciones locales siempre quedan separados por empresa, usuario y sucursal.</p>
+    </div>
+    <div class="offline-controls">
+      <label class="field">
+        <span>Sucursal</span>
+        <select
+          [disabled]="loadingBranches() || !!assignedBranch()"
+          [value]="selectedBranchId() ?? ''"
+          (change)="selectBranch($any($event.target).value)"
+        >
+          <option value="">Selecciona una sucursal</option>
+          @for (branch of branches(); track branch.id_sucursal) {
+            <option [value]="branch.id_sucursal">{{ branch.nombre }}</option>
+          }
+        </select>
+      </label>
+      <button
+        class="button button--primary"
+        type="button"
+        [disabled]="!selectedBranchId() || preparing()"
+        (click)="prepareDevice()"
+      >
+        {{ preparing() ? 'Preparando…' : catalog().length ? 'Actualizar catálogo' : 'Preparar dispositivo' }}
+      </button>
+    </div>
+  </section>
+
+  @if (error()) { <div class="notice notice--error" role="alert">{{ error() }}</div> }
+  @if (message()) { <div class="notice notice--success" role="status">{{ message() }}</div> }
+
+  @if (selectedBranchId()) {
+    <section class="offline-facts" aria-label="Estado offline de la sucursal">
+      <div><span>Sucursal local</span><strong>{{ selectedBranch()?.nombre }}</strong></div>
+      <div><span>Variantes guardadas</span><strong>{{ catalog().length }}</strong></div>
+      <div><span>Unidades disponibles</span><strong>{{ availableUnits() }}</strong></div>
+      <div>
+        <span>Última descarga</span>
+        <strong>{{ meta()?.lastCatalogSyncAt ? (meta()?.lastCatalogSyncAt | date: 'dd/MM/yyyy, HH:mm') : 'Pendiente' }}</strong>
+      </div>
+    </section>
+
+    <section class="sync-queue" aria-labelledby="sync-title">
+      <div>
+        <p class="step-label">02 · Cola del dispositivo</p>
+        <h2 id="sync-title">Sincronización</h2>
+      </div>
+      <div class="queue-counts">
+        <span><strong>{{ operationSummary().pending }}</strong> pendientes</span>
+        <span><strong>{{ operationSummary().conflicts }}</strong> conflictos</span>
+        <span><strong>{{ operationSummary().rejected }}</strong> rechazadas</span>
+      </div>
+      <button
+        class="button button--secondary"
+        type="button"
+        [disabled]="!connectivity.online() || synchronizing()"
+        (click)="synchronizeNow()"
+      >
+        {{ synchronizing() ? 'Sincronizando…' : 'Sincronizar ahora' }}
+      </button>
+    </section>
+
+    <section class="local-catalog" aria-labelledby="catalog-title">
+      <header>
+        <div>
+          <p class="step-label">03 · Datos disponibles</p>
+          <h2 id="catalog-title">Catálogo local</h2>
+        </div>
+        <label class="catalog-search">
+          <span class="sr-only">Buscar en el catálogo local</span>
+          <input
+            type="search"
+            placeholder="Buscar producto, SKU, talla o color"
+            [value]="search()"
+            (input)="search.set($any($event.target).value)"
+          />
+        </label>
+      </header>
+
+      @if (!catalog().length) {
+        <div class="offline-empty">
+          <strong>Este dispositivo todavía no tiene catálogo.</strong>
+          <p>{{ connectivity.online() ? 'Pulsa “Preparar dispositivo” para descargarlo.' : 'Recupera la conexión para hacer la primera descarga.' }}</p>
+        </div>
+      } @else {
+        <div class="offline-table-wrap">
+          <table>
+            <thead><tr><th>Producto</th><th>Variante</th><th>SKU</th><th>Precio</th><th>Disponible</th></tr></thead>
+            <tbody>
+              @for (item of filteredCatalog(); track item.id_variante) {
+                <tr>
+                  <td><strong>{{ item.producto }}</strong></td>
+                  <td>{{ item.talla }} · {{ item.color }}</td>
+                  <td><code>{{ item.sku }}</code></td>
+                  <td>Bs {{ item.precio | number: '1.2-2' }}</td>
+                  <td><strong>{{ item.stock_disponible }}</strong></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
+  } @else if (!loadingBranches()) {
+    <div class="offline-empty offline-empty--initial">
+      <strong>Selecciona Sucursal Principal o Sucursal Norte.</strong>
+      <p>No se descargará información hasta que confirmes dónde operará este dispositivo.</p>
+    </div>
+  }
+</div>

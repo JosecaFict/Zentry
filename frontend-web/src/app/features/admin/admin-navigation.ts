@@ -143,6 +143,11 @@ export const ADMIN_NAVIGATION: AdminNavGroup[] = [
         path: '/admin/inventario/transferencias',
         permissions: ['inventario.ver', 'inventario.movimiento'],
       },
+      {
+        label: 'Operación offline',
+        path: '/admin/inventario/offline',
+        permissions: ['inventario.ver'],
+      },
     ],
   },
   {

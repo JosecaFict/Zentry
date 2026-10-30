@@ -366,6 +366,15 @@ export const routes: Routes = [
         loadComponent: () => import('./features/admin/operations-admin').then((m) => m.TraceAdmin),
       },
       {
+        path: 'inventario/offline',
+        title: 'Operación offline | Tienda',
+        canActivate: [requireAnyPermission('inventario.ver')],
+        loadComponent: () =>
+          import('./features/admin/offline-operations-admin').then(
+            (m) => m.OfflineOperationsAdmin,
+          ),
+      },
+      {
         path: 'seguridad/roles-permisos', // [CU-02] Matriz de roles y permisos
         title: 'Roles y permisos | Tienda',
         canActivate: [requireAnyPermission('permisos.asignar')],

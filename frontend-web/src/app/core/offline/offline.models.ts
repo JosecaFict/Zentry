@@ -21,6 +21,12 @@ export interface OfflineSyncMeta extends OfflineScope {
   lastSuccessfulSyncAt: string | null;
 }
 
+export interface OfflineOperationSummary {
+  pending: number;
+  conflicts: number;
+  rejected: number;
+}
+
 export interface OfflineCatalogItem {
   id_variante: number;
   sku: string;
