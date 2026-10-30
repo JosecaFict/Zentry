@@ -1,0 +1,27 @@
+{
+  "name": "Zentry · Operación comercial",
+  "short_name": "Zentry",
+  "description": "Catálogo, ventas, reservas e inventario de tu empresa.",
+  "lang": "es",
+  "dir": "ltr",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f6f3",
+  "theme_color": "#064fe8",
+  "icons": [
+    {
+      "src": "/images/zentry-mark.png",
+      "sizes": "620x620",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/zentry-mark.png",
+      "sizes": "620x620",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
