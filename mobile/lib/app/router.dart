@@ -27,6 +27,7 @@ import 'package:capricho_store/features/commerce/presentation/orders_screen.dart
 import 'package:capricho_store/features/commerce/presentation/reservations_screen.dart';
 import 'package:capricho_store/features/home/presentation/home_screen.dart';
 import 'package:capricho_store/features/home/presentation/splash_screen.dart';
+import 'package:capricho_store/features/offline/presentation/offline_operations_screen.dart';
 import 'package:capricho_store/shared/widgets/app_shell.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -36,7 +37,9 @@ import 'package:go_router/go_router.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 final _shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'storeShell');
-final _adminShellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'adminShell');
+final _adminShellNavigatorKey = GlobalKey<NavigatorState>(
+  debugLabel: 'adminShell',
+);
 
 /// Construye páginas nativas adaptativas:
 /// - En iOS: CupertinoPage, activando el gesto físico de deslizamiento para volver atrás (Swipe-to-back) y animaciones nativas de iOS.
@@ -47,16 +50,9 @@ Page<dynamic> _adaptivePage({
   String? title,
 }) {
   if (defaultTargetPlatform == TargetPlatform.iOS) {
-    return CupertinoPage(
-      key: key,
-      title: title,
-      child: child,
-    );
+    return CupertinoPage(key: key, title: title, child: child);
   }
-  return MaterialPage(
-    key: key,
-    child: child,
-  );
+  return MaterialPage(key: key, child: child);
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -152,7 +148,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(
-        path: '/splash',  // Splash de bienvenida
+        path: '/splash', // Splash de bienvenida
         builder: (context, state) => const SplashScreen(),
       ),
       GoRoute(
@@ -168,23 +164,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             AppShell(location: state.uri.path, child: child),
         routes: [
           GoRoute(
-            path: '/inicio',  // [CU-04 / CU-17 / CU-19] Inicio: Banners, catálogo y recomendaciones
+            path: '/inicio', // [CU-04 / CU-17 / CU-19] Inicio: Banners, catálogo y recomendaciones
             builder: (context, state) => const HomeScreen(),
           ),
           GoRoute(
-            path: '/catalogo',  // [CU-04] Catálogo de prendas y filtros
+            path: '/catalogo', // [CU-04] Catálogo de prendas y filtros
             builder: (context, state) => const CatalogScreen(),
           ),
           GoRoute(
-            path: '/carrito',  // [CU-09] Carrito de compras
+            path: '/carrito', // [CU-09] Carrito de compras
             builder: (context, state) => const CartScreen(),
           ),
           GoRoute(
-            path: '/pedidos',  // [CU-13] Lista de pedidos del cliente
+            path: '/pedidos', // [CU-13] Lista de pedidos del cliente
             builder: (context, state) => const OrdersScreen(),
           ),
           GoRoute(
-            path: '/cuenta',  // [CU-01] Perfil de usuario y datos personales
+            path: '/cuenta', // [CU-01] Perfil de usuario y datos personales
             builder: (context, state) => const ProfileScreen(),
           ),
         ],
@@ -196,32 +192,37 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             AdminShell(location: state.uri.path, child: child),
         routes: [
           GoRoute(
-            path: '/admin/resumen',  // [CU-16] Dashboard operativo móvil
+            path: '/admin/resumen', // [CU-16] Dashboard operativo móvil
             builder: (context, state) => const AdminDashboardScreen(),
           ),
           GoRoute(
-            path: '/admin/inventario',  // [CU-15] Gestión de inventario móvil
+            path: '/admin/inventario', // [CU-15] Gestión de inventario móvil
             builder: (context, state) => const AdminInventoryScreen(),
           ),
           GoRoute(
-            path: '/admin/operaciones',  // [CU-06 / CU-07] Operaciones de abastecimiento y transferencias
+            path: '/admin/operaciones', // [CU-06 / CU-07] Operaciones de abastecimiento y transferencias
             builder: (context, state) => const AdminOperationsScreen(),
           ),
           GoRoute(
-            path: '/admin/perfil',  // [CU-01] Perfil de empleado / admin
+            path: '/admin/offline',
+            builder: (context, state) => const OfflineOperationsScreen(),
+          ),
+          GoRoute(
+            path: '/admin/perfil', // [CU-01] Perfil de empleado / admin
             builder: (context, state) => const AdminProfileScreen(),
           ),
         ],
       ),
       GoRoute(
-        path: '/admin/403',  // [CU-02] Pantalla de acceso denegado por permisos
+        path: '/admin/403', // [CU-02] Pantalla de acceso denegado por permisos
         pageBuilder: (context, state) => _adaptivePage(
           key: state.pageKey,
           child: const OperationalAccessScreen(),
         ),
       ),
       GoRoute(
-        path: '/productos/:id',  // [CU-04 / CU-18] Detalle de prenda y probador AR
+        path:
+            '/productos/:id', // [CU-04 / CU-18] Detalle de prenda y probador AR
         pageBuilder: (context, state) => _adaptivePage(
           key: state.pageKey,
           child: ProductDetailScreen(
@@ -231,35 +232,29 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
-        path: '/login',  // [CU-01] Inicio de sesión (Login)
-        pageBuilder: (context, state) => _adaptivePage(
-          key: state.pageKey,
-          child: const LoginScreen(),
-        ),
+        path: '/login', // [CU-01] Inicio de sesión (Login)
+        pageBuilder: (context, state) =>
+            _adaptivePage(key: state.pageKey, child: const LoginScreen()),
       ),
       GoRoute(
-        path: '/registro',  // [CU-01] Registro de cliente
-        pageBuilder: (context, state) => _adaptivePage(
-          key: state.pageKey,
-          child: const RegisterScreen(),
-        ),
+        path: '/registro', // [CU-01] Registro de cliente
+        pageBuilder: (context, state) =>
+            _adaptivePage(key: state.pageKey, child: const RegisterScreen()),
       ),
       GoRoute(
-        path: '/recuperar-password',  // [CU-08] Recuperación de cuenta vía OTP
+        path: '/recuperar-password', // [CU-08] Recuperación de cuenta vía OTP
         pageBuilder: (context, state) => _adaptivePage(
           key: state.pageKey,
           child: const PasswordRecoveryScreen(),
         ),
       ),
       GoRoute(
-        path: '/checkout',  // [CU-12] Checkout y pago con Stripe
-        pageBuilder: (context, state) => _adaptivePage(
-          key: state.pageKey,
-          child: const CheckoutScreen(),
-        ),
+        path: '/checkout', // [CU-12] Checkout y pago con Stripe
+        pageBuilder: (context, state) =>
+            _adaptivePage(key: state.pageKey, child: const CheckoutScreen()),
       ),
       GoRoute(
-        path: '/checkout-complete',  // [CU-12] Confirmación y resultado de pago
+        path: '/checkout-complete', // [CU-12] Confirmación y resultado de pago
         pageBuilder: (context, state) => _adaptivePage(
           key: state.pageKey,
           child: CheckoutCompleteScreen(
@@ -269,14 +264,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
-        path: '/reservas',  // [CU-10] Mis reservas presenciales (48h)
+        path: '/reservas', // [CU-10] Mis reservas presenciales (48h)
         pageBuilder: (context, state) => _adaptivePage(
           key: state.pageKey,
           child: const ReservationsScreen(),
         ),
       ),
       GoRoute(
-        path: '/pedidos/:id',  // [CU-13] Detalle y seguimiento de pedido
+        path: '/pedidos/:id', // [CU-13] Detalle y seguimiento de pedido
         pageBuilder: (context, state) => _adaptivePage(
           key: state.pageKey,
           child: OrderDetailScreen(
@@ -285,21 +280,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
-        path: '/direcciones',  // [CU-09] Direcciones de entrega
-        pageBuilder: (context, state) => _adaptivePage(
-          key: state.pageKey,
-          child: const AddressesScreen(),
-        ),
+        path: '/direcciones', // [CU-09] Direcciones de entrega
+        pageBuilder: (context, state) =>
+            _adaptivePage(key: state.pageKey, child: const AddressesScreen()),
       ),
       GoRoute(
-        path: '/notificaciones',  // [CU-20] Notificaciones push recibidas
+        path: '/notificaciones', // [CU-20] Notificaciones push recibidas
         pageBuilder: (context, state) => _adaptivePage(
           key: state.pageKey,
           child: const NotificationsScreen(),
         ),
       ),
       GoRoute(
-        path: '/vestidor',  // [CU-18] Probador Virtual con Realidad Aumentada (AR)
+        path:
+            '/vestidor', // [CU-18] Probador Virtual con Realidad Aumentada (AR)
         pageBuilder: (context, state) {
           final extra = state.extra as Map<String, dynamic>? ?? {};
           return _adaptivePage(
@@ -308,7 +302,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               product: extra['product'] as Product,
               measurements:
                   (extra['measurements'] as List<ProductMeasurement>?) ??
-                      const [],
+                  const [],
               initialVariant: extra['initialVariant'] as ProductVariant?,
               images: (extra['images'] as List<ProductImage>?) ?? const [],
             ),

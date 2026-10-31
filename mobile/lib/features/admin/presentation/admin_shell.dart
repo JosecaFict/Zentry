@@ -46,6 +46,13 @@ class AdminShell extends ConsumerWidget {
           icon: Icons.swap_horiz_outlined,
           selectedIcon: Icons.swap_horiz_rounded,
         ),
+      if (user.canViewInventory && user.canManageOrders)
+        const _PanelDestination(
+          location: '/admin/offline',
+          label: 'Offline',
+          icon: Icons.sync_alt_outlined,
+          selectedIcon: Icons.sync_alt_rounded,
+        ),
       const _PanelDestination(
         location: '/admin/perfil',
         label: 'Cuenta',
@@ -72,7 +79,10 @@ class AdminShell extends ConsumerWidget {
                 user.operationalContextLabel,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
           ],
