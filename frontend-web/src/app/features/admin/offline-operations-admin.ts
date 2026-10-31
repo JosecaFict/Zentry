@@ -17,6 +17,14 @@ import { ApiErrorService } from '../../core/services/api-error.service';
 import { CatalogService } from '../../core/services/catalog.service';
 import { TenantContextService } from '../../core/tenant/tenant-context.service';
 
+interface OfflineCatalogGroup {
+  name: string;
+  variants: OfflineCatalogItem[];
+  availableUnits: number;
+  minPrice: number;
+  maxPrice: number;
+}
+
 @Component({
   selector: 'app-offline-operations-admin',
   imports: [CommonModule],
@@ -62,6 +70,25 @@ export class OfflineOperationsAdmin implements OnInit {
         .includes(query),
     );
   });
+  readonly groupedCatalog = computed<OfflineCatalogGroup[]>(() => {
+    const groups = new Map<string, OfflineCatalogItem[]>();
+    for (const item of this.filteredCatalog()) {
+      const variants = groups.get(item.producto) ?? [];
+      variants.push(item);
+      groups.set(item.producto, variants);
+    }
+    return [...groups.entries()].map(([name, variants]) => {
+      const prices = variants.map((item) => Number(item.precio));
+      return {
+        name,
+        variants,
+        availableUnits: variants.reduce((total, item) => total + item.stock_disponible, 0),
+        minPrice: Math.min(...prices),
+        maxPrice: Math.max(...prices),
+      };
+    });
+  });
+  readonly productCount = computed(() => new Set(this.catalog().map((item) => item.producto)).size);
   readonly availableUnits = computed(() =>
     this.catalog().reduce((total, item) => total + item.stock_disponible, 0),
   );

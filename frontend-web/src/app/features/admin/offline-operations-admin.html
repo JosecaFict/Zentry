@@ -1,7 +1,6 @@
 <div class="admin-page offline-page">
   <header class="admin-page-heading offline-heading">
     <div>
-      <p class="eyebrow">Inventario · PWA</p>
       <h1>Operación offline</h1>
       <p>Guarda el catálogo de una sucursal en este dispositivo y revisa su cola de sincronización.</p>
     </div>
@@ -13,7 +12,6 @@
 
   <section class="offline-setup" aria-labelledby="offline-setup-title">
     <div>
-      <p class="step-label">01 · Contexto de trabajo</p>
       <h2 id="offline-setup-title">Elige la sucursal de este dispositivo</h2>
       <p>El catálogo, el stock y las operaciones locales siempre quedan separados por empresa, usuario y sucursal.</p>
     </div>
@@ -48,7 +46,7 @@
   @if (selectedBranchId()) {
     <section class="offline-facts" aria-label="Estado offline de la sucursal">
       <div><span>Sucursal local</span><strong>{{ selectedBranch()?.nombre }}</strong></div>
-      <div><span>Variantes guardadas</span><strong>{{ catalog().length }}</strong></div>
+      <div><span>Productos · variantes</span><strong>{{ productCount() }} · {{ catalog().length }}</strong></div>
       <div><span>Unidades disponibles</span><strong>{{ availableUnits() }}</strong></div>
       <div>
         <span>Última descarga</span>
@@ -58,7 +56,6 @@
 
     <section class="sync-queue" aria-labelledby="sync-title">
       <div>
-        <p class="step-label">02 · Cola del dispositivo</p>
         <h2 id="sync-title">Sincronización</h2>
       </div>
       <div class="queue-counts">
@@ -79,8 +76,8 @@
     <section class="local-catalog" aria-labelledby="catalog-title">
       <header>
         <div>
-          <p class="step-label">03 · Datos disponibles</p>
           <h2 id="catalog-title">Catálogo local</h2>
+          <p>{{ groupedCatalog().length }} productos encontrados</p>
         </div>
         <label class="catalog-search">
           <span class="sr-only">Buscar en el catálogo local</span>
@@ -99,21 +96,41 @@
           <p>{{ connectivity.online() ? 'Pulsa “Preparar dispositivo” para descargarlo.' : 'Recupera la conexión para hacer la primera descarga.' }}</p>
         </div>
       } @else {
-        <div class="offline-table-wrap">
-          <table>
-            <thead><tr><th>Producto</th><th>Variante</th><th>SKU</th><th>Precio</th><th>Disponible</th></tr></thead>
-            <tbody>
-              @for (item of filteredCatalog(); track item.id_variante) {
-                <tr>
-                  <td><strong>{{ item.producto }}</strong></td>
-                  <td>{{ item.talla }} · {{ item.color }}</td>
-                  <td><code>{{ item.sku }}</code></td>
-                  <td>Bs {{ item.precio | number: '1.2-2' }}</td>
-                  <td><strong>{{ item.stock_disponible }}</strong></td>
-                </tr>
-              }
-            </tbody>
-          </table>
+        <div class="catalog-groups">
+          <div class="catalog-columns" aria-hidden="true">
+            <span>Producto</span><span>Precio</span><span>Variantes</span><span>Disponible</span><span></span>
+          </div>
+          @for (group of groupedCatalog(); track group.name) {
+            <details class="catalog-group">
+              <summary>
+                <strong>{{ group.name }}</strong>
+                <span>
+                  Bs {{ group.minPrice | number: '1.2-2' }}
+                  @if (group.maxPrice !== group.minPrice) { – {{ group.maxPrice | number: '1.2-2' }} }
+                </span>
+                <span>{{ group.variants.length }}</span>
+                <strong>{{ group.availableUnits }}</strong>
+                <span class="catalog-group-action" aria-hidden="true"></span>
+              </summary>
+              <div class="variant-table-wrap">
+                <table>
+                  <thead><tr><th>Talla</th><th>Color</th><th>SKU</th><th>Disponible</th></tr></thead>
+                  <tbody>
+                    @for (item of group.variants; track item.id_variante) {
+                      <tr>
+                        <td>{{ item.talla }}</td>
+                        <td>{{ item.color }}</td>
+                        <td><code>{{ item.sku }}</code></td>
+                        <td><strong>{{ item.stock_disponible }}</strong></td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          } @empty {
+            <div class="offline-empty"><strong>No encontramos coincidencias.</strong><p>Prueba con otro nombre, talla, color o SKU.</p></div>
+          }
         </div>
       }
     </section>
