@@ -39,7 +39,8 @@ export class TenantHostService {
 export class TenantContextService {
   private readonly http = inject(HttpClient);
   private readonly host = inject(TenantHostService);
-  private readonly state = signal<TenantBrand | null>(null);
+  private readonly cacheKey = `zentry_tenant_${this.host.slug ?? 'platform'}`;
+  private readonly state = signal<TenantBrand | null>(this.readCachedTenant());
   private readonly unavailableState = signal(false);
 
   readonly tenant = this.state.asReadonly();
@@ -62,6 +63,11 @@ export class TenantContextService {
   readonly primaryColor = computed(() => this.state()?.color_primario || '#064FE8');
   readonly primaryDarkColor = computed(() => this.state()?.color_primario_oscuro || '#0039B8');
 
+  constructor() {
+    const cached = this.state();
+    if (cached) this.applyColors(cached);
+  }
+
   load(): Observable<TenantBrand | null> {
     if (!this.host.slug) return of(null);
     return this.http
@@ -73,6 +79,10 @@ export class TenantContextService {
         }),
         catchError((error: HttpErrorResponse) => {
           this.unavailableState.set(error.status === 403);
+          if (error.status === 403) {
+            this.state.set(null);
+            if (typeof localStorage !== 'undefined') localStorage.removeItem(this.cacheKey);
+          }
           return of(null);
         }),
       );
@@ -100,6 +110,24 @@ export class TenantContextService {
 
   private setTenant(tenant: TenantBrand): void {
     this.state.set(tenant);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(this.cacheKey, JSON.stringify(tenant));
+    }
+    this.applyColors(tenant);
+  }
+
+  private readCachedTenant(): TenantBrand | null {
+    if (typeof localStorage === 'undefined' || !this.host.slug) return null;
+    try {
+      const tenant = JSON.parse(localStorage.getItem(this.cacheKey) ?? 'null') as TenantBrand | null;
+      return tenant?.slug === this.host.slug ? tenant : null;
+    } catch {
+      localStorage.removeItem(this.cacheKey);
+      return null;
+    }
+  }
+
+  private applyColors(tenant: TenantBrand): void {
     document.documentElement.style.setProperty('--accent', tenant.color_primario);
     document.documentElement.style.setProperty('--primary', tenant.color_primario);
     document.documentElement.style.setProperty('--accent-dark', tenant.color_primario_oscuro);

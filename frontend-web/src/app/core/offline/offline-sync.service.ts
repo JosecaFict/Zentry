@@ -5,6 +5,7 @@ import { ConnectivityService } from './connectivity.service';
 import { OfflineDatabaseService } from './offline-database.service';
 import { OfflineScope, SyncBatchResponse } from './offline.models';
 import { SyncApiService } from './sync-api.service';
+import { CommerceService } from '../services/commerce.service';
 
 export type OfflineSyncState = 'INACTIVO' | 'PREPARANDO' | 'LISTO' | 'SINCRONIZANDO' | 'ERROR';
 
@@ -13,6 +14,7 @@ export class OfflineSyncService {
   private readonly api = inject(SyncApiService);
   private readonly database = inject(OfflineDatabaseService);
   private readonly connectivity = inject(ConnectivityService);
+  private readonly commerce = inject(CommerceService);
   private readonly stateSignal = signal<OfflineSyncState>('INACTIVO');
   private readonly errorSignal = signal<string | null>(null);
 
@@ -39,6 +41,15 @@ export class OfflineSyncService {
       );
       const catalog = await firstValueFrom(this.api.catalog(scope.branchId));
       await this.database.replaceCatalog(catalog);
+      const customers = await firstValueFrom(this.commerce.adminCustomers({ estado: 'ACTIVO' }));
+      await this.database.replaceCustomers(
+        customers.filter((customer) => customer.estado === 'ACTIVO').map((customer) => ({
+          id_cliente: customer.id_cliente,
+          nombre_completo: customer.nombre_completo,
+          correo: customer.correo,
+          telefono: customer.telefono,
+        })),
+      );
       this.stateSignal.set('LISTO');
     } catch (error) {
       this.fail(error, 'No se pudo preparar el modo sin conexión.');

@@ -21,7 +21,8 @@ import { TokenStorageService } from './token-storage.service';
 export class AuthService {
   private readonly http = inject(HttpClient);
   private readonly tokenStorage = inject(TokenStorageService);
-  private readonly currentUserState = signal<UserResponse | null>(null);
+  private readonly sessionKey = 'zentry_cached_session';
+  private readonly currentUserState = signal<UserResponse | null>(this.readCachedUser());
   private readonly loadingState = signal(false);
 
   readonly currentUser = this.currentUserState.asReadonly();
@@ -33,6 +34,8 @@ export class AuthService {
   }
 
   login(payload: LoginRequest): Observable<TokenResponse> {  // [CU-01] Inicio de sesión (Login)
+    this.clearCachedUser();
+    this.currentUserState.set(null);
     return this.http
       .post<TokenResponse>(`${API_BASE_URL}/auth/login`, payload)
       .pipe(tap((response) => this.tokenStorage.set(response.access_token)));
@@ -61,7 +64,7 @@ export class AuthService {
   updateProfile(payload: UpdateProfileRequest): Observable<UserResponse> {  // [CU-01] Actualizar datos del perfil
     return this.http
       .patch<UserResponse>(`${API_BASE_URL}/auth/me`, payload)
-      .pipe(tap((user) => this.currentUserState.set(user)));
+      .pipe(tap((user) => this.setCurrentUser(user)));
   }
 
   uploadAvatar(file: File): Observable<UserResponse> {  // [CU-01] Subir foto de perfil a Cloudinary
@@ -69,13 +72,13 @@ export class AuthService {
     formData.append('file', file);
     return this.http
       .post<UserResponse>(`${API_BASE_URL}/auth/me/avatar`, formData)
-      .pipe(tap((user) => this.currentUserState.set(user)));
+      .pipe(tap((user) => this.setCurrentUser(user)));
   }
 
   deleteAvatar(): Observable<UserResponse> {  // [CU-01] Eliminar foto de perfil
     return this.http
       .delete<UserResponse>(`${API_BASE_URL}/auth/me/avatar`)
-      .pipe(tap((user) => this.currentUserState.set(user)));
+      .pipe(tap((user) => this.setCurrentUser(user)));
   }
 
   changePassword(payload: ChangePasswordRequest): Observable<MessageResponse> {  // [CU-01] Cambiar contraseña
@@ -87,7 +90,7 @@ export class AuthService {
     return this.http.get<UserResponse>(`${API_BASE_URL}/auth/me`).pipe(
       tap({
         next: (user) => {
-          this.currentUserState.set(user);
+          this.setCurrentUser(user);
           this.loadingState.set(false);
         },
         error: () => this.loadingState.set(false),
@@ -97,7 +100,11 @@ export class AuthService {
 
   restoreSession(): void {
     if (!this.tokenStorage.get() || this.currentUserState() || this.loadingState()) return;
-    this.loadCurrentUser().subscribe({ error: () => this.logout() });
+    this.loadCurrentUser().subscribe({
+      error: (error) => {
+        if (error?.status && error.status !== 0) this.logout();
+      },
+    });
   }
 
   token(): string | null {
@@ -107,5 +114,40 @@ export class AuthService {
   logout(): void {
     this.tokenStorage.clear();
     this.currentUserState.set(null);
+    this.clearCachedUser();
+  }
+
+  private setCurrentUser(user: UserResponse): void {
+    this.currentUserState.set(user);
+    const token = this.tokenStorage.get();
+    if (typeof localStorage === 'undefined' || !token) return;
+    localStorage.setItem(
+      this.sessionKey,
+      JSON.stringify({ tokenMarker: this.tokenMarker(token), user }),
+    );
+  }
+
+  private readCachedUser(): UserResponse | null {
+    if (typeof localStorage === 'undefined') return null;
+    const token = this.tokenStorage.get();
+    if (!token) return null;
+    try {
+      const cached = JSON.parse(localStorage.getItem(this.sessionKey) ?? 'null') as {
+        tokenMarker?: string;
+        user?: UserResponse;
+      } | null;
+      return cached?.tokenMarker === this.tokenMarker(token) && cached.user ? cached.user : null;
+    } catch {
+      this.clearCachedUser();
+      return null;
+    }
+  }
+
+  private clearCachedUser(): void {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(this.sessionKey);
+  }
+
+  private tokenMarker(token: string): string {
+    return token.slice(-24);
   }
 }

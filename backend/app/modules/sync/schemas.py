@@ -8,6 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.modules.commerce.schemas import ReservationCreate, SaleCreate
 
 
+class OfflineReservationCreate(ReservationCreate):
+    id_cliente: int = Field(gt=0)
+
+
 class SyncDeviceRegister(BaseModel):
     id_dispositivo: UUID
     nombre: str = Field(min_length=1, max_length=100)
@@ -97,7 +101,9 @@ class CatalogSnapshotResponse(BaseModel):
     items: list[CatalogSnapshotItem]
 
 
-def parse_offline_payload(operation: SyncOperationRequest) -> SaleCreate | ReservationCreate:
+def parse_offline_payload(
+    operation: SyncOperationRequest,
+) -> SaleCreate | OfflineReservationCreate:
     if operation.tipo == "VENTA":
         sale = SaleCreate.model_validate(operation.payload)
         if not sale.registrar_efectivo or sale.metodo_pago != "EFECTIVO":
@@ -105,5 +111,5 @@ def parse_offline_payload(operation: SyncOperationRequest) -> SaleCreate | Reser
         if sale.referencia_pago:
             raise ValueError("Una venta offline en efectivo no admite referencia de pasarela")
         return sale
-    return ReservationCreate.model_validate(operation.payload)
+    return OfflineReservationCreate.model_validate(operation.payload)
 

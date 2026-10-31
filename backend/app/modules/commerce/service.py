@@ -412,9 +412,26 @@ class CommerceService:
             )
 
     async def create_reservation(
-        self, user_id: int, payload: ReservationCreate, *, commit: bool = True
+        self,
+        user_id: int,
+        payload: ReservationCreate,
+        *,
+        customer_id: int | None = None,
+        all_branches: bool = False,
+        commit: bool = True,
     ) -> ReservationResponse:
-        customer = await self._customer(user_id)
+        staff_operation = customer_id is not None
+        if staff_operation:
+            employee = await self._employee(user_id)
+            if not all_branches and employee.id_sucursal != payload.id_sucursal:
+                raise InvalidCommerceOperationError(
+                    "El empleado solo puede reservar en su sucursal"
+                )
+            customer = await self.repository.get(Cliente, customer_id)
+            if customer is None or customer.estado != "ACTIVO":
+                raise CommerceNotFoundError("El cliente no está disponible")
+        else:
+            customer = await self._customer(user_id)
         self._validate_unique_lines(payload.items)
         branch = await self.repository.get(Sucursal, payload.id_sucursal)
         if branch is None or not branch.activo:
@@ -456,20 +473,21 @@ class CommerceService:
                 )
             )
             await self._reserve_stock(payload.id_sucursal, reservation.id_reserva, payload.items)
-            active_cart = await self.repository.active_cart(customer.id_cliente, lock=True)
-            if active_cart:
-                await self.repository.clear_cart_items(active_cart.id_carrito)
-                active_cart.id_sucursal = None
+            if not staff_operation:
+                active_cart = await self.repository.active_cart(customer.id_cliente, lock=True)
+                if active_cart:
+                    await self.repository.clear_cart_items(active_cart.id_carrito)
+                    active_cart.id_sucursal = None
             branch = await self.repository.get(Sucursal, payload.id_sucursal)
             branch_name = getattr(branch, "nombre", None) or f"Sucursal #{payload.id_sucursal}"
-            cust_user = await self.repository.get(Usuario, user_id)
+            cust_user = await self.repository.get(Usuario, customer.id_usuario)
             cust_name = (
                 f"{getattr(cust_user, 'nombres', '')} {getattr(cust_user, 'apellidos', '')}".strip()
                 if cust_user and hasattr(cust_user, "nombres")
                 else "Cliente"
             ) or "Cliente"
             await self._notify(
-                user_id,
+                customer.id_usuario,
                 "RESERVA_CREADA",
                 "¡Reserva confirmada! 📋",
                 f"Tu reserva #{reservation.id_reserva} fue registrada en {branch_name}.",

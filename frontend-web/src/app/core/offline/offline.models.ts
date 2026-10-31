@@ -40,6 +40,13 @@ export interface OfflineCatalogItem {
   updated_at: string | null;
 }
 
+export interface OfflineCustomerItem {
+  id_cliente: number;
+  nombre_completo: string;
+  correo: string;
+  telefono: string | null;
+}
+
 export interface CatalogSnapshot {
   id_sucursal: number;
   generado_at: string;

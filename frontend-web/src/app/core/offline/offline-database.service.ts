@@ -5,6 +5,7 @@ import {
   CatalogSnapshot,
   LocalSyncBatch,
   OfflineCatalogItem,
+  OfflineCustomerItem,
   OfflineOperationSummary,
   OfflineOperationType,
   OfflineScope,
@@ -16,6 +17,7 @@ import {
 class ZentryOfflineDatabase extends Dexie {
   syncMeta!: Table<OfflineSyncMeta, string>;
   catalogItems!: Table<OfflineCatalogItem, number>;
+  customerItems!: Table<OfflineCustomerItem, number>;
   pendingOperations!: Table<PendingOfflineOperation, string>;
   syncBatches!: Table<LocalSyncBatch, string>;
 
@@ -24,6 +26,14 @@ class ZentryOfflineDatabase extends Dexie {
     this.version(1).stores({
       syncMeta: '&key, tenantId, userId, branchId, deviceId',
       catalogItems: '&id_variante, sku, producto, talla, color, stock_disponible, updated_at',
+      pendingOperations:
+        '&id_operacion, estado, tipo, created_at, updated_at, id_lote, [estado+created_at]',
+      syncBatches: '&id_lote, estado, created_at, confirmed_at',
+    });
+    this.version(2).stores({
+      syncMeta: '&key, tenantId, userId, branchId, deviceId',
+      catalogItems: '&id_variante, sku, producto, talla, color, stock_disponible, updated_at',
+      customerItems: '&id_cliente, nombre_completo, correo, telefono',
       pendingOperations:
         '&id_operacion, estado, tipo, created_at, updated_at, id_lote, [estado+created_at]',
       syncBatches: '&id_lote, estado, created_at, confirmed_at',
@@ -83,6 +93,18 @@ export class OfflineDatabaseService {
     return this.requireDatabase().catalogItems.orderBy('producto').toArray();
   }
 
+  async replaceCustomers(customers: OfflineCustomerItem[]): Promise<void> {
+    const db = this.requireDatabase();
+    await db.transaction('rw', db.customerItems, async () => {
+      await db.customerItems.clear();
+      if (customers.length) await db.customerItems.bulkPut(customers);
+    });
+  }
+
+  async listCustomers(): Promise<OfflineCustomerItem[]> {
+    return this.requireDatabase().customerItems.orderBy('nombre_completo').toArray();
+  }
+
   async currentMeta(): Promise<OfflineSyncMeta | null> {
     return (await this.requireDatabase().syncMeta.get('scope')) ?? null;
   }
@@ -96,6 +118,33 @@ export class OfflineDatabaseService {
       conflicts: operations.filter((item) => item.estado === 'CONFLICTO').length,
       rejected: operations.filter((item) => item.estado === 'RECHAZADA').length,
     };
+  }
+
+  async queuedQuantities(): Promise<Record<number, number>> {
+    const operations = await this.requireDatabase().pendingOperations.toArray();
+    const quantities: Record<number, number> = {};
+    for (const operation of operations) {
+      if (!['PENDIENTE', 'ENVIANDO'].includes(operation.estado)) continue;
+      const items = operation.payload['items'];
+      if (!Array.isArray(items)) continue;
+      for (const rawItem of items) {
+        if (!rawItem || typeof rawItem !== 'object') continue;
+        const item = rawItem as Record<string, unknown>;
+        const variantId = Number(item['id_variante']);
+        const quantity = Number(item['cantidad']);
+        if (!Number.isInteger(variantId) || !Number.isInteger(quantity) || quantity <= 0) continue;
+        quantities[variantId] = (quantities[variantId] ?? 0) + quantity;
+      }
+    }
+    return quantities;
+  }
+
+  async recentOperations(limit = 8): Promise<PendingOfflineOperation[]> {
+    return this.requireDatabase()
+      .pendingOperations.orderBy('created_at')
+      .reverse()
+      .limit(limit)
+      .toArray();
   }
 
   async queueOperation(
@@ -154,7 +203,10 @@ export class OfflineDatabaseService {
     await db.transaction('rw', db.pendingOperations, db.syncBatches, db.syncMeta, async () => {
       for (const result of response.operaciones) {
         await db.pendingOperations.update(result.id_operacion, {
-          estado: result.estado,
+          estado:
+            response.confirmado_at && result.estado === 'APLICADA'
+              ? 'CONFIRMADA'
+              : result.estado,
           codigo_error: result.codigo_error,
           mensaje_error: result.mensaje_error,
           updated_at: now,
@@ -195,6 +247,30 @@ export class OfflineDatabaseService {
         ),
       );
     });
+  }
+
+  async retryOperation(idOperacion: string): Promise<void> {
+    const db = this.requireDatabase();
+    const operation = await db.pendingOperations.get(idOperacion);
+    if (!operation || !['CONFLICTO', 'RECHAZADA'].includes(operation.estado)) {
+      throw new Error('La operación ya no requiere intervención.');
+    }
+    await db.pendingOperations.update(idOperacion, {
+      estado: 'PENDIENTE',
+      id_lote: null,
+      codigo_error: null,
+      mensaje_error: null,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  async discardOperation(idOperacion: string): Promise<void> {
+    const db = this.requireDatabase();
+    const operation = await db.pendingOperations.get(idOperacion);
+    if (!operation || operation.estado === 'CONFIRMADA' || operation.estado === 'ENVIANDO') {
+      throw new Error('Esta operación no se puede descartar.');
+    }
+    await db.pendingOperations.delete(idOperacion);
   }
 
   async clearCurrentScope(): Promise<void> {

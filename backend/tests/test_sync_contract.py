@@ -11,6 +11,7 @@ from app.modules.commerce.schemas import SaleCreate
 from app.modules.sync.exceptions import SyncForbiddenError
 from app.modules.sync.models import SyncOperation
 from app.modules.sync.schemas import (
+    OfflineReservationCreate,
     SyncBatchRequest,
     SyncOperationRequest,
     parse_offline_payload,
@@ -78,6 +79,30 @@ def test_offline_sale_requires_sale_and_payment_permissions() -> None:
     sale = SaleCreate.model_validate(operation().payload)
     with pytest.raises(SyncForbiddenError):
         SyncService._authorize_operation(principal(permissions=frozenset()), sale)
+
+
+def test_offline_reservation_requires_customer() -> None:
+    request = SyncOperationRequest(
+        id_operacion=uuid4(),
+        tipo="RESERVA",
+        fecha_cliente=datetime.now(UTC),
+        payload={
+            "id_sucursal": 1,
+            "items": [{"id_variante": 2, "cantidad": 1}],
+        },
+    )
+    with pytest.raises(ValidationError):
+        parse_offline_payload(request)
+
+
+def test_offline_reservation_requires_management_permission() -> None:
+    reservation = OfflineReservationCreate(
+        id_sucursal=1,
+        id_cliente=7,
+        items=[{"id_variante": 2, "cantidad": 1}],
+    )
+    with pytest.raises(SyncForbiddenError):
+        SyncService._authorize_operation(principal(permissions=frozenset()), reservation)
 
 
 @pytest.mark.asyncio

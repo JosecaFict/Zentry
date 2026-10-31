@@ -15,7 +15,7 @@ from app.modules.commerce.exceptions import (
     CommerceNotFoundError,
     InvalidCommerceOperationError,
 )
-from app.modules.commerce.schemas import ReservationCreate, SaleCreate
+from app.modules.commerce.schemas import SaleCreate
 from app.modules.commerce.service import CommerceService
 from app.modules.sync.exceptions import SyncConflictError, SyncForbiddenError, SyncNotFoundError
 from app.modules.sync.models import SyncBatch, SyncConflict, SyncDevice, SyncOperation
@@ -23,6 +23,7 @@ from app.modules.sync.repository import SyncRepository
 from app.modules.sync.schemas import (
     CatalogSnapshotItem,
     CatalogSnapshotResponse,
+    OfflineReservationCreate,
     SyncBatchRequest,
     SyncBatchResponse,
     SyncDeviceRegister,
@@ -236,7 +237,12 @@ class SyncService:
                         )
                     else:
                         result = await self.commerce.create_reservation(
-                            principal.user.id_usuario, parsed, commit=False
+                            principal.user.id_usuario,
+                            parsed,
+                            customer_id=parsed.id_cliente,
+                            all_branches="ventas.sucursales_todas" in principal.permissions
+                            or "ADMIN" in principal.roles,
+                            commit=False,
                         )
                 operation.estado = "APLICADA"
                 operation.resultado = result.model_dump(mode="json")
@@ -286,12 +292,14 @@ class SyncService:
 
     @staticmethod
     def _authorize_operation(
-        principal: CurrentPrincipal, payload: SaleCreate | ReservationCreate
+        principal: CurrentPrincipal, payload: SaleCreate | OfflineReservationCreate
     ) -> None:
         if isinstance(payload, SaleCreate):
             required = {"ventas.crear", "pagos.registrar"}
             if not required.issubset(principal.permissions) and "ADMIN" not in principal.roles:
                 raise SyncForbiddenError("No tiene permisos para registrar ventas offline")
+        elif "reservas.gestionar" not in principal.permissions and "ADMIN" not in principal.roles:
+            raise SyncForbiddenError("No tiene permisos para registrar reservas offline")
 
     async def _record_conflict(self, operation: SyncOperation, message: str) -> None:
         operation.estado = "CONFLICTO"

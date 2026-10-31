@@ -73,22 +73,23 @@
       </button>
     </section>
 
-    <section class="local-catalog" aria-labelledby="catalog-title">
-      <header>
-        <div>
-          <h2 id="catalog-title">Catálogo local</h2>
-          <p>{{ groupedCatalog().length }} productos encontrados</p>
-        </div>
-        <label class="catalog-search">
-          <span class="sr-only">Buscar en el catálogo local</span>
-          <input
-            type="search"
-            placeholder="Buscar producto, SKU, talla o color"
-            [value]="search()"
-            (input)="search.set($any($event.target).value)"
-          />
-        </label>
-      </header>
+    <div class="sale-workspace">
+      <section class="local-catalog" aria-labelledby="catalog-title">
+        <header>
+          <div>
+            <h2 id="catalog-title">Catálogo local</h2>
+            <p>{{ groupedCatalog().length }} productos encontrados</p>
+          </div>
+          <label class="catalog-search">
+            <span class="sr-only">Buscar en el catálogo local</span>
+            <input
+              type="search"
+              placeholder="Buscar producto, SKU, talla o color"
+              [value]="search()"
+              (input)="search.set($any($event.target).value)"
+            />
+          </label>
+        </header>
 
       @if (!catalog().length) {
         <div class="offline-empty">
@@ -114,14 +115,22 @@
               </summary>
               <div class="variant-table-wrap">
                 <table>
-                  <thead><tr><th>Talla</th><th>Color</th><th>SKU</th><th>Disponible</th></tr></thead>
+                  <thead><tr><th>Talla</th><th>Color</th><th>SKU</th><th>Disponible</th><th>Acción</th></tr></thead>
                   <tbody>
                     @for (item of group.variants; track item.id_variante) {
                       <tr>
                         <td>{{ item.talla }}</td>
                         <td>{{ item.color }}</td>
                         <td><code>{{ item.sku }}</code></td>
-                        <td><strong>{{ item.stock_disponible }}</strong></td>
+                        <td><strong>{{ availableFor(item) }}</strong></td>
+                        <td>
+                          <button
+                            class="variant-add"
+                            type="button"
+                            [disabled]="availableFor(item) === 0"
+                            (click)="addToCart(item)"
+                          >Agregar</button>
+                        </td>
                       </tr>
                     }
                   </tbody>
@@ -133,7 +142,134 @@
           }
         </div>
       }
-    </section>
+      </section>
+
+      @if (catalog().length) {
+        <aside class="offline-cart" aria-labelledby="offline-cart-title">
+          <header>
+            <div>
+              <h2 id="offline-cart-title">Nueva operación</h2>
+              <p>{{ cartUnits() }} {{ cartUnits() === 1 ? 'unidad' : 'unidades' }}</p>
+            </div>
+            @if (cartLines().length) {
+              <button class="text-action" type="button" (click)="clearCart()">Vaciar</button>
+            }
+          </header>
+
+          <div class="operation-mode" role="group" aria-label="Tipo de operación">
+            <button
+              type="button"
+              [class.is-active]="operationMode() === 'VENTA'"
+              (click)="selectOperationMode('VENTA')"
+            >Venta</button>
+            <button
+              type="button"
+              [class.is-active]="operationMode() === 'RESERVA'"
+              (click)="selectOperationMode('RESERVA')"
+            >Reserva</button>
+          </div>
+
+          @if (operationMode() === 'RESERVA') {
+            <label class="reservation-customer">
+              <span>Cliente</span>
+              <select
+                [value]="selectedCustomerId() ?? ''"
+                (change)="selectedCustomerId.set($any($event.target).value ? +$any($event.target).value : null)"
+              >
+                <option value="">Selecciona un cliente</option>
+                @for (customer of customers(); track customer.id_cliente) {
+                  <option [value]="customer.id_cliente">{{ customer.nombre_completo }}</option>
+                }
+              </select>
+            </label>
+            @if (!customers().length) {
+              <p class="customer-warning">Actualiza el catálogo con internet para guardar los clientes en este dispositivo.</p>
+            }
+          }
+
+          @if (!cartLines().length) {
+            <div class="cart-empty">
+              <strong>La operación está vacía.</strong>
+              <p>Abre un producto y agrega la talla y el color elegidos.</p>
+            </div>
+          } @else {
+            <div class="cart-lines">
+              @for (line of cartLines(); track line.item.id_variante) {
+                <article class="cart-line">
+                  <div>
+                    <strong>{{ line.item.producto }}</strong>
+                    <span>{{ line.item.talla }} · {{ line.item.color }}</span>
+                  </div>
+                  <strong>Bs {{ line.subtotal | number: '1.2-2' }}</strong>
+                  <div class="quantity-control" aria-label="Cantidad de {{ line.item.producto }}">
+                    <button type="button" (click)="decreaseCartLine(line.item)" aria-label="Quitar una unidad">−</button>
+                    <input
+                      type="number"
+                      min="1"
+                      [max]="availableFor(line.item)"
+                      [value]="line.quantity"
+                      (change)="setCartQuantity(line.item, $any($event.target).value)"
+                    />
+                    <button
+                      type="button"
+                      [disabled]="line.quantity >= availableFor(line.item)"
+                      (click)="addToCart(line.item)"
+                      aria-label="Agregar una unidad"
+                    >+</button>
+                  </div>
+                </article>
+              }
+            </div>
+
+            <dl class="cart-summary">
+              @if (operationMode() === 'VENTA') {
+                <div><dt>Forma de pago</dt><dd>Efectivo</dd></div>
+                <div><dt>Entrega</dt><dd>Directa</dd></div>
+              } @else {
+                <div><dt>Cliente</dt><dd>{{ selectedCustomer()?.nombre_completo ?? 'Pendiente' }}</dd></div>
+                <div><dt>Vigencia</dt><dd>48 h al sincronizar</dd></div>
+              }
+              <div class="cart-total"><dt>Total</dt><dd>Bs {{ cartTotal() | number: '1.2-2' }}</dd></div>
+            </dl>
+            <button
+              class="button button--primary cart-submit"
+              type="button"
+              [disabled]="queuingSale() || (operationMode() === 'RESERVA' && !selectedCustomerId())"
+              (click)="operationMode() === 'VENTA' ? queueOfflineSale() : queueOfflineReservation()"
+            >{{ queuingSale() ? 'Guardando…' : operationMode() === 'VENTA' ? 'Guardar venta pendiente' : 'Guardar reserva pendiente' }}</button>
+            <p class="cart-help">Se registrará localmente. El stock definitivo se valida al sincronizar.</p>
+          }
+        </aside>
+      }
+    </div>
+
+    @if (recentOperations().length) {
+      <section class="operation-history" aria-labelledby="operation-history-title">
+        <header>
+          <div>
+            <h2 id="operation-history-title">Actividad del dispositivo</h2>
+            <p>Últimas operaciones creadas en esta sucursal.</p>
+          </div>
+        </header>
+        <div class="operation-list">
+          @for (operation of recentOperations(); track operation.id_operacion) {
+            <article>
+              <div><strong>{{ operation.tipo === 'VENTA' ? 'Venta en efectivo' : 'Reserva' }}</strong><span>{{ operationUnits(operation) }} {{ operationUnits(operation) === 1 ? 'unidad' : 'unidades' }} · {{ operation.created_at | date: 'dd/MM/yyyy, HH:mm' }}</span></div>
+              <span class="operation-status" [attr.data-status]="operation.estado">{{ operationStatusLabel(operation) }}</span>
+              @if (operation.mensaje_error) { <p>{{ operation.mensaje_error }}</p> }
+              @if (operation.estado === 'CONFLICTO' || operation.estado === 'RECHAZADA') {
+                <div class="operation-actions">
+                  <button type="button" [disabled]="resolvingOperationId() === operation.id_operacion" (click)="retryOperation(operation)">Reintentar</button>
+                  <button class="is-danger" type="button" [disabled]="resolvingOperationId() === operation.id_operacion" (click)="discardOperation(operation)">
+                    {{ discardConfirmationId() === operation.id_operacion ? 'Confirmar descarte' : 'Descartar' }}
+                  </button>
+                </div>
+              }
+            </article>
+          }
+        </div>
+      </section>
+    }
   } @else if (!loadingBranches()) {
     <div class="offline-empty offline-empty--initial">
       <strong>Selecciona Sucursal Principal o Sucursal Norte.</strong>
