@@ -83,7 +83,7 @@ async def test_tenant_route_rejects_conflicting_header(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_platform_routes_ignore_tenant_header(monkeypatch) -> None:
     async def should_not_resolve(_: str) -> ResolvedTenant:
-        raise AssertionError("Platform routes must remain global")
+        raise AssertionError("Platform routes must remain outside tenant context")
 
     monkeypatch.setattr("app.middleware.tenant.resolve_tenant_slug", should_not_resolve)
     async with AsyncClient(

@@ -18,7 +18,11 @@ from app.modules.auth.dependencies import (
     require_global_permission,
     require_permission,
 )
-from app.modules.platform.dependencies import get_platform_cloudinary_storage, get_platform_service
+from app.modules.platform.dependencies import (
+    get_platform_cloudinary_storage,
+    get_platform_service,
+    require_platform_database_scope,
+)
 from app.modules.platform.schemas import (
     PlanResponse,
     PlatformOverview,
@@ -35,7 +39,11 @@ from app.modules.platform.schemas import (
 )
 from app.modules.platform.service import PlatformService
 
-router = APIRouter(prefix="/platform", tags=["platform"])
+router = APIRouter(
+    prefix="/platform",
+    tags=["platform"],
+    dependencies=[Depends(require_platform_database_scope)],
+)
 tenant_router = APIRouter(prefix="/tenant", tags=["tenant"])
 public_router = APIRouter(prefix="/public", tags=["public"])
 

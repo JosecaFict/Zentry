@@ -1,4 +1,7 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
+from typing import Literal
 
 from sqlalchemy import event, func
 from sqlalchemy.orm import Session, with_loader_criteria
@@ -6,6 +9,10 @@ from sqlalchemy.orm import Session, with_loader_criteria
 from app.db.base import Base
 
 _tenant_id: ContextVar[int | None] = ContextVar("tenant_id", default=None)
+DatabaseScope = Literal["restricted", "tenant", "identity", "global"]
+_database_scope: ContextVar[DatabaseScope] = ContextVar(
+    "database_scope", default="restricted"
+)
 
 
 def current_tenant_id() -> int | None:
@@ -18,6 +25,27 @@ def set_tenant_context(tenant_id: int) -> Token:
 
 def clear_tenant_context() -> None:
     _tenant_id.set(None)
+
+
+def current_database_scope() -> DatabaseScope:
+    return _database_scope.get()
+
+
+def set_database_scope(scope: DatabaseScope) -> Token:
+    return _database_scope.set(scope)
+
+
+def reset_database_scope(token: Token) -> None:
+    _database_scope.reset(token)
+
+
+@contextmanager
+def database_scope(scope: DatabaseScope) -> Iterator[None]:
+    token = set_database_scope(scope)
+    try:
+        yield
+    finally:
+        reset_database_scope(token)
 
 
 @event.listens_for(Session, "do_orm_execute")

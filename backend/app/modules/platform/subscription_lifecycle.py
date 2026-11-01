@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 
 from app.db.session import async_session_factory
+from app.db.tenant_context import database_scope
 from app.modules.platform.models import Subscription
 
 logger = logging.getLogger("zentry.subscriptions")
@@ -32,23 +33,24 @@ async def refresh_subscription_states(today: date | None = None) -> int:
     """Synchronize all current subscriptions and return how many changed."""
     effective_date = today or date.today()
     changed = 0
-    async with async_session_factory() as session:
-        subscriptions = list(
-            (
-                await session.scalars(
-                    select(Subscription)
-                    .where(Subscription.estado.in_(MANAGED_STATES))
-                    .execution_options(include_all_tenants=True)
-                )
-            ).all()
-        )
-        for subscription in subscriptions:
-            next_status = subscription_status(subscription, effective_date)
-            if subscription.estado != next_status:
-                subscription.estado = next_status
-                changed += 1
-        if changed:
-            await session.commit()
+    with database_scope("global"):
+        async with async_session_factory() as session:
+            subscriptions = list(
+                (
+                    await session.scalars(
+                        select(Subscription)
+                        .where(Subscription.estado.in_(MANAGED_STATES))
+                        .execution_options(include_all_tenants=True)
+                    )
+                ).all()
+            )
+            for subscription in subscriptions:
+                next_status = subscription_status(subscription, effective_date)
+                if subscription.estado != next_status:
+                    subscription.estado = next_status
+                    changed += 1
+            if changed:
+                await session.commit()
     if changed:
         logger.info("Se actualizaron %d estados de suscripción.", changed)
     return changed

@@ -7,9 +7,12 @@ from httpx import ASGITransport, AsyncClient
 from app.main import app
 from app.modules.auth.dependencies import CurrentPrincipal, get_current_principal
 from app.modules.auth.models import Usuario
-from app.modules.platform.dependencies import get_platform_service
-from app.modules.platform.schemas import PlatformOverview, TenantPublicResponse
+from app.modules.platform.dependencies import (
+    get_platform_service,
+    require_platform_database_scope,
+)
 from app.modules.platform.router import search_public_tenants
+from app.modules.platform.schemas import PlatformOverview, TenantPublicResponse
 
 
 def principal(*, global_user: bool) -> CurrentPrincipal:
@@ -55,6 +58,7 @@ async def test_platform_overview_accepts_superadmin() -> None:
     )
     app.dependency_overrides[get_current_principal] = lambda: principal(global_user=True)
     app.dependency_overrides[get_platform_service] = lambda: service
+    app.dependency_overrides[require_platform_database_scope] = lambda: None
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/api/v1/platform/overview")
@@ -126,6 +130,7 @@ async def test_platform_can_create_tenant() -> None:
     }
     app.dependency_overrides[get_current_principal] = lambda: principal(global_user=True)
     app.dependency_overrides[get_platform_service] = lambda: service
+    app.dependency_overrides[require_platform_database_scope] = lambda: None
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
