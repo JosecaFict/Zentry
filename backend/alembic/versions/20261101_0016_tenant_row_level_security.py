@@ -23,7 +23,10 @@ def upgrade() -> None:
         AS $$
           SELECT NULLIF(current_setting('app.tenant_id', TRUE), '')::BIGINT
         $$;
-
+        """
+    )
+    op.execute(
+        """
         CREATE OR REPLACE FUNCTION capricho.fn_rls_scope()
         RETURNS TEXT
         LANGUAGE sql
@@ -87,23 +90,35 @@ def upgrade() -> None:
     op.execute(
         """
         ALTER TABLE capricho.tenant ENABLE ROW LEVEL SECURITY;
+        """
+    )
+    op.execute(
+        """
         ALTER TABLE capricho.tenant FORCE ROW LEVEL SECURITY;
-
-        DROP POLICY IF EXISTS tenant_public_read ON capricho.tenant;
-        DROP POLICY IF EXISTS tenant_global_insert ON capricho.tenant;
-        DROP POLICY IF EXISTS tenant_scoped_update ON capricho.tenant;
-        DROP POLICY IF EXISTS tenant_global_delete ON capricho.tenant;
-
+        """
+    )
+    op.execute("DROP POLICY IF EXISTS tenant_public_read ON capricho.tenant")
+    op.execute("DROP POLICY IF EXISTS tenant_global_insert ON capricho.tenant")
+    op.execute("DROP POLICY IF EXISTS tenant_scoped_update ON capricho.tenant")
+    op.execute("DROP POLICY IF EXISTS tenant_global_delete ON capricho.tenant")
+    op.execute(
+        """
         CREATE POLICY tenant_public_read ON capricho.tenant
           FOR SELECT USING (
             estado = 'ACTIVO'
             OR capricho.fn_rls_scope() = 'global'
             OR id_tenant = capricho.fn_rls_tenant_id()
           );
-
+        """
+    )
+    op.execute(
+        """
         CREATE POLICY tenant_global_insert ON capricho.tenant
           FOR INSERT WITH CHECK (capricho.fn_rls_scope() = 'global');
-
+        """
+    )
+    op.execute(
+        """
         CREATE POLICY tenant_scoped_update ON capricho.tenant
           FOR UPDATE USING (
             capricho.fn_rls_scope() = 'global'
@@ -112,7 +127,10 @@ def upgrade() -> None:
             capricho.fn_rls_scope() = 'global'
             OR id_tenant = capricho.fn_rls_tenant_id()
           );
-
+        """
+    )
+    op.execute(
+        """
         CREATE POLICY tenant_global_delete ON capricho.tenant
           FOR DELETE USING (capricho.fn_rls_scope() = 'global');
         """
@@ -151,12 +169,11 @@ def downgrade() -> None:
           END LOOP;
         END
         $rls$;
-
-        DROP POLICY IF EXISTS tenant_public_read ON capricho.tenant;
-        DROP POLICY IF EXISTS tenant_global_insert ON capricho.tenant;
-        DROP POLICY IF EXISTS tenant_scoped_update ON capricho.tenant;
-        DROP POLICY IF EXISTS tenant_global_delete ON capricho.tenant;
-        DROP FUNCTION IF EXISTS capricho.fn_rls_scope();
-        DROP FUNCTION IF EXISTS capricho.fn_rls_tenant_id();
         """
     )
+    op.execute("DROP POLICY IF EXISTS tenant_public_read ON capricho.tenant")
+    op.execute("DROP POLICY IF EXISTS tenant_global_insert ON capricho.tenant")
+    op.execute("DROP POLICY IF EXISTS tenant_scoped_update ON capricho.tenant")
+    op.execute("DROP POLICY IF EXISTS tenant_global_delete ON capricho.tenant")
+    op.execute("DROP FUNCTION IF EXISTS capricho.fn_rls_scope()")
+    op.execute("DROP FUNCTION IF EXISTS capricho.fn_rls_tenant_id()")
