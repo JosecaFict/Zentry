@@ -156,7 +156,9 @@ export class PlatformOverviewPage implements OnInit {
                     [href]="tenantUrl(tenant.slug)"
                     target="_blank"
                     rel="noopener noreferrer"
-                    [attr.aria-label]="'Abrir la tienda de ' + tenant.nombre + ' en una pestaña nueva'"
+                    [attr.aria-label]="
+                      'Abrir la tienda de ' + tenant.nombre + ' en una pestaña nueva'
+                    "
                   >
                     <span>{{ tenant.slug }}.{{ tenantBaseDomain }}</span>
                     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -502,115 +504,127 @@ export class PlatformTenantCreatePage implements OnInit {
           </div>
         </section>
 
-        <form class="platform-form" [formGroup]="form" (ngSubmit)="save()">
-          <section>
-            <header>
-              <span>01</span>
-              <div>
-                <h2>Información comercial</h2>
-                <p>Identidad y canales de contacto de la empresa.</p>
+        <div class="platform-detail-editor">
+          <form class="platform-form platform-form--company" [formGroup]="form" (ngSubmit)="save()">
+            <section class="platform-form-section--identity">
+              <header>
+                <span>01</span>
+                <div>
+                  <h2>Información comercial</h2>
+                  <p>Identidad y canales de contacto de la empresa.</p>
+                </div>
+              </header>
+              <div class="platform-form-grid">
+                <label>Nombre comercial<input formControlName="nombre" /></label>
+                <label>Razón social<input formControlName="razon_social" /></label>
+                <label>NIT<input formControlName="nit" /></label>
+                <label
+                  >Correo de contacto<input type="email" formControlName="correo_contacto"
+                /></label>
+                <label>Teléfono de contacto<input formControlName="telefono_contacto" /></label>
+                <label>URL del logotipo<input type="url" formControlName="logo_url" /></label>
+                <label
+                  >Color principal<input type="color" formControlName="color_primario"
+                /></label>
+                <label
+                  >Color de interacción<input type="color" formControlName="color_primario_oscuro"
+                /></label>
               </div>
-            </header>
-            <div class="platform-form-grid">
-              <label>Nombre comercial<input formControlName="nombre" /></label>
-              <label>Razón social<input formControlName="razon_social" /></label>
-              <label>NIT<input formControlName="nit" /></label>
-              <label
-                >Correo de contacto<input type="email" formControlName="correo_contacto"
-              /></label>
-              <label>Teléfono de contacto<input formControlName="telefono_contacto" /></label>
-              <label>URL del logotipo<input type="url" formControlName="logo_url" /></label>
-              <label>Color principal<input type="color" formControlName="color_primario" /></label>
-              <label
-                >Color de interacción<input type="color" formControlName="color_primario_oscuro"
-              /></label>
-            </div>
-          </section>
-          <section>
-            <header>
-              <span>02</span>
-              <div>
-                <h2>Plan y vigencia</h2>
-                <p>Capacidad contratada y fecha de vencimiento.</p>
+            </section>
+            <section class="platform-form-section--plan">
+              <header>
+                <span>02</span>
+                <div>
+                  <h2>Plan y vigencia</h2>
+                  <p>Capacidad contratada y fecha de vencimiento.</p>
+                </div>
+              </header>
+              <div class="platform-form-grid">
+                <label
+                  >Plan
+                  <select formControlName="id_plan">
+                    @for (plan of plans(); track plan.id_plan) {
+                      <option [value]="plan.id_plan">
+                        {{ plan.nombre }} · {{ plan.max_sucursales_activas }} sucursales
+                      </option>
+                    }
+                  </select>
+                </label>
+                <label>Vencimiento opcional<input type="date" formControlName="fecha_fin" /></label>
+                <label
+                  >Modalidad
+                  <select formControlName="modalidad">
+                    <option value="MENSUAL">Mensual</option>
+                    <option value="ANUAL">Anual</option>
+                  </select>
+                </label>
               </div>
-            </header>
-            <div class="platform-form-grid">
-              <label
-                >Plan
-                <select formControlName="id_plan">
-                  @for (plan of plans(); track plan.id_plan) {
-                    <option [value]="plan.id_plan">
-                      {{ plan.nombre }} · {{ plan.max_sucursales_activas }} sucursales
-                    </option>
-                  }
-                </select>
-              </label>
-              <label>Vencimiento opcional<input type="date" formControlName="fecha_fin" /></label>
-              <label
-                >Modalidad
-                <select formControlName="modalidad">
-                  <option value="MENSUAL">Mensual</option>
-                  <option value="ANUAL">Anual</option>
-                </select>
-              </label>
-            </div>
-          </section>
-          <footer>
-            <p>Los cambios afectan el próximo acceso de esta empresa.</p>
-            <button class="platform-primary" type="submit" [disabled]="form.invalid || saving()">
-              {{ saving() ? 'Guardando…' : 'Guardar cambios' }}
-            </button>
-          </footer>
-        </form>
+              <footer class="platform-plan-actions">
+                <p>Los cambios afectan el próximo acceso de esta empresa.</p>
+                <button
+                  class="platform-primary"
+                  type="submit"
+                  [disabled]="form.invalid || saving()"
+                >
+                  {{ saving() ? 'Guardando…' : 'Guardar cambios' }}
+                </button>
+              </footer>
+            </section>
+          </form>
 
-        <form class="platform-form" [formGroup]="paymentForm" (ngSubmit)="registerPayment()">
-          <section>
-            <header>
-              <span>03</span>
-              <div>
-                <h2>Registrar pago</h2>
-                <p>Confirma el cobro y extiende automáticamente la suscripción.</p>
+          <form
+            class="platform-form platform-form--payment"
+            [formGroup]="paymentForm"
+            (ngSubmit)="registerPayment()"
+          >
+            <section>
+              <header>
+                <span>03</span>
+                <div>
+                  <h2>Registrar pago</h2>
+                  <p>Confirma el cobro y extiende automáticamente la suscripción.</p>
+                </div>
+              </header>
+              <div class="platform-form-grid">
+                <label
+                  >Periodo pagado
+                  <select formControlName="modalidad">
+                    <option value="MENSUAL">Mensual</option>
+                    <option value="ANUAL">Anual</option>
+                  </select>
+                </label>
+                <label
+                  >Método
+                  <select formControlName="metodo_pago">
+                    <option value="TRANSFERENCIA">Transferencia</option>
+                    <option value="QR">QR</option>
+                    <option value="EFECTIVO">Efectivo</option>
+                    <option value="OTRO">Otro</option>
+                  </select>
+                </label>
+                <label>Referencia<input formControlName="referencia" /></label>
+                <label>Fecha del pago<input type="date" formControlName="fecha_pago" /></label>
               </div>
-            </header>
-            <div class="platform-form-grid">
-              <label
-                >Periodo pagado
-                <select formControlName="modalidad">
-                  <option value="MENSUAL">Mensual</option>
-                  <option value="ANUAL">Anual</option>
-                </select>
-              </label>
-              <label
-                >Método
-                <select formControlName="metodo_pago">
-                  <option value="TRANSFERENCIA">Transferencia</option>
-                  <option value="QR">QR</option>
-                  <option value="EFECTIVO">Efectivo</option>
-                  <option value="OTRO">Otro</option>
-                </select>
-              </label>
-              <label>Referencia<input formControlName="referencia" /></label>
-              <label>Fecha del pago<input type="date" formControlName="fecha_pago" /></label>
-            </div>
-          </section>
-          <footer>
-            <p>
-              Importe: Bs
-              {{
-                paymentForm.controls.modalidad.value === 'ANUAL'
-                  ? selectedPlan()?.precio_anual
-                  : selectedPlan()?.precio_mensual
-              }}
-            </p>
-            <button
-              class="platform-primary"
-              type="submit"
-              [disabled]="paymentForm.invalid || paying()"
-            >
-              {{ paying() ? 'Registrando…' : 'Confirmar pago' }}
-            </button>
-          </footer>
-        </form>
+            </section>
+            <footer>
+              <p>
+                Importe: Bs
+                {{
+                  paymentForm.controls.modalidad.value === 'ANUAL'
+                    ? selectedPlan()?.precio_anual
+                    : selectedPlan()?.precio_mensual
+                }}
+              </p>
+              <button
+                class="platform-primary"
+                type="submit"
+                [disabled]="paymentForm.invalid || paying()"
+              >
+                {{ paying() ? 'Registrando…' : 'Confirmar pago' }}
+              </button>
+            </footer>
+          </form>
+        </div>
 
         @if (payments().length) {
           <section class="platform-payment-history">
@@ -815,9 +829,7 @@ export class PlatformTenantDetailPage implements OnInit {
               <li>{{ plan.max_usuarios_internos }} usuarios internos</li>
               <li>{{ plan.max_productos_activos }} productos activos</li>
               <li>{{ plan.almacenamiento_mb / 1024 }} GB de almacenamiento</li>
-              <li [class.off]="!plan.permite_reportes_convencionales">
-                Reportes convencionales
-              </li>
+              <li [class.off]="!plan.permite_reportes_convencionales">Reportes convencionales</li>
               <li [class.off]="!plan.permite_reportes_ia">Reportes con IA</li>
               <li [class.off]="!plan.permite_offline">Operación offline</li>
             </ul>

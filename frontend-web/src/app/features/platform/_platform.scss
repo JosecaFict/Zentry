@@ -218,7 +218,7 @@
   font-weight: 700;
 }
 .platform-page--form {
-  max-width: 1080px;
+  max-width: 1320px;
 }
 .platform-form {
   display: grid;
@@ -489,10 +489,15 @@
 }
 .platform-heading--detail {
   align-items: flex-end;
+  margin-bottom: 22px;
+  padding-bottom: 20px;
+}
+.platform-heading--detail h1 {
+  font-size: clamp(2.2rem, 3.25vw, 3rem);
 }
 .platform-back-link {
   display: inline-block;
-  margin-bottom: 24px;
+  margin-bottom: 14px;
   color: #4f5762;
   font-weight: 700;
 }
@@ -517,14 +522,16 @@
 }
 .platform-detail-metrics {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  margin-bottom: 18px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: 16px;
   border-block: 1px solid #cbd0d6;
   background: white;
 }
 .platform-detail-metrics > div {
   display: grid;
-  padding: 20px 24px;
+  min-height: 82px;
+  align-content: center;
+  padding: 14px 18px;
   border-right: 1px solid #dfe2e7;
 }
 .platform-detail-metrics > div:last-child {
@@ -538,8 +545,71 @@
   text-transform: uppercase;
 }
 .platform-detail-metrics strong {
-  margin-top: 5px;
-  font-size: 1.65rem;
+  margin-top: 4px;
+  font-size: 1.35rem;
+  letter-spacing: -0.025em;
+}
+.platform-detail-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.85fr);
+  grid-template-areas:
+    'identity plan'
+    'identity payment';
+  gap: 16px;
+  align-items: start;
+}
+.platform-form--company {
+  display: contents;
+}
+.platform-form-section--identity {
+  grid-area: identity;
+}
+.platform-form-section--plan {
+  grid-area: plan;
+}
+.platform-form--payment {
+  grid-area: payment;
+}
+.platform-detail-editor .platform-form > section {
+  padding: 20px;
+}
+.platform-detail-editor .platform-form section > header {
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.platform-detail-editor .platform-form section > header > span {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+}
+.platform-detail-editor .platform-form-grid {
+  gap: 14px;
+}
+.platform-detail-editor .platform-form--payment .platform-form-grid,
+.platform-detail-editor .platform-form-section--plan .platform-form-grid {
+  grid-template-columns: 1fr;
+}
+.platform-detail-editor .platform-form--payment > footer {
+  padding: 0;
+}
+.platform-plan-actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #dfe2e7;
+}
+.platform-plan-actions p {
+  margin: 0;
+  color: #69717d;
+  font-size: 0.8rem;
+}
+.platform-plan-actions .platform-primary {
+  justify-self: end;
+}
+.platform-detail-editor .platform-form input,
+.platform-detail-editor .platform-form select {
+  min-height: 44px;
 }
 .platform-plan-grid {
   display: grid;
@@ -672,6 +742,16 @@
   .platform-metric:nth-child(2) {
     border-right: 0;
   }
+  .platform-detail-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .platform-detail-editor {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'identity'
+      'plan'
+      'payment';
+  }
 }
 @media (max-width: 600px) {
   .platform-heading {
@@ -699,11 +779,22 @@
     grid-template-columns: 1fr;
   }
   .platform-detail-metrics {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .platform-detail-metrics > div {
-    border-right: 0;
     border-bottom: 1px solid #dfe2e7;
+  }
+  .platform-detail-metrics > div:nth-child(even) {
+    border-right: 0;
+  }
+  .platform-detail-metrics > div:last-child {
+    grid-column: 1 / -1;
+  }
+  .platform-detail-editor .platform-form > section {
+    padding: 18px;
+  }
+  .platform-plan-actions .platform-primary {
+    width: 100%;
   }
   .platform-metric-grid,
   .platform-plan-grid {
