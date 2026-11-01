@@ -6,7 +6,11 @@ import { AuthService } from '../../core/auth/auth.service';
   selector: 'app-platform-layout',
   imports: [RouterLink, RouterLinkActive, RouterOutlet],
   template: `
-    <div class="platform-shell" [class.nav-open]="navOpen()">
+    <div
+      class="platform-shell"
+      [class.nav-open]="navOpen()"
+      [class.nav-collapsed]="railCollapsed()"
+    >
       <button
         class="platform-backdrop"
         type="button"
@@ -14,6 +18,17 @@ import { AuthService } from '../../core/auth/auth.service';
         aria-label="Cerrar navegación"
       ></button>
       <aside class="platform-rail" aria-label="Navegación de plataforma">
+        <button
+          type="button"
+          class="platform-rail-toggle"
+          (click)="railCollapsed.set(true)"
+          aria-label="Ocultar menú lateral"
+          title="Ocultar menú"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+        </button>
         <a class="platform-wordmark" routerLink="/platform" (click)="navOpen.set(false)">
           <img src="/images/zentry-logo-white.png" alt="Zentry" />
           <small>Control de plataforma</small>
@@ -48,10 +63,13 @@ import { AuthService } from '../../core/auth/auth.service';
           <button
             type="button"
             class="platform-menu"
-            (click)="navOpen.update((value) => !value)"
-            aria-label="Abrir navegación"
+            (click)="openNavigation()"
+            [attr.aria-label]="railCollapsed() ? 'Mostrar menú lateral' : 'Abrir navegación'"
+            title="Mostrar menú"
           >
-            ☰
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
           </button>
           <div><span>PLATAFORMA</span><strong>Zentry multitenant</strong></div>
           <span class="platform-scope">Alcance global</span>
@@ -65,6 +83,7 @@ export class PlatformLayout {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   readonly navOpen = signal(false);
+  readonly railCollapsed = signal(false);
   readonly user = this.auth.currentUser;
   readonly displayName = computed(() => {
     const user = this.user();
@@ -81,6 +100,14 @@ export class PlatformLayout {
 
   constructor() {
     this.auth.restoreSession();
+  }
+
+  openNavigation(): void {
+    if (this.railCollapsed()) {
+      this.railCollapsed.set(false);
+      return;
+    }
+    this.navOpen.update((value) => !value);
   }
 
   logout(): void {
