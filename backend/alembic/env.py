@@ -37,9 +37,9 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection) -> None:
-    connection.execute(text("SELECT set_config('app.rls_scope', 'global', false)"))
     configure_context(connection=connection)
     with context.begin_transaction():
+        connection.execute(text("SELECT set_config('app.rls_scope', 'global', true)"))
         context.run_migrations()
 
 
