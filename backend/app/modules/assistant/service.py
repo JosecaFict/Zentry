@@ -113,10 +113,16 @@ class AssistantService:
             for item in history
         ]
         turns.append({"role": "user", "content": question})
+        # Existing conversations follow the currently configured provider model.
+        model = (
+            self.settings.groq_reports_model
+            if conversation.modo == "EMPRESA"
+            else self.settings.gemini_chat_model
+        )
         try:
             answer = await answer_with_provider(
                 provider=conversation.proveedor,
-                model=conversation.modelo,
+                model=model,
                 api_key=key,
                 system=system,
                 history=turns,
@@ -124,7 +130,7 @@ class AssistantService:
         except ProviderUnavailable as exc:
             raise HTTPException(503, "El asistente no pudo responder en este momento") from exc
         user_message, assistant_message = await self.repo.append_exchange(
-            conversation_id, question, answer
+            conversation_id, question, answer, model
         )
         return MessageExchange(usuario=user_message, asistente=assistant_message)
 

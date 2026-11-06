@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     )
     groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
     gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
-    gemini_chat_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_CHAT_MODEL")
+    gemini_chat_model: str = Field(default="gemini-3.5-flash", alias="GEMINI_CHAT_MODEL")
     groq_reports_model: str = Field(
         default="openai/gpt-oss-20b", alias="GROQ_REPORTS_MODEL"
     )

@@ -107,7 +107,7 @@ class AssistantRepository:
         return [Message.model_validate(dict(row)) for row in rows]
 
     async def append_exchange(
-        self, conversation_id: UUID, question: str, answer: str
+        self, conversation_id: UUID, question: str, answer: str, model: str
     ) -> tuple[Message, Message]:
         await self._user_context()
         messages = []
@@ -130,10 +130,10 @@ class AssistantRepository:
             messages.append(Message.model_validate(dict(row)))
         await self.session.execute(
             text("""
-            UPDATE capricho.asistente_conversacion SET updated_at = now()
+            UPDATE capricho.asistente_conversacion SET updated_at = now(), modelo = :model
             WHERE id_conversacion = :id AND id_tenant = :tenant AND id_usuario = :user
         """),
-            {**self.scope, "id": conversation_id},
+            {**self.scope, "id": conversation_id, "model": model},
         )
         await self.session.commit()
         return messages[0], messages[1]

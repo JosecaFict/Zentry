@@ -59,5 +59,11 @@ async def answer_with_provider(
             raise ValueError("empty response")
         return content.strip()[:12000]
     except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
-        logger.warning("Assistant provider failed: %s", type(exc).__name__)
+        status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+        logger.warning(
+            "Assistant provider failed: provider=%s status=%s type=%s",
+            provider,
+            status,
+            type(exc).__name__,
+        )
         raise ProviderUnavailable from exc

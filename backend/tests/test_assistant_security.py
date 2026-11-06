@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.modules.assistant.providers import ProviderUnavailable, answer_with_provider
-from app.modules.assistant.schemas import Conversation
+from app.modules.assistant.schemas import Conversation, Message
 from app.modules.assistant.service import AssistantService
 
 
@@ -101,3 +101,39 @@ async def test_provider_error_does_not_expose_api_key(monkeypatch):
             history=[{"role": "user", "content": "hola"}],
         )
     assert "secret-key" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_existing_conversation_uses_current_configured_model(monkeypatch):
+    service = AssistantService(
+        AsyncMock(), principal(roles=frozenset({"CLIENTE"}), permissions=frozenset())
+    )
+    service.settings = SimpleNamespace(
+        gemini_api_key="test-key", gemini_chat_model="gemini-3.5-flash"
+    )
+    conversation = Conversation(
+        id_conversacion=uuid4(),
+        modo="CLIENTE",
+        proveedor="GEMINI",
+        modelo="gemini-2.5-flash",
+        estado="ACTIVA",
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+    service.get = AsyncMock(return_value=conversation)
+    service.repo.messages = AsyncMock(return_value=[])
+    service._catalog_context = AsyncMock(return_value="{}")
+    messages = (
+        Message(id_mensaje=1, rol="USUARIO", contenido="hola", created_at="2026-01-01T00:00:00Z"),
+        Message(id_mensaje=2, rol="ASISTENTE", contenido="hola", created_at="2026-01-01T00:00:00Z"),
+    )
+    service.repo.append_exchange = AsyncMock(return_value=messages)
+    provider = AsyncMock(return_value="hola")
+    monkeypatch.setattr("app.modules.assistant.service.answer_with_provider", provider)
+
+    await service.send(conversation.id_conversacion, "hola")
+
+    assert provider.await_args.kwargs["model"] == "gemini-3.5-flash"
+    service.repo.append_exchange.assert_awaited_once_with(
+        conversation.id_conversacion, "hola", "hola", "gemini-3.5-flash"
+    )
