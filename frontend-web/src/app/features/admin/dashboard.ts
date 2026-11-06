@@ -13,7 +13,63 @@ import {
 import { CatalogService } from '../../core/services/catalog.service';
 import { CommerceService } from '../../core/services/commerce.service';
 import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
-import { availableAdminModules } from './admin-navigation';
+
+type QuickLinkIcon = 'sale' | 'reservation' | 'stock' | 'catalog' | 'reports' | 'settings';
+
+interface DashboardQuickLink {
+  label: string;
+  description: string;
+  path: string;
+  icon: QuickLinkIcon;
+  permissions: string[];
+  requireAll?: boolean;
+}
+
+const DASHBOARD_QUICK_LINKS: DashboardQuickLink[] = [
+  {
+    label: 'Crear pedido',
+    description: 'Registrar nueva venta',
+    path: '/admin/ventas',
+    icon: 'sale',
+    permissions: ['ventas.crear', 'pagos.registrar'],
+    requireAll: true,
+  },
+  {
+    label: 'Gestionar reservas',
+    description: 'Agenda y probador',
+    path: '/admin/reservas',
+    icon: 'reservation',
+    permissions: ['reservas.ver'],
+  },
+  {
+    label: 'Revisión de stock',
+    description: 'Consultar existencias',
+    path: '/admin/inventario',
+    icon: 'stock',
+    permissions: ['inventario.ver'],
+  },
+  {
+    label: 'Catálogo de prendas',
+    description: 'Productos y variantes',
+    path: '/admin/productos',
+    icon: 'catalog',
+    permissions: ['productos.ver', 'productos.crear', 'productos.editar'],
+  },
+  {
+    label: 'Reportes',
+    description: 'Analizar resultados',
+    path: '/admin/reportes',
+    icon: 'reports',
+    permissions: ['ventas.ver'],
+  },
+  {
+    label: 'Configuración',
+    description: 'Ajustes de la empresa',
+    path: '/admin/configuracion/marca',
+    icon: 'settings',
+    permissions: ['permisos.asignar'],
+  },
+];
 
 interface ChartPoint {
   x: number;
@@ -513,9 +569,57 @@ interface DonutSegment {
         </header>
         <div class="admin-link-grid">
           @for (item of quickLinks(); track item.path) {
-            <a [routerLink]="item.path">
-              <span>{{ item.label }}</span>
-              <small>Abrir módulo →</small>
+            <a [routerLink]="item.path" [attr.aria-label]="item.label + ': ' + item.description">
+              <span class="admin-link-icon" [attr.data-icon]="item.icon" aria-hidden="true">
+                @switch (item.icon) {
+                  @case ('sale') {
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="M6 7V5a6 6 0 0 1 12 0v2"></path>
+                      <path d="M4 7h16l1 14H3L4 7Z"></path>
+                      <path d="M15 15h6m-3-3v6"></path>
+                    </svg>
+                  }
+                  @case ('reservation') {
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="M7 2v3m10-3v3M3 9h18"></path>
+                      <rect x="3" y="4" width="18" height="17" rx="2"></rect>
+                      <circle cx="16" cy="15" r="3"></circle>
+                      <path d="M16 13.5V15l1 1"></path>
+                    </svg>
+                  }
+                  @case ('stock') {
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="m7.5 4.3 4.5 2.6 4.5-2.6L12 1.7 7.5 4.3Z"></path>
+                      <path d="M7.5 4.3v5.2L12 12l4.5-2.5V4.3M3 12l4.5 2.6L12 12l4.5 2.6L21 12l-4.5-2.5L12 12 7.5 9.5 3 12Z"></path>
+                      <path d="M3 12v5.2l4.5 2.6v-5.2M7.5 19.8l4.5-2.6V12m0 5.2 4.5 2.6v-5.2m0 5.2 4.5-2.6V12"></path>
+                    </svg>
+                  }
+                  @case ('catalog') {
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="m8 3-5 3 2 5 3-1v11h8V10l3 1 2-5-5-3a4 4 0 0 1-8 0Z"></path>
+                    </svg>
+                  }
+                  @case ('reports') {
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="M4 20V10m5 10V4m5 16v-7m5 7V7"></path>
+                      <path d="m3 7 5-4 5 5 7-6"></path>
+                    </svg>
+                  }
+                  @case ('settings') {
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <circle cx="12" cy="12" r="3"></circle>
+                      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 9 19.37a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.63 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.63 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.63a1.7 1.7 0 0 0 1-1.55V3h4v.08A1.7 1.7 0 0 0 15 4.63a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 9a1.7 1.7 0 0 0 1.55 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"></path>
+                    </svg>
+                  }
+                }
+              </span>
+              <span class="admin-link-copy">
+                <strong>{{ item.label }}</strong>
+                <small>{{ item.description }}</small>
+              </span>
+              <svg class="admin-link-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                <path d="m9 18 6-6-6-6"></path>
+              </svg>
             </a>
           }
         </div>
@@ -539,8 +643,16 @@ export class AdminDashboard implements OnInit {
   readonly lastUpdated = signal<Date>(new Date());
   readonly activeDayIndex = signal<number | null>(null);
 
-  readonly availableModules = computed(() => availableAdminModules(this.user()?.permisos ?? []));
-  readonly quickLinks = computed(() => this.availableModules().slice(0, 6));
+  readonly quickLinks = computed(() => {
+    const permissions = new Set(this.user()?.permisos ?? []);
+    return DASHBOARD_QUICK_LINKS.filter(
+      (item) =>
+        !item.permissions.length ||
+        (item.requireAll
+          ? item.permissions.every((permission) => permissions.has(permission))
+          : item.permissions.some((permission) => permissions.has(permission))),
+    );
+  });
 
   readonly branchColors = [
     '#064fe8', // Cobalt Royal
