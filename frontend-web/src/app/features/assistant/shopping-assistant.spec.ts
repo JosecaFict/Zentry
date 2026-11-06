@@ -95,7 +95,8 @@ describe('ShoppingAssistant', () => {
       id_mensaje: 2, rol: 'ASISTENTE', contenido: 'Encontré una opción para ti.',
       created_at: '2026-11-06T12:00:00Z', productos: [{
         id_producto: 7, nombre: 'Polera azul', categoria: 'POLERA', marca: 'Marca',
-        precio: '250.00', imagen_url: null, tallas: ['M'], colores: ['Azul'],
+        precio: '250.00', precio_original: '300.00', descuento_porcentaje: '16.67', promocion_nombre: 'Oferta de hoy',
+        imagen_url: null, tallas: ['M'], colores: ['Azul'],
         permite_vestidor: true,
       }],
     }]);
@@ -103,6 +104,8 @@ describe('ShoppingAssistant', () => {
     const card = fixture.nativeElement.querySelector('.advisor-product');
     expect(card.textContent).toContain('Polera azul');
     expect(card.textContent).toContain('250');
+    expect(card.textContent).toContain('Oferta de hoy');
+    expect(card.textContent).toContain('Antes');
     expect(card.querySelector('a').getAttribute('href')).toBe('/productos/7');
   });
 });

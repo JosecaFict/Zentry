@@ -73,9 +73,15 @@
                       <div class="advisor-product-placeholder" aria-hidden="true">{{ product.categoria }}</div>
                     }
                     <div class="advisor-product-body">
+                      @if (product.descuento_porcentaje) {
+                        <span class="advisor-product-offer">{{ product.promocion_nombre || 'Oferta' }} · −{{ product.descuento_porcentaje }}%</span>
+                      }
                       <p class="advisor-product-meta">{{ product.marca }} · {{ product.categoria }}</p>
                       <h3>{{ product.nombre }}</h3>
                       <strong>{{ product.precio | bolivianos }}</strong>
+                      @if (product.precio_original) {
+                        <small class="advisor-product-old-price">Antes {{ product.precio_original | bolivianos }}</small>
+                      }
                       @if (product.tallas.length) {
                         <small>Tallas: {{ product.tallas.join(', ') }}</small>
                       }

@@ -105,7 +105,8 @@ class ShoppingCatalog:
         products = []
         for row in rows:
             price = row["precio"]
-            if discount := discounts.get(row["id_producto"]):
+            discount = discounts.get(row["id_producto"])
+            if discount:
                 price = (price * (Decimal("1") - discount[0] / Decimal("100"))).quantize(
                     Decimal("0.01")
                 )
@@ -116,6 +117,9 @@ class ShoppingCatalog:
                     categoria=row["categoria"],
                     marca=row["marca"],
                     precio=price,
+                    precio_original=row["precio"] if discount else None,
+                    descuento_porcentaje=discount[0] if discount else None,
+                    promocion_nombre=discount[2] if discount else None,
                     imagen_url=row["imagen_url"],
                     tallas=sorted(row["tallas"]),
                     colores=sorted(row["colores"]),
@@ -125,7 +129,7 @@ class ShoppingCatalog:
         return products
 
     async def for_question(
-        self, question: str, prioritize_ids: list[int] | None = None
+        self, question: str, prioritize_ids: list[int] | None = None, limit: int = 40
     ) -> list[AssistantProduct]:
         category, minimum, maximum, size = shopping_filters(question)
         products = await self.available(category=category)
@@ -140,7 +144,7 @@ class ShoppingCatalog:
             and (minimum is None or item.precio >= minimum)
             and (maximum is None or item.precio <= maximum)
             and (size is None or size in item.tallas)
-        ][:40]
+        ][:limit]
 
     async def for_ids(self, ids: list[int]) -> list[AssistantProduct]:
         if not ids:

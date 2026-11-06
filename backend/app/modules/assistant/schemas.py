@@ -32,6 +32,9 @@ class AssistantProduct(BaseModel):
     categoria: str
     marca: str
     precio: Decimal
+    precio_original: Decimal | None = None
+    descuento_porcentaje: Decimal | None = None
+    promocion_nombre: str | None = None
     imagen_url: str | None
     tallas: list[str]
     colores: list[str]

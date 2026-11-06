@@ -149,6 +149,77 @@ def test_shopping_filters_extract_category_budget_and_size():
     ) == ("POLERA", 200, 300, "M")
 
 
+@pytest.mark.parametrize(
+    "question",
+    ["¿Hay promociones el día de hoy?", "¿Existe descuento de alguna prenda?", "¿Tienen ofertas?"],
+)
+def test_promotion_questions_are_recognized(question):
+    assert AssistantService._promotion_intent(question)
+
+
+@pytest.mark.asyncio
+async def test_promotion_question_uses_verified_discounted_products(monkeypatch):
+    service = AssistantService(
+        AsyncMock(), principal(roles=frozenset({"CLIENTE"}), permissions=frozenset())
+    )
+    service.settings = SimpleNamespace(
+        gemini_api_key="test-key", gemini_chat_model="gemini-3.5-flash"
+    )
+    conversation = Conversation(
+        id_conversacion=uuid4(),
+        modo="CLIENTE",
+        proveedor="GEMINI",
+        modelo="gemini-3.5-flash",
+        estado="ACTIVA",
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+    discounted = AssistantProduct(
+        id_producto=7,
+        nombre="Polera azul",
+        categoria="POLERA",
+        marca="Marca",
+        precio="240.00",
+        precio_original="300.00",
+        descuento_porcentaje="20",
+        promocion_nombre="Oferta de hoy",
+        imagen_url=None,
+        tallas=["M"],
+        colores=["Azul"],
+        permite_vestidor=False,
+    )
+    regular = discounted.model_copy(update={"id_producto": 8, "descuento_porcentaje": None})
+    service.get = AsyncMock(return_value=conversation)
+    service.repo.messages = AsyncMock(return_value=[])
+    service.repo.append_exchange = AsyncMock(
+        return_value=(
+            Message(
+                id_mensaje=1,
+                rol="USUARIO",
+                contenido="¿Hay promociones?",
+                created_at="2026-01-01T00:00:00Z",
+            ),
+            Message(
+                id_mensaje=2, rol="ASISTENTE", contenido="Sí", created_at="2026-01-01T00:00:00Z"
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        "app.modules.assistant.service.ShoppingCatalog.for_question",
+        AsyncMock(return_value=[regular, discounted]),
+    )
+    provider = AsyncMock()
+    monkeypatch.setattr("app.modules.assistant.service.answer_with_provider", provider)
+
+    result = await service.send(conversation.id_conversacion, "¿Hay promociones hoy?")
+
+    assert result.asistente.productos == [discounted]
+    assert "descuento" in service.repo.append_exchange.await_args.args[2]
+    service.repo.append_exchange.assert_awaited_once()
+    assert service.repo.append_exchange.await_args.args[-1] == [7]
+    provider.assert_not_awaited()
+
+
 def test_shopping_answer_accepts_only_verified_products_and_strips_prices():
     product = AssistantProduct(
         id_producto=7,

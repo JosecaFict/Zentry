@@ -125,8 +125,12 @@ class AssistantService:
                 (item.producto_ids for item in reversed(history) if item.producto_ids), []
             )
             products = await ShoppingCatalog(self.session, self.principal.id_tenant).for_question(
-                question, prioritize_ids=prior_ids
+                question,
+                prioritize_ids=prior_ids,
+                limit=300 if self._promotion_intent(question) else 40,
             )
+            if self._promotion_intent(question):
+                products = [item for item in products if item.descuento_porcentaje is not None][:40]
             context = json.dumps(
                 {
                     "catalogo_disponible": [
@@ -136,6 +140,10 @@ class AssistantService:
                             "categoria": item.categoria,
                             "marca": item.marca,
                             "precio_bs": str(item.precio),
+                            "promocion": item.promocion_nombre,
+                            "descuento_porcentaje": str(item.descuento_porcentaje)
+                            if item.descuento_porcentaje is not None
+                            else None,
                             "tallas": item.tallas,
                             "colores": item.colores,
                         }
@@ -173,7 +181,18 @@ class AssistantService:
             else self.settings.gemini_chat_model
         )
         try:
-            if conversation.modo == "CLIENTE" and not products and self._shopping_intent(question):
+            if conversation.modo == "CLIENTE" and self._promotion_intent(question):
+                selected = products[:3]
+                answer = (
+                    "Sí, encontré estas prendas con descuento vigente. "
+                    "¿Quieres que revisemos alguna talla o color?"
+                    if selected
+                    else "Por ahora no encontré prendas disponibles con descuentos vigentes. "
+                    "¿Buscamos alguna prenda en particular?"
+                )
+            elif (
+                conversation.modo == "CLIENTE" and not products and self._shopping_intent(question)
+            ):
                 answer = self._no_results_message(question)
                 selected: list[AssistantProduct] = []
             else:
@@ -200,6 +219,15 @@ class AssistantService:
         )
         assistant_message.productos = selected
         return MessageExchange(usuario=user_message, asistente=assistant_message)
+
+    @staticmethod
+    def _promotion_intent(question: str) -> bool:
+        return bool(
+            re.search(
+                r"\b(?:promocion(?:es)?|promoci[oó]n(?:es)?|descuentos?|ofertas?|rebajas?)\b",
+                question.casefold(),
+            )
+        )
 
     @staticmethod
     def _shopping_intent(question: str) -> bool:

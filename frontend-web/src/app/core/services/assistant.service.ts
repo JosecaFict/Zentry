@@ -26,6 +26,9 @@ export interface AssistantProduct {
   categoria: string;
   marca: string;
   precio: string;
+  precio_original: string | null;
+  descuento_porcentaje: string | null;
+  promocion_nombre: string | null;
   imagen_url: string | null;
   tallas: string[];
   colores: string[];
