@@ -1,5 +1,5 @@
-import { DatePipe } from '@angular/common';
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
@@ -20,11 +20,10 @@ import { environment } from '../../../environments/environment';
   imports: [RouterLink],
   template: `
     <div class="platform-page">
-      <header class="platform-heading">
+      <header class="platform-heading platform-heading--compact">
         <div>
-          <p class="eyebrow">Vista general</p>
           <h1>Estado de la plataforma</h1>
-          <p>Empresas, capacidad y suscripciones de Zentry en una sola lectura.</p>
+          <p>Salud operativa, capacidad y suscripciones de Zentry.</p>
         </div>
         <a class="platform-primary" routerLink="/platform/empresas">Ver empresas</a>
       </header>
@@ -33,39 +32,70 @@ import { environment } from '../../../environments/environment';
       }
       @if (loading()) {
         <div class="platform-metric-grid" aria-busy="true">
-          @for (item of [1, 2, 3, 4]; track item) {
+          @for (item of [1, 2, 3, 4, 5]; track item) {
             <div class="platform-skeleton"></div>
           }
         </div>
       } @else if (overview(); as data) {
         <section class="platform-metric-grid" aria-label="Indicadores de plataforma">
-          <article class="platform-metric platform-metric--lead">
-            <span>Empresas activas</span><strong>{{ data.tenants_activos }}</strong
-            ><small>de {{ data.tenants_total }} registradas</small>
+          <article class="platform-metric">
+            <span>Empresas activas</span><strong>{{ data.tenants_activos }}</strong>
+            <small>{{ data.tenants_total }} registradas</small>
           </article>
           <article class="platform-metric">
-            <span>Sucursales activas</span><strong>{{ data.sucursales_activas }}</strong
-            ><small>capacidad operativa actual</small>
+            <span>Sucursales activas</span><strong>{{ data.sucursales_activas }}</strong>
+            <small>capacidad operativa</small>
           </article>
           <article class="platform-metric">
-            <span>Por vencer</span><strong>{{ data.suscripciones_por_vencer }}</strong
-            ><small>renuevan durante los próximos 7 días</small>
+            <span>Por vencer</span><strong>{{ data.suscripciones_por_vencer }}</strong>
+            <small>próximos 7 días</small>
           </article>
           <article class="platform-metric">
-            <span>En gracia</span><strong>{{ data.suscripciones_en_gracia }}</strong
-            ><small>requieren seguimiento de cobro</small>
+            <span>En gracia</span><strong>{{ data.suscripciones_en_gracia }}</strong>
+            <small>requieren seguimiento</small>
           </article>
           <article class="platform-metric">
-            <span>Suscripciones suspendidas</span
-            ><strong>{{ data.suscripciones_suspendidas }}</strong
-            ><small>sin acceso por falta de renovación</small>
+            <span>Suspendidas</span><strong>{{ data.suscripciones_suspendidas }}</strong>
+            <small>sin acceso comercial</small>
           </article>
         </section>
+
+        <section class="platform-overview-grid">
+          <article class="platform-panel platform-subscription-panel">
+            <header>
+              <div>
+                <h2>Estado de suscripciones</h2>
+                <p>Distribución sobre las {{ data.tenants_total }} empresas registradas.</p>
+              </div>
+              <span class="platform-panel-total">{{ activeSubscriptions(data) }} activas</span>
+            </header>
+            <div class="platform-subscription-bar" aria-label="Distribución de suscripciones">
+              <span class="is-active" [style.flex-grow]="activeSubscriptions(data)"></span>
+              <span class="is-warning" [style.flex-grow]="data.suscripciones_en_gracia"></span>
+              <span class="is-danger" [style.flex-grow]="data.suscripciones_suspendidas"></span>
+            </div>
+            <div class="platform-subscription-legend">
+              <span><i class="is-active"></i>Activas <strong>{{ activeSubscriptions(data) }}</strong></span>
+              <span><i class="is-warning"></i>En gracia <strong>{{ data.suscripciones_en_gracia }}</strong></span>
+              <span><i class="is-danger"></i>Suspendidas <strong>{{ data.suscripciones_suspendidas }}</strong></span>
+            </div>
+          </article>
+          <nav class="platform-panel platform-quick-actions" aria-label="Acciones rápidas">
+            <header>
+              <h2>Acciones rápidas</h2>
+              <p>Atajos de administración global.</p>
+            </header>
+            <a routerLink="/platform/empresas/nueva"><span>Nueva empresa</span><b>Crear →</b></a>
+            <a routerLink="/platform/empresas"><span>Directorio</span><b>Abrir →</b></a>
+            <a routerLink="/platform/planes"><span>Planes y límites</span><b>Revisar →</b></a>
+          </nav>
+        </section>
+
         <section class="platform-ledger">
           <header>
             <div>
-              <p class="eyebrow">Directorio reciente</p>
-              <h2>Empresas conectadas</h2>
+              <h2>Empresas recientes</h2>
+              <p>Últimos espacios incorporados a la plataforma.</p>
             </div>
             <a routerLink="/platform/empresas">Abrir directorio →</a>
           </header>
@@ -97,6 +127,13 @@ export class PlatformOverviewPage implements OnInit {
   readonly loading = signal(true);
   readonly error = signal('');
 
+  activeSubscriptions(data: PlatformOverview): number {
+    return Math.max(
+      data.tenants_total - data.suscripciones_en_gracia - data.suscripciones_suspendidas,
+      0,
+    );
+  }
+
   ngOnInit(): void {
     forkJoin({ overview: this.platform.overview(), tenants: this.platform.tenants() }).subscribe({
       next: ({ overview, tenants }) => {
@@ -117,31 +154,59 @@ export class PlatformOverviewPage implements OnInit {
   imports: [DatePipe, RouterLink],
   template: `
     <div class="platform-page">
-      <header class="platform-heading">
+      <header class="platform-heading platform-heading--compact">
         <div>
-          <p class="eyebrow">Directorio</p>
           <h1>Empresas</h1>
-          <p>Identidad, plan y capacidad operativa de cada tenant.</p>
+          <p>Directorio global de espacios, planes y capacidad operativa.</p>
         </div>
         <a class="platform-primary" routerLink="/platform/empresas/nueva">Nueva empresa</a>
       </header>
       @if (error()) {
         <div class="platform-alert" role="alert">{{ error() }}</div>
       }
-      <div class="platform-table-wrap">
+      <section class="platform-directory-summary" aria-label="Resumen del directorio">
+        <div><span>Total</span><strong>{{ tenants().length }}</strong></div>
+        <div><span>Activas</span><strong>{{ activeTenants() }}</strong></div>
+        <div><span>Plan Básico</span><strong>{{ basicTenants() }}</strong></div>
+        <div><span>Plan Profesional</span><strong>{{ professionalTenants() }}</strong></div>
+      </section>
+
+      <section class="platform-directory-tools" aria-label="Filtros de empresas">
+        <label class="platform-search-field">
+          <span class="sr-only">Buscar empresas</span>
+          <input
+            type="search"
+            placeholder="Buscar empresa o dominio"
+            [value]="query()"
+            (input)="query.set($any($event.target).value)"
+          />
+        </label>
+        <select aria-label="Filtrar por plan" (change)="planFilter.set($any($event.target).value)">
+          <option value="TODOS">Todos los planes</option>
+          <option value="BASICO">Básico</option>
+          <option value="PROFESIONAL">Profesional</option>
+        </select>
+        <select aria-label="Filtrar por estado" (change)="statusFilter.set($any($event.target).value)">
+          <option value="TODOS">Todos los estados</option>
+          <option value="ACTIVO">Activas</option>
+          <option value="SUSPENDIDO">Suspendidas</option>
+        </select>
+      </section>
+
+      <div class="platform-table-wrap platform-company-table">
         <table>
           <thead>
             <tr>
               <th>Empresa</th>
-              <th>Dominio</th>
-              <th>Estado</th>
               <th>Plan</th>
               <th>Sucursales</th>
+              <th>Estado</th>
               <th>Vencimiento</th>
+              <th aria-label="Acción"></th>
             </tr>
           </thead>
           <tbody>
-            @for (tenant of tenants(); track tenant.id_tenant) {
+            @for (tenant of filteredTenants(); track tenant.id_tenant) {
               <tr>
                 <td>
                   <strong
@@ -150,39 +215,20 @@ export class PlatformOverviewPage implements OnInit {
                     }}</a></strong
                   ><small>{{ tenant.slug }}</small>
                 </td>
-                <td>
-                  <a
-                    class="platform-domain-link"
-                    [href]="tenantUrl(tenant.slug)"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    [attr.aria-label]="
-                      'Abrir la tienda de ' + tenant.nombre + ' en una pestaña nueva'
-                    "
-                  >
-                    <span>{{ tenant.slug }}.{{ tenantBaseDomain }}</span>
-                    <svg viewBox="0 0 20 20" aria-hidden="true">
-                      <path d="M7 5h8v8M15 5 5 15" />
-                    </svg>
-                  </a>
-                </td>
-                <td>
-                  <span class="platform-status" [class.is-paused]="tenant.estado !== 'ACTIVO'">{{
-                    tenant.estado
-                  }}</span>
-                </td>
                 <td>{{ tenant.plan_nombre || 'Sin plan' }}</td>
                 <td>{{ tenant.sucursales_activas }}</td>
+                <td><span class="platform-status" [class.is-paused]="tenant.estado !== 'ACTIVO'">{{ tenant.estado }}</span></td>
                 <td>
                   {{
                     tenant.fecha_fin ? (tenant.fecha_fin | date: 'dd MMM yyyy') : 'Sin vencimiento'
                   }}
                 </td>
+                <td><a class="platform-row-action" [routerLink]="['/platform/empresas', tenant.id_tenant]">Ver →</a></td>
               </tr>
             } @empty {
               @if (!loading()) {
                 <tr>
-                  <td colspan="6" class="platform-empty">No hay empresas registradas.</td>
+                  <td colspan="7" class="platform-empty">No hay empresas que coincidan con los filtros.</td>
                 </tr>
               }
             }
@@ -192,6 +238,9 @@ export class PlatformOverviewPage implements OnInit {
           <div class="platform-loading-line">Cargando empresas…</div>
         }
       </div>
+      @if (!loading()) {
+        <p class="platform-result-count">{{ filteredTenants().length }} de {{ tenants().length }} empresas</p>
+      }
     </div>
   `,
 })
@@ -202,6 +251,21 @@ export class PlatformTenantsPage implements OnInit {
   readonly loading = signal(true);
   readonly error = signal('');
   readonly tenantBaseDomain: string = environment.tenantBaseDomain || 'localhost';
+  readonly query = signal('');
+  readonly planFilter = signal('TODOS');
+  readonly statusFilter = signal('TODOS');
+  readonly filteredTenants = computed(() => {
+    const query = this.query().trim().toLocaleLowerCase();
+    return this.tenants().filter((tenant) => {
+      const matchesQuery = !query || tenant.nombre.toLocaleLowerCase().includes(query) || tenant.slug.toLocaleLowerCase().includes(query);
+      const matchesPlan = this.planFilter() === 'TODOS' || tenant.plan_codigo === this.planFilter();
+      const matchesStatus = this.statusFilter() === 'TODOS' || tenant.estado === this.statusFilter();
+      return matchesQuery && matchesPlan && matchesStatus;
+    });
+  });
+  readonly activeTenants = computed(() => this.tenants().filter((tenant) => tenant.estado === 'ACTIVO').length);
+  readonly basicTenants = computed(() => this.tenants().filter((tenant) => tenant.plan_codigo === 'BASICO').length);
+  readonly professionalTenants = computed(() => this.tenants().filter((tenant) => tenant.plan_codigo === 'PROFESIONAL').length);
 
   tenantUrl(slug: string): string {
     const protocol = this.tenantBaseDomain === 'localhost' ? 'http' : 'https';
@@ -805,38 +869,68 @@ export class PlatformTenantDetailPage implements OnInit {
 
 @Component({
   selector: 'app-platform-plans',
+  imports: [DecimalPipe],
   template: `
     <div class="platform-page">
-      <header class="platform-heading">
+      <header class="platform-heading platform-heading--compact platform-plans-heading">
         <div>
-          <p class="eyebrow">Capacidad comercial</p>
           <h1>Planes</h1>
-          <p>Reglas vigentes que Zentry aplica a cada empresa.</p>
+          <p>Capacidad, funciones y precios disponibles para cada empresa.</p>
+        </div>
+        <div class="platform-billing-toggle" aria-label="Modalidad de facturación">
+          <button type="button" [class.is-active]="billingMode() === 'MENSUAL'" (click)="billingMode.set('MENSUAL')">Mensual</button>
+          <button type="button" [class.is-active]="billingMode() === 'ANUAL'" (click)="billingMode.set('ANUAL')">Anual</button>
         </div>
       </header>
       @if (error()) {
         <div class="platform-alert" role="alert">{{ error() }}</div>
       }
+      <section class="platform-directory-summary platform-plan-summary" aria-label="Resumen de planes">
+        <div><span>Planes activos</span><strong>{{ activePlans() }}</strong></div>
+        <div><span>Empresas asignadas</span><strong>{{ tenants().length }}</strong></div>
+        <div><span>Plan más utilizado</span><strong class="is-text">{{ mostUsedPlan() }}</strong></div>
+      </section>
       <section class="platform-plan-grid">
         @for (plan of plans(); track plan.id_plan) {
-          <article>
-            <div class="platform-plan-code">{{ plan.codigo }}</div>
-            <h2>{{ plan.nombre }}</h2>
-            <strong>{{ plan.max_sucursales_activas }}</strong
-            ><span>sucursales activas</span>
-            <p>Bs {{ plan.precio_mensual }} mensual · Bs {{ plan.precio_anual }} anual</p>
+          <article [class.is-featured]="plan.codigo === 'PROFESIONAL'">
+            <header>
+              <div>
+                <span class="platform-plan-code">{{ plan.codigo }}</span>
+                <h2>{{ plan.nombre }}</h2>
+              </div>
+              @if (plan.codigo === 'PROFESIONAL') { <span class="platform-plan-badge">Más completo</span> }
+            </header>
+            <div class="platform-plan-price">
+              <strong>Bs {{ priceFor(plan) | number: '1.0-0' }}</strong>
+              <span>/ {{ billingMode() === 'MENSUAL' ? 'mes' : 'año' }}</span>
+            </div>
+            <p class="platform-plan-capacity"><strong>{{ plan.max_sucursales_activas }}</strong> sucursales activas · {{ assignedTenants(plan.codigo) }} empresas asignadas</p>
             <ul>
-              <li>{{ plan.max_usuarios_internos }} usuarios internos</li>
-              <li>{{ plan.max_productos_activos }} productos activos</li>
-              <li>{{ plan.almacenamiento_mb / 1024 }} GB de almacenamiento</li>
-              <li [class.off]="!plan.permite_reportes_convencionales">Reportes convencionales</li>
-              <li [class.off]="!plan.permite_reportes_ia">Reportes con IA</li>
-              <li [class.off]="!plan.permite_offline">Operación offline</li>
+              <li><span>Usuarios internos</span><strong>{{ plan.max_usuarios_internos }}</strong></li>
+              <li><span>Productos activos</span><strong>{{ plan.max_productos_activos | number }}</strong></li>
+              <li><span>Almacenamiento</span><strong>{{ plan.almacenamiento_mb / 1024 }} GB</strong></li>
+              <li><span>Reportes convencionales</span><strong>{{ plan.permite_reportes_convencionales ? 'Incluido' : 'No incluido' }}</strong></li>
+              <li [class.off]="!plan.permite_reportes_ia"><span>Reportes con IA</span><strong>{{ plan.permite_reportes_ia ? 'Incluido' : 'No incluido' }}</strong></li>
+              <li [class.off]="!plan.permite_offline"><span>Operación offline</span><strong>{{ plan.permite_offline ? 'Incluido' : 'No incluido' }}</strong></li>
             </ul>
             <small>{{ plan.activo ? 'Disponible para asignación' : 'Plan inactivo' }}</small>
           </article>
         }
       </section>
+
+      @if (basicPlan(); as basic) {
+        @if (professionalPlan(); as professional) {
+          <section class="platform-plan-comparison">
+            <header><h2>Comparación directa</h2><p>Diferencias principales entre capacidades.</p></header>
+            <div class="platform-comparison-row is-heading"><span>Característica</span><strong>{{ basic.nombre }}</strong><strong>{{ professional.nombre }}</strong></div>
+            <div class="platform-comparison-row"><span>Sucursales activas</span><strong>{{ basic.max_sucursales_activas }}</strong><strong>{{ professional.max_sucursales_activas }}</strong></div>
+            <div class="platform-comparison-row"><span>Usuarios internos</span><strong>{{ basic.max_usuarios_internos }}</strong><strong>{{ professional.max_usuarios_internos }}</strong></div>
+            <div class="platform-comparison-row"><span>Productos activos</span><strong>{{ basic.max_productos_activos | number }}</strong><strong>{{ professional.max_productos_activos | number }}</strong></div>
+            <div class="platform-comparison-row"><span>Reportes con IA</span><strong>{{ basic.permite_reportes_ia ? 'Sí' : 'No' }}</strong><strong>{{ professional.permite_reportes_ia ? 'Sí' : 'No' }}</strong></div>
+            <div class="platform-comparison-row"><span>Operación offline</span><strong>{{ basic.permite_offline ? 'Sí' : 'No' }}</strong><strong>{{ professional.permite_offline ? 'Sí' : 'No' }}</strong></div>
+          </section>
+        }
+      }
     </div>
   `,
 })
@@ -844,10 +938,32 @@ export class PlatformPlansPage implements OnInit {
   private readonly platform = inject(PlatformService);
   private readonly errors = inject(ApiErrorService);
   readonly plans = signal<PlatformPlan[]>([]);
+  readonly tenants = signal<PlatformTenant[]>([]);
   readonly error = signal('');
+  readonly billingMode = signal<'MENSUAL' | 'ANUAL'>('MENSUAL');
+  readonly activePlans = computed(() => this.plans().filter((plan) => plan.activo).length);
+  readonly basicPlan = computed(() => this.plans().find((plan) => plan.codigo === 'BASICO') ?? null);
+  readonly professionalPlan = computed(() => this.plans().find((plan) => plan.codigo === 'PROFESIONAL') ?? null);
+  readonly mostUsedPlan = computed(() => {
+    const counts = new Map<string, number>();
+    this.tenants().forEach((tenant) => counts.set(tenant.plan_nombre || 'Sin plan', (counts.get(tenant.plan_nombre || 'Sin plan') || 0) + 1));
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'Sin datos';
+  });
+
+  priceFor(plan: PlatformPlan): number {
+    return Number(this.billingMode() === 'MENSUAL' ? plan.precio_mensual : plan.precio_anual);
+  }
+
+  assignedTenants(code: string): number {
+    return this.tenants().filter((tenant) => tenant.plan_codigo === code).length;
+  }
+
   ngOnInit(): void {
-    this.platform.plans().subscribe({
-      next: (value) => this.plans.set(value),
+    forkJoin({ plans: this.platform.plans(), tenants: this.platform.tenants() }).subscribe({
+      next: ({ plans, tenants }) => {
+        this.plans.set(plans);
+        this.tenants.set(tenants);
+      },
       error: (error) =>
         this.error.set(this.errors.message(error, 'No se pudieron cargar los planes.')),
     });
