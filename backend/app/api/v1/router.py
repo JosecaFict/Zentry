@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.exceptions import DatabaseUnavailableError
 from app.db.session import check_database, get_db_session
 from app.modules.analytics.router import router as analytics_router
+from app.modules.assistant.router import router as assistant_router
 from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
 from app.modules.catalog.router import router as catalog_router
@@ -36,6 +37,7 @@ router.include_router(tenant_router)
 router.include_router(public_router)
 router.include_router(audit_router)
 router.include_router(analytics_router)
+router.include_router(assistant_router)
 router.include_router(recommendations_router)
 router.include_router(reports_router)
 router.include_router(sync_router)
