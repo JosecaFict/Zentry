@@ -1202,3 +1202,78 @@
   .platform-billing-toggle button { flex: 1; }
   .platform-comparison-row { grid-template-columns: 1.2fr 0.7fr 0.7fr; gap: 8px; padding-inline: 12px; font-size: 0.78rem; }
 }
+
+// Segunda pasada: densidad adaptable y mejor aprovechamiento del espacio global.
+.platform-shell { --platform-content-max: 1280px; }
+.platform-shell.nav-collapsed { --platform-content-max: 1480px; }
+.platform-page { width: min(var(--platform-content-max), 100%); }
+.platform-page--form { width: min(1320px, 100%); }
+
+.platform-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+}
+.platform-shell.nav-collapsed .platform-topbar {
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+}
+.platform-shell.nav-collapsed .platform-topbar > div { justify-self: start; }
+
+.platform-ledger-row {
+  grid-template-columns: 42px minmax(0, 1fr) 72px 145px 100px;
+  transition: background-color 140ms ease-out;
+}
+.platform-ledger-row:hover { background: #f8faff; }
+.platform-branch-count {
+  color: #69717d;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.platform-company-table tbody tr {
+  transition: background-color 140ms ease-out;
+}
+.platform-company-table tbody tr:hover,
+.platform-company-table tbody tr:focus-within {
+  background: #f8faff;
+}
+.platform-domain-column { min-width: 220px; }
+.platform-domain-link {
+  max-width: 280px;
+  font-size: 0.8rem;
+}
+.platform-domain-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.platform-directory-tools input:focus-visible,
+.platform-directory-tools select:focus-visible {
+  border-color: #064fe8;
+  outline: 3px solid rgb(6 79 232 / 16%);
+  outline-offset: 1px;
+}
+
+@media (max-width: 1050px) {
+  .platform-domain-column { display: none; }
+  .platform-ledger-row { grid-template-columns: 42px minmax(0, 1fr) 72px 130px 96px; }
+}
+
+@media (max-width: 900px) {
+  .platform-topbar {
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    gap: 14px;
+  }
+}
+
+@media (max-width: 760px) {
+  .platform-ledger-row { grid-template-columns: 42px minmax(0, 1fr) 130px 96px; }
+  .platform-branch-count { display: none; }
+}
+
+@media (max-width: 600px) {
+  .platform-ledger-row { grid-template-columns: 42px minmax(0, 1fr) auto; }
+  .platform-plan,
+  .platform-branch-count { display: none; }
+}

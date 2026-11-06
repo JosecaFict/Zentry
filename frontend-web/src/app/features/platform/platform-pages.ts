@@ -106,6 +106,7 @@ import { environment } from '../../../environments/environment';
                 <strong>{{ tenant.nombre }}</strong
                 ><small>/t/{{ tenant.slug }}</small>
               </div>
+              <span class="platform-branch-count">{{ tenant.sucursales_activas }} suc.</span>
               <span class="platform-plan">{{ tenant.plan_nombre || 'Sin plan' }}</span
               ><span class="platform-status" [class.is-paused]="tenant.estado !== 'ACTIVO'">{{
                 tenant.estado
@@ -198,6 +199,7 @@ export class PlatformOverviewPage implements OnInit {
           <thead>
             <tr>
               <th>Empresa</th>
+              <th class="platform-domain-column">Dominio</th>
               <th>Plan</th>
               <th>Sucursales</th>
               <th>Estado</th>
@@ -214,6 +216,19 @@ export class PlatformOverviewPage implements OnInit {
                       tenant.nombre
                     }}</a></strong
                   ><small>{{ tenant.slug }}</small>
+                </td>
+                <td class="platform-domain-column">
+                  <a
+                    class="platform-domain-link"
+                    [href]="tenantUrl(tenant.slug)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <span>{{ tenant.slug }}.{{ tenantBaseDomain }}</span>
+                    <svg aria-hidden="true" viewBox="0 0 24 24">
+                      <path d="M14 5h5v5M10 14 19 5M19 14v5H5V5h5" />
+                    </svg>
+                  </a>
                 </td>
                 <td>{{ tenant.plan_nombre || 'Sin plan' }}</td>
                 <td>{{ tenant.sucursales_activas }}</td>
