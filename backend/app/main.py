@@ -23,52 +23,9 @@ from app.modules.platform.subscription_lifecycle import (
 from app.modules.recommendations.handlers import register_recommendation_exception_handlers
 
 
-async def run_startup_migrations() -> None:
-    """Run idempotent schema updates and constraint migrations on PostgreSQL."""
-    try:
-        import logging
-
-        from sqlalchemy import text
-
-        logger = logging.getLogger("capricho.migrations")
-        async with engine.begin() as conn:
-            for target_table in ["capricho.notificacion", "notificacion"]:
-                try:
-                    # 1. Primero eliminar la restricción restrictiva antigua
-                    await conn.execute(
-                        text(f"ALTER TABLE IF EXISTS {target_table} DROP CONSTRAINT IF EXISTS notificacion_estado_check;")
-                    )
-                    # 2. Añadir la restricción moderna que incluye LEIDO, ACTIVO, FALLIDO
-                    await conn.execute(
-                        text(
-                            f"""
-                            ALTER TABLE IF EXISTS {target_table} 
-                            ADD CONSTRAINT notificacion_estado_check 
-                            CHECK (estado IN ('PENDIENTE', 'ENVIANDO', 'ENVIADO', 'ENTREGADO', 'ERROR', 'LEIDO', 'ACTIVO', 'FALLIDO'));
-                            """
-                        )
-                    )
-                    logger.info("Restricción notificacion_estado_check actualizada para %s.", target_table)
-                except Exception as inner_exc:
-                    logger.warning("Aviso durante migración de %s: %s", target_table, inner_exc)
-
-            for target_table in ["capricho.usuario", "usuario"]:
-                try:
-                    await conn.execute(
-                        text(f"ALTER TABLE IF EXISTS {target_table} ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);")
-                    )
-                    logger.info("Columna avatar_url verificada/añadida en %s.", target_table)
-                except Exception as inner_exc:
-                    logger.warning("Aviso durante migración de avatar_url en %s: %s", target_table, inner_exc)
-    except Exception as exc:
-        import logging
-        logging.getLogger("capricho.migrations").warning("No se pudo ejecutar la migración inicial: %s", exc)
-
-
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Release the connection pool when the application stops."""
-    await run_startup_migrations()
     subscription_task = asyncio.create_task(subscription_lifecycle_worker())
     try:
         yield
