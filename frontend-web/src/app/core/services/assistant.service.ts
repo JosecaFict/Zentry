@@ -1,0 +1,53 @@
+import { HttpClient } from '@angular/common/http';
+import { inject, Injectable } from '@angular/core';
+import { API_BASE_URL } from '../config/api.config';
+
+export interface AssistantConversation {
+  id_conversacion: string;
+  modo: 'EMPRESA' | 'CLIENTE';
+  proveedor: 'GROQ' | 'GEMINI';
+  modelo: string;
+  estado: 'ACTIVA' | 'ARCHIVADA';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssistantMessage {
+  id_mensaje: number;
+  rol: 'USUARIO' | 'ASISTENTE';
+  contenido: string;
+  created_at: string;
+}
+
+export interface AssistantExchange {
+  usuario: AssistantMessage;
+  asistente: AssistantMessage;
+}
+
+@Injectable({ providedIn: 'root' })
+export class AssistantService {
+  private readonly http = inject(HttpClient);
+  private readonly base = `${API_BASE_URL}/assistant/conversations`;
+
+  list() {
+    return this.http.get<AssistantConversation[]>(this.base);
+  }
+
+  create() {
+    return this.http.post<AssistantConversation>(this.base, { modo: 'CLIENTE' });
+  }
+
+  messages(conversationId: string) {
+    return this.http.get<AssistantMessage[]>(`${this.base}/${conversationId}/messages`);
+  }
+
+  send(conversationId: string, content: string) {
+    return this.http.post<AssistantExchange>(`${this.base}/${conversationId}/messages`, {
+      contenido: content,
+    });
+  }
+
+  archive(conversationId: string) {
+    return this.http.post<void>(`${this.base}/${conversationId}/archive`, {});
+  }
+}
