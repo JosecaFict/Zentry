@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     )
 
     database_url: str = Field(alias="DATABASE_URL")
+    app_database_url: str | None = Field(default=None, alias="APP_DATABASE_URL")
     app_name: str = Field(default="Zentry API", alias="APP_NAME")
     app_env: Literal["development", "test", "staging", "production"] = Field(
         default="development",
@@ -108,9 +109,11 @@ class Settings(BaseSettings):
     def route_service_api_key(self) -> str | None:
         return self.openrouteservice_api_key or self.ors_api_key
 
-    @field_validator("database_url")
+    @field_validator("database_url", "app_database_url")
     @classmethod
-    def validate_async_database_url(cls, value: str) -> str:
+    def validate_async_database_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if value.startswith("postgres://"):
             return value.replace("postgres://", "postgresql+asyncpg://", 1)
         if value.startswith("postgresql://"):
@@ -118,6 +121,11 @@ class Settings(BaseSettings):
         if not value.startswith("postgresql+asyncpg://"):
             raise ValueError("DATABASE_URL must use the postgresql+asyncpg driver")
         return value
+
+    @property
+    def runtime_database_url(self) -> str:
+        """Use the restricted role at runtime while Alembic keeps DATABASE_URL."""
+        return self.app_database_url or self.database_url
 
     @field_validator("cors_origins")
     @classmethod

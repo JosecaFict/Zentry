@@ -15,7 +15,7 @@ from app.db.tenant_context import current_database_scope, current_tenant_id
 settings = get_settings()
 
 engine: AsyncEngine = create_async_engine(
-    settings.database_url,
+    settings.runtime_database_url,
     echo=settings.debug,
     pool_pre_ping=True,
     connect_args={

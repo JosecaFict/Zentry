@@ -23,6 +23,25 @@ def test_asyncpg_database_url_is_preserved() -> None:
     assert make_settings(url).database_url == url
 
 
+def test_runtime_database_url_prefers_restricted_application_role() -> None:
+    settings = Settings(
+        DATABASE_URL="postgresql://postgres:admin@postgres.internal/railway",
+        APP_DATABASE_URL="postgresql://zentry_app:restricted@postgres.internal/railway",
+        SECRET_KEY="test-secret-key-not-for-production",
+    )
+
+    assert settings.database_url.startswith("postgresql+asyncpg://postgres:")
+    assert settings.runtime_database_url.startswith(
+        "postgresql+asyncpg://zentry_app:"
+    )
+
+
+def test_runtime_database_url_falls_back_to_migration_url() -> None:
+    settings = make_settings("postgresql://postgres:admin@localhost/railway")
+
+    assert settings.runtime_database_url == settings.database_url
+
+
 def test_cors_origins_are_cleaned() -> None:
     settings = make_settings(
         "postgresql://user:password@localhost/database",
