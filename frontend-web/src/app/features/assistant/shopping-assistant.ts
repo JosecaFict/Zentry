@@ -2,6 +2,7 @@ import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, effect, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import {
   AssistantConversation,
@@ -9,10 +10,11 @@ import {
   AssistantService,
 } from '../../core/services/assistant.service';
 import { TenantContextService } from '../../core/tenant/tenant-context.service';
+import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
 
 @Component({
   selector: 'app-shopping-assistant',
-  imports: [DatePipe, FormsModule],
+  imports: [DatePipe, FormsModule, RouterLink, BolivianosPipe],
   templateUrl: './shopping-assistant.html',
   styleUrl: './shopping-assistant.scss',
 })

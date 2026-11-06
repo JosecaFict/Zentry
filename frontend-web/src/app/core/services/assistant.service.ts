@@ -17,6 +17,19 @@ export interface AssistantMessage {
   rol: 'USUARIO' | 'ASISTENTE';
   contenido: string;
   created_at: string;
+  productos: AssistantProduct[];
+}
+
+export interface AssistantProduct {
+  id_producto: number;
+  nombre: string;
+  categoria: string;
+  marca: string;
+  precio: string;
+  imagen_url: string | null;
+  tallas: string[];
+  colores: string[];
+  permite_vestidor: boolean;
 }
 
 export interface AssistantExchange {

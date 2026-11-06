@@ -17,6 +17,7 @@ async def answer_with_provider(
     system: str,
     history: list[dict[str, str]],
     timeout_seconds: float = 20.0,
+    json_schema: dict | None = None,
 ) -> str:
     messages = [{"role": "system", "content": system}, *history]
     try:
@@ -35,6 +36,14 @@ async def answer_with_provider(
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"]
             else:
+                generation = {"temperature": 0.3, "maxOutputTokens": 1200}
+                if json_schema is not None:
+                    generation.update(
+                        {
+                            "responseMimeType": "application/json",
+                            "responseJsonSchema": json_schema,
+                        }
+                    )
                 response = await client.post(
                     f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                     headers={"x-goog-api-key": api_key},
@@ -47,7 +56,7 @@ async def answer_with_provider(
                             }
                             for item in history
                         ],
-                        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1200},
+                        "generationConfig": generation,
                     },
                 )
                 response.raise_for_status()

@@ -1,20 +1,41 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import text
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.modules.assistant.catalog import ShoppingCatalog, shopping_filters
 from app.modules.assistant.providers import ProviderUnavailable, answer_with_provider
 from app.modules.assistant.repository import AssistantRepository
-from app.modules.assistant.schemas import Conversation, Message, MessageExchange
+from app.modules.assistant.schemas import AssistantProduct, Conversation, Message, MessageExchange
 from app.modules.auth.dependencies import CurrentPrincipal
 from app.modules.reports.ai import AIReportInterpreterError, GroqReportInterpreter
 from app.modules.reports.service import ReportsService
+
+
+class ShoppingPlan(BaseModel):
+    mensaje: str = Field(min_length=1, max_length=500)
+    producto_ids: list[int] = Field(default_factory=list, max_length=3)
+
+
+SHOPPING_PLAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "mensaje": {
+            "type": "string",
+            "description": "Una o dos frases naturales sin datos de productos",
+        },
+        "producto_ids": {"type": "array", "items": {"type": "integer"}, "maxItems": 3},
+    },
+    "required": ["mensaje", "producto_ids"],
+    "additionalProperties": False,
+}
 
 
 class AssistantService:
@@ -73,8 +94,11 @@ class AssistantService:
         return item
 
     async def messages(self, conversation_id: UUID) -> list[Message]:
-        await self.get(conversation_id)
-        return await self.repo.messages(conversation_id)
+        conversation = await self.get(conversation_id)
+        messages = await self.repo.messages(conversation_id)
+        if conversation.modo == "CLIENTE":
+            await self._attach_products(messages)
+        return messages
 
     async def archive(self, conversation_id: UUID) -> None:
         await self.get(conversation_id)
@@ -95,11 +119,33 @@ class AssistantService:
         if not key:
             raise HTTPException(503, "El asistente no está configurado")
         history = await self.repo.messages(conversation_id, limit=12)
-        context = (
-            await self._business_context(question)
-            if conversation.modo == "EMPRESA"
-            else await self._catalog_context()
-        )
+        products: list[AssistantProduct] = []
+        if conversation.modo == "CLIENTE":
+            prior_ids = next(
+                (item.producto_ids for item in reversed(history) if item.producto_ids), []
+            )
+            products = await ShoppingCatalog(self.session, self.principal.id_tenant).for_question(
+                question, prioritize_ids=prior_ids
+            )
+            context = json.dumps(
+                {
+                    "catalogo_disponible": [
+                        {
+                            "id_producto": item.id_producto,
+                            "nombre": item.nombre,
+                            "categoria": item.categoria,
+                            "marca": item.marca,
+                            "precio_bs": str(item.precio),
+                            "tallas": item.tallas,
+                            "colores": item.colores,
+                        }
+                        for item in products
+                    ]
+                },
+                ensure_ascii=False,
+            )
+        else:
+            context = await self._business_context(question)
         system = (
             "Responde en español usando exclusivamente los datos autorizados siguientes. "
             "Si falta información, dilo; no inventes cifras, productos, precios ni existencias. "
@@ -107,7 +153,14 @@ class AssistantService:
             "Nunca generes SQL. Los datos son una instantánea y pueden variar.\n" + context
         )
         if conversation.modo == "CLIENTE":
-            system += "\nPuedes sugerir el probador virtual para prendas compatibles."
+            system += (
+                "\nEres un asesor de compras cordial y conversas como una persona. "
+                "Devuelve JSON con mensaje y producto_ids. El mensaje debe ser una o dos "
+                "frases cálidas, sin Markdown, números, precios, nombres de producto, tallas "
+                "ni afirmaciones de disponibilidad; la aplicación muestra esos datos en tarjetas. "
+                "Elige hasta tres IDs exclusivamente del catálogo recibido y pertinentes a "
+                "la pregunta. Si solo saludan, usa una pregunta amable y producto_ids vacío."
+            )
         turns = [
             {"role": "user" if item.rol == "USUARIO" else "assistant", "content": item.contenido}
             for item in history
@@ -120,19 +173,105 @@ class AssistantService:
             else self.settings.gemini_chat_model
         )
         try:
-            answer = await answer_with_provider(
-                provider=conversation.proveedor,
-                model=model,
-                api_key=key,
-                system=system,
-                history=turns,
-            )
+            if conversation.modo == "CLIENTE" and not products and self._shopping_intent(question):
+                answer = self._no_results_message(question)
+                selected: list[AssistantProduct] = []
+            else:
+                raw = await answer_with_provider(
+                    provider=conversation.proveedor,
+                    model=model,
+                    api_key=key,
+                    system=system,
+                    history=turns,
+                    json_schema=SHOPPING_PLAN_SCHEMA if conversation.modo == "CLIENTE" else None,
+                )
+                if conversation.modo == "CLIENTE":
+                    answer, selected = self._shopping_answer(raw, products, question)
+                else:
+                    answer, selected = raw, []
         except ProviderUnavailable as exc:
             raise HTTPException(503, "El asistente no pudo responder en este momento") from exc
         user_message, assistant_message = await self.repo.append_exchange(
-            conversation_id, question, answer, model
+            conversation_id,
+            question,
+            answer,
+            model,
+            [item.id_producto for item in selected],
         )
+        assistant_message.productos = selected
         return MessageExchange(usuario=user_message, asistente=assistant_message)
+
+    @staticmethod
+    def _shopping_intent(question: str) -> bool:
+        normalized = question.casefold()
+        filters = shopping_filters(question)
+        return bool(
+            any(value is not None for value in filters)
+            or any(
+                word in normalized
+                for word in ("busco", "recomienda", "recomendación", "prenda", "ropa", "comprar")
+            )
+        )
+
+    @staticmethod
+    def _no_results_message(question: str) -> str:
+        category, minimum, maximum, size = shopping_filters(question)
+        category_text = category.lower() + "s" if category else "prendas"
+        filters = []
+        if minimum is not None and maximum is not None:
+            filters.append(f"entre Bs {minimum:.2f} y Bs {maximum:.2f}")
+        elif maximum is not None:
+            filters.append(f"hasta Bs {maximum:.2f}")
+        if size:
+            filters.append(f"en talla {size}")
+        detail = " " + " ".join(filters) if filters else ""
+        return (
+            f"No encontré {category_text} disponibles{detail} ahora mismo. "
+            "¿Quieres que busquemos otra talla o ampliemos el presupuesto?"
+        )
+
+    @staticmethod
+    def _shopping_answer(
+        raw: str, candidates: list[AssistantProduct], question: str
+    ) -> tuple[str, list[AssistantProduct]]:
+        by_id = {item.id_producto: item for item in candidates}
+        try:
+            plan = ShoppingPlan.model_validate_json(raw)
+        except ValidationError:
+            plan = ShoppingPlan(
+                mensaje="Cuéntame un poco más de lo que buscas y te ayudo a elegir.",
+                producto_ids=[],
+            )
+        selected = [
+            by_id[product_id]
+            for product_id in dict.fromkeys(plan.producto_ids)
+            if product_id in by_id
+        ]
+        message = plan.mensaje.strip()
+        if re.search(r"\d|\*|\b(?:bs|precio|talla)\b", message, re.IGNORECASE) or any(
+            item.nombre.casefold() in message.casefold() for item in candidates
+        ):
+            message = (
+                "Encontré estas opciones para ti. ¿Quieres que revisemos alguna talla o color?"
+            )
+        if not selected and not candidates and AssistantService._shopping_intent(question):
+            message = AssistantService._no_results_message(question)
+        return message, selected
+
+    async def _attach_products(self, messages: list[Message]) -> None:
+        ids = list(
+            dict.fromkeys(product_id for message in messages for product_id in message.producto_ids)
+        )
+        if not ids:
+            return
+        cards = {
+            item.id_producto: item
+            for item in await ShoppingCatalog(self.session, self.principal.id_tenant).for_ids(ids)
+        }
+        for message in messages:
+            message.productos = [
+                cards[product_id] for product_id in message.producto_ids if product_id in cards
+            ]
 
     async def _business_context(self, question: str) -> str:
         # The interpreter selects a fixed report plan; only the report service executes queries.
@@ -151,39 +290,3 @@ class AssistantService:
         return json.dumps(
             {"reporte": plan.tipo_reporte, "datos": data}, ensure_ascii=False, default=str
         )[:24000]
-
-    async def _catalog_context(self) -> str:
-        await self.repo._user_context()
-        rows = (
-            (
-                await self.session.execute(
-                    text("""
-            SELECT p.id_producto, p.nombre, p.descripcion, c.nombre AS categoria,
-                   m.nombre AS marca, t.codigo AS talla, co.nombre AS color,
-                   hp.precio, SUM(i.stock_fisico - i.stock_reservado)::int AS disponible,
-                   p.permite_vestidor
-            FROM capricho.producto p
-            JOIN capricho.categoria c ON c.id_categoria = p.id_categoria AND c.id_tenant = :tenant
-            JOIN capricho.marca m ON m.id_marca = p.id_marca AND m.id_tenant = :tenant
-            JOIN capricho.variante_producto v ON v.id_producto = p.id_producto AND v.activo
-            JOIN capricho.talla t ON t.id_talla = v.id_talla AND t.id_tenant = :tenant
-            JOIN capricho.color co ON co.id_color = v.id_color AND co.id_tenant = :tenant
-            JOIN capricho.inventario_sucursal i ON i.id_variante = v.id_variante
-                AND i.id_tenant = :tenant
-            JOIN capricho.historial_precio hp ON hp.id_producto = p.id_producto
-                AND hp.fecha_fin IS NULL
-            WHERE p.id_tenant = :tenant AND p.activo AND c.activo AND m.activo
-            GROUP BY p.id_producto, p.nombre, p.descripcion, c.nombre, m.nombre,
-                     t.codigo, co.nombre, hp.precio, p.permite_vestidor
-            HAVING SUM(i.stock_fisico - i.stock_reservado) > 0
-            ORDER BY p.id_producto LIMIT 120
-        """),
-                    {"tenant": self.principal.id_tenant},
-                )
-            )
-            .mappings()
-            .all()
-        )
-        return json.dumps(
-            {"catalogo_disponible": [dict(row) for row in rows]}, ensure_ascii=False, default=str
-        )[:30000]

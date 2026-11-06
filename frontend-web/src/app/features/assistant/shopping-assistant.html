@@ -61,8 +61,34 @@
               </div>
             }
             @for (message of messages(); track message.id_mensaje) {
-              <div class="advisor-message" [class.is-user]="message.rol === 'USUARIO'">
-                <p>{{ message.contenido }}</p>
+              <div class="advisor-turn" [class.is-user]="message.rol === 'USUARIO'">
+                <div class="advisor-message" [class.is-user]="message.rol === 'USUARIO'">
+                  <p>{{ message.contenido }}</p>
+                </div>
+                @for (product of message.productos || []; track product.id_producto) {
+                  <article class="advisor-product">
+                    @if (product.imagen_url) {
+                      <img [src]="product.imagen_url" [alt]="product.nombre" loading="lazy" />
+                    } @else {
+                      <div class="advisor-product-placeholder" aria-hidden="true">{{ product.categoria }}</div>
+                    }
+                    <div class="advisor-product-body">
+                      <p class="advisor-product-meta">{{ product.marca }} · {{ product.categoria }}</p>
+                      <h3>{{ product.nombre }}</h3>
+                      <strong>{{ product.precio | bolivianos }}</strong>
+                      @if (product.tallas.length) {
+                        <small>Tallas: {{ product.tallas.join(', ') }}</small>
+                      }
+                      @if (product.colores.length) {
+                        <small>Colores: {{ product.colores.join(', ') }}</small>
+                      }
+                      <a [routerLink]="['/productos', product.id_producto]" (click)="toggle()">Ver prenda</a>
+                      @if (product.permite_vestidor) {
+                        <span class="advisor-tryon">Probador virtual disponible</span>
+                      }
+                    </div>
+                  </article>
+                }
               </div>
             }
             @if (busy()) {

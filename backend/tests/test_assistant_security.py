@@ -5,8 +5,9 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
+from app.modules.assistant.catalog import shopping_filters
 from app.modules.assistant.providers import ProviderUnavailable, answer_with_provider
-from app.modules.assistant.schemas import Conversation, Message
+from app.modules.assistant.schemas import AssistantProduct, Conversation, Message
 from app.modules.assistant.service import AssistantService
 
 
@@ -122,18 +123,92 @@ async def test_existing_conversation_uses_current_configured_model(monkeypatch):
     )
     service.get = AsyncMock(return_value=conversation)
     service.repo.messages = AsyncMock(return_value=[])
-    service._catalog_context = AsyncMock(return_value="{}")
+    monkeypatch.setattr(
+        "app.modules.assistant.service.ShoppingCatalog.for_question",
+        AsyncMock(return_value=[]),
+    )
     messages = (
         Message(id_mensaje=1, rol="USUARIO", contenido="hola", created_at="2026-01-01T00:00:00Z"),
         Message(id_mensaje=2, rol="ASISTENTE", contenido="hola", created_at="2026-01-01T00:00:00Z"),
     )
     service.repo.append_exchange = AsyncMock(return_value=messages)
-    provider = AsyncMock(return_value="hola")
+    provider = AsyncMock(return_value='{"mensaje":"¡Hola! ¿Qué prenda buscas?","producto_ids":[]}')
     monkeypatch.setattr("app.modules.assistant.service.answer_with_provider", provider)
 
     await service.send(conversation.id_conversacion, "hola")
 
     assert provider.await_args.kwargs["model"] == "gemini-3.5-flash"
     service.repo.append_exchange.assert_awaited_once_with(
-        conversation.id_conversacion, "hola", "hola", "gemini-3.5-flash"
+        conversation.id_conversacion, "hola", "¡Hola! ¿Qué prenda buscas?", "gemini-3.5-flash", []
     )
+
+
+def test_shopping_filters_extract_category_budget_and_size():
+    assert shopping_filters(
+        "Quería recomendación de polera rondando precio de 200 a máximo 300 Bs en talla M"
+    ) == ("POLERA", 200, 300, "M")
+
+
+def test_shopping_answer_accepts_only_verified_products_and_strips_prices():
+    product = AssistantProduct(
+        id_producto=7,
+        nombre="Polera azul",
+        categoria="POLERA",
+        marca="Marca",
+        precio="250.00",
+        imagen_url=None,
+        tallas=["M"],
+        colores=["Azul"],
+        permite_vestidor=True,
+    )
+    message, selected = AssistantService._shopping_answer(
+        '{"mensaje":"La Polera azul cuesta Bs 3", "producto_ids":[999,7]}',
+        [product],
+        "Busco una polera de 200 a 300 Bs",
+    )
+    assert selected == [product]
+    assert "Bs 3" not in message
+    assert "Polera azul" not in message
+
+
+@pytest.mark.asyncio
+async def test_history_reloads_current_verified_product_cards(monkeypatch):
+    service = AssistantService(
+        AsyncMock(), principal(roles=frozenset({"CLIENTE"}), permissions=frozenset())
+    )
+    conversation = Conversation(
+        id_conversacion=uuid4(),
+        modo="CLIENTE",
+        proveedor="GEMINI",
+        modelo="gemini-3.5-flash",
+        estado="ACTIVA",
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+    product = AssistantProduct(
+        id_producto=7,
+        nombre="Polera azul",
+        categoria="POLERA",
+        marca="Marca",
+        precio="250.00",
+        imagen_url=None,
+        tallas=["M"],
+        colores=["Azul"],
+        permite_vestidor=True,
+    )
+    message = Message(
+        id_mensaje=2,
+        rol="ASISTENTE",
+        contenido="Mira estas opciones.",
+        created_at="2026-01-01T00:00:00Z",
+        producto_ids=[7],
+    )
+    service.get = AsyncMock(return_value=conversation)
+    service.repo.messages = AsyncMock(return_value=[message])
+    catalog = AsyncMock(return_value=[product])
+    monkeypatch.setattr("app.modules.assistant.service.ShoppingCatalog.for_ids", catalog)
+
+    result = await service.messages(conversation.id_conversacion)
+
+    assert result[0].productos == [product]
+    catalog.assert_awaited_once_with([7])

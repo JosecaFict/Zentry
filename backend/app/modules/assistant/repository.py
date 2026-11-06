@@ -91,8 +91,8 @@ class AssistantRepository:
             (
                 await self.session.execute(
                     text("""
-            SELECT id_mensaje, rol, contenido, created_at FROM (
-                SELECT id_mensaje, rol, contenido, created_at
+            SELECT id_mensaje, rol, contenido, created_at, producto_ids FROM (
+                SELECT id_mensaje, rol, contenido, created_at, producto_ids
                 FROM capricho.asistente_mensaje
                 WHERE id_conversacion = :id AND id_tenant = :tenant AND id_usuario = :user
                 ORDER BY id_mensaje DESC LIMIT :limit
@@ -107,21 +107,35 @@ class AssistantRepository:
         return [Message.model_validate(dict(row)) for row in rows]
 
     async def append_exchange(
-        self, conversation_id: UUID, question: str, answer: str, model: str
+        self,
+        conversation_id: UUID,
+        question: str,
+        answer: str,
+        model: str,
+        product_ids: list[int] | None = None,
     ) -> tuple[Message, Message]:
         await self._user_context()
         messages = []
-        for role, content in (("USUARIO", question), ("ASISTENTE", answer)):
+        for role, content, ids in (
+            ("USUARIO", question, []),
+            ("ASISTENTE", answer, product_ids or []),
+        ):
             row = (
                 (
                     await self.session.execute(
                         text("""
                 INSERT INTO capricho.asistente_mensaje
-                    (id_conversacion, id_tenant, id_usuario, rol, contenido)
-                VALUES (:id, :tenant, :user, :role, :content)
-                RETURNING id_mensaje, rol, contenido, created_at
+                    (id_conversacion, id_tenant, id_usuario, rol, contenido, producto_ids)
+                VALUES (:id, :tenant, :user, :role, :content, :product_ids)
+                RETURNING id_mensaje, rol, contenido, created_at, producto_ids
             """),
-                        {**self.scope, "id": conversation_id, "role": role, "content": content},
+                        {
+                            **self.scope,
+                            "id": conversation_id,
+                            "role": role,
+                            "content": content,
+                            "product_ids": ids,
+                        },
                     )
                 )
                 .mappings()

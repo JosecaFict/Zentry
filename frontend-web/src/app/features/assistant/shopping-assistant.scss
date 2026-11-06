@@ -27,6 +27,19 @@
 .advisor-message { width: fit-content; max-width: 87%; margin-bottom: 13px; padding: 11px 13px; border-radius: 12px 12px 12px 3px; background: #eceef1; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .advisor-message.is-user { margin-left: auto; border-radius: 12px 12px 3px 12px; background: var(--advisor-accent); color: var(--advisor-accent-text); }
 .advisor-message p { margin: 0; white-space: pre-wrap; }
+.advisor-turn.is-user { display: flex; justify-content: end; }
+.advisor-product { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; margin: 0 0 13px; padding: 9px; border: 1px solid #cbd0d6; border-radius: 12px; background: #fff; }
+.advisor-product img, .advisor-product-placeholder { width: 92px; height: 128px; object-fit: cover; border-radius: 8px; background: #eceef1; }
+.advisor-product-placeholder { display: grid; place-items: center; padding: 8px; color: #565d67; font-size: 11px; font-weight: 700; text-align: center; }
+.advisor-product-body { display: flex; flex-direction: column; align-items: start; min-width: 0; }
+.advisor-product-meta { margin: 2px 0 4px; color: #565d67; font-size: 11px; }
+.advisor-product h3 { margin: 0 0 6px; font-size: 14px; line-height: 1.3; }
+.advisor-product strong { margin-bottom: 5px; font-size: 15px; }
+.advisor-product small { color: #565d67; font-size: 11px; line-height: 1.4; }
+.advisor-product a { display: inline-flex; margin-top: 9px; padding: 7px 10px; border-radius: 7px; color: var(--advisor-accent-text); background: var(--advisor-accent); font-size: 12px; font-weight: 700; text-decoration: none; }
+.advisor-product a:hover { background: var(--advisor-accent-dark); }
+.advisor-product a:focus-visible { outline: 3px solid var(--advisor-accent); outline-offset: 3px; }
+.advisor-tryon { margin-top: 6px; color: #565d67; font-size: 10px; }
 .advisor-status { margin: 12px 0; color: #565d67; font-size: 13px; }
 .advisor-error { margin: 0 16px 9px; color: #b42318; font-size: 13px; line-height: 1.4; }
 .advisor-archived { margin: 0 16px 9px; color: #565d67; font-size: 12px; }
