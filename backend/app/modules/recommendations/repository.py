@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.models import Cliente
@@ -41,7 +42,7 @@ class RecommendationRepository:
         )
         config = await self.session.scalar(statement)
         if config is None:
-            config = ConfiguracionRecomendador(
+            statement_insert = pg_insert(ConfiguracionRecomendador).values(
                 peso_categoria=Decimal("40.00"),
                 peso_marca=Decimal("20.00"),
                 peso_color=Decimal("15.00"),
@@ -50,8 +51,15 @@ class RecommendationRepository:
                 peso_promocion=Decimal("5.00"),
                 activo=True,
             )
-            self.session.add(config)
-            await self.session.flush()
+            await self.session.execute(
+                statement_insert.on_conflict_do_nothing(
+                    index_elements=[ConfiguracionRecomendador.id_tenant],
+                    index_where=text("activo = TRUE"),
+                )
+            )
+            config = await self.session.scalar(statement)
+            if config is None:
+                raise RuntimeError("No se pudo cargar la configuración del recomendador")
         return config
 
     async def update_active_config(
