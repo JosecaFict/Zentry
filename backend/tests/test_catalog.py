@@ -191,6 +191,20 @@ async def test_list_categories() -> None:
     assert response.json()[0]["nombre"] == "POLERA"
 
 
+async def test_list_sizes_accepts_all_database_sizes() -> None:
+    service = AsyncMock()
+    codes = ["XS", "S", "M", "L", "XL", "XXL"]
+    service.list_sizes.return_value = [
+        {"id_talla": index, "codigo": code, "orden": index, "activo": True}
+        for index, code in enumerate(codes, start=1)
+    ]
+
+    response = await call_catalog("GET", "/api/v1/sizes", service=service)
+
+    assert response.status_code == 200
+    assert [item["codigo"] for item in response.json()] == codes
+
+
 async def test_list_branches_is_public() -> None:
     service = AsyncMock()
     service.list_branches.return_value = [

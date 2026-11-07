@@ -208,7 +208,7 @@ class BrandResponse(ORMResponse):
 
 class SizeResponse(ORMResponse):
     id_talla: int
-    codigo: Literal["S", "M", "L", "XL"]
+    codigo: Literal["XS", "S", "M", "L", "XL", "XXL"]
     orden: int
     activo: bool
 
