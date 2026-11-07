@@ -24,6 +24,7 @@ import 'package:capricho_store/features/commerce/presentation/checkout_screen.da
 import 'package:capricho_store/features/commerce/presentation/notifications_screen.dart';
 import 'package:capricho_store/features/commerce/presentation/order_detail_screen.dart';
 import 'package:capricho_store/features/commerce/presentation/orders_screen.dart';
+import 'package:capricho_store/features/commerce/presentation/purchases_screen.dart';
 import 'package:capricho_store/features/commerce/presentation/reservations_screen.dart';
 import 'package:capricho_store/features/home/presentation/home_screen.dart';
 import 'package:capricho_store/features/home/presentation/splash_screen.dart';
@@ -278,6 +279,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             orderId: int.parse(state.pathParameters['id']!),
           ),
         ),
+      ),
+      GoRoute(
+        path: '/compras',
+        pageBuilder: (context, state) => _adaptivePage(key: state.pageKey, child: const PurchasesScreen()),
       ),
       GoRoute(
         path: '/direcciones', // [CU-09] Direcciones de entrega

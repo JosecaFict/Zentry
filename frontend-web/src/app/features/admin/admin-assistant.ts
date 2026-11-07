@@ -5,10 +5,11 @@ import { RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { AssistantConversation, AssistantMessage, AssistantService } from '../../core/services/assistant.service';
 import { TenantContextService } from '../../core/tenant/tenant-context.service';
+import { AssistantMessageBody } from './assistant-message';
 
 @Component({
   selector: 'app-admin-assistant',
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, AssistantMessageBody],
   templateUrl: './admin-assistant.html',
   styleUrl: './admin-assistant.scss',
 })

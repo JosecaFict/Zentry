@@ -1,3 +1,4 @@
+import 'purchases_screen.dart';
 import 'package:capricho_store/core/config/environment.dart';
 import 'package:capricho_store/core/network/api_client.dart';
 import 'package:capricho_store/core/theme/app_theme.dart';
@@ -256,17 +257,13 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         // Acciones: Factura oficial y Recibo de Stripe
         const SizedBox(height: 20),
         OutlinedButton.icon(
-          onPressed: () => _requestReturn(order),
+          onPressed: () => context.push('/compras'),
           icon: const Icon(Icons.swap_horiz_rounded),
-          label: const Text('Solicitar cambio o devolución'),
+          label: const Text('Cambios y devoluciones de mis compras'),
         ),
         returns.when(
           data: (items) => Column(
-            children: items.map((item) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text('Solicitud #${item['id_devolucion']} · ${_returnKind(item['tipo_solicitud'] as String?)}'),
-              subtitle: Text('Estado: ${item['estado']} · ${item['motivo']}'),
-            )).toList(),
+            children: items.map((item) => ReturnStatusCard(item: item)).toList(),
           ),
           loading: () => const LinearProgressIndicator(),
           error: (error, stackTrace) => const Text('No se pudo cargar el estado de tus solicitudes.'),
@@ -316,105 +313,6 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
         ],
       ],
     );
-  }
-
-  String _returnKind(String? kind) => switch (kind) {
-    'CAMBIO_TALLA' => 'Cambio de talla',
-    'CAMBIO_COLOR' => 'Cambio de color',
-    'CAMBIO_PRENDA' => 'Cambio de prenda',
-    'REEMBOLSO' => 'Reembolso solicitado',
-    'CREDITO' => 'Crédito solicitado',
-    _ => 'Devolución',
-  };
-
-  Future<void> _requestReturn(Order order) async {
-    if (order.items.isEmpty) return;
-    var selected = order.items.first;
-    var quantity = 1;
-    var kind = 'CAMBIO_TALLA';
-    var busy = false;
-    final reason = TextEditingController();
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('Cambio o devolución'),
-          content: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('Selecciona la prenda y explica lo que necesitas. La tienda revisará la solicitud y la prenda antes de resolverla.'),
-              DropdownButtonFormField<int>(
-                initialValue: selected.idDetalle,
-                decoration: const InputDecoration(labelText: 'Prenda'),
-                items: order.items.map((item) => DropdownMenuItem(
-                  value: item.idDetalle,
-                  child: Text('${item.producto} · ${item.talla}', overflow: TextOverflow.ellipsis),
-                )).toList(),
-                onChanged: busy ? null : (value) => setDialogState(() {
-                  selected = order.items.firstWhere((item) => item.idDetalle == value);
-                  quantity = 1;
-                }),
-              ),
-              DropdownButtonFormField<String>(
-                initialValue: kind,
-                decoration: const InputDecoration(labelText: 'Solicitud'),
-                items: const [
-                  DropdownMenuItem(value: 'CAMBIO_TALLA', child: Text('Cambiar talla')),
-                  DropdownMenuItem(value: 'CAMBIO_COLOR', child: Text('Cambiar color')),
-                  DropdownMenuItem(value: 'CAMBIO_PRENDA', child: Text('Cambiar prenda')),
-                  DropdownMenuItem(value: 'REEMBOLSO', child: Text('Solicitar reembolso')),
-                  DropdownMenuItem(value: 'CREDITO', child: Text('Crédito en tienda')),
-                ],
-                onChanged: busy ? null : (value) => setDialogState(() => kind = value ?? kind),
-              ),
-              DropdownButtonFormField<int>(
-                key: ValueKey(selected.idDetalle),
-                initialValue: quantity,
-                decoration: const InputDecoration(labelText: 'Cantidad'),
-                items: List.generate(selected.cantidad, (index) => DropdownMenuItem(
-                  value: index + 1,
-                  child: Text('${index + 1}'),
-                )),
-                onChanged: busy ? null : (value) => setDialogState(() => quantity = value ?? 1),
-              ),
-              TextField(
-                controller: reason,
-                maxLength: 255,
-                decoration: const InputDecoration(labelText: 'Motivo y talla/color deseado'),
-              ),
-            ]),
-          ),
-          actions: [
-            TextButton(onPressed: busy ? null : () => Navigator.pop(dialogContext), child: const Text('Cancelar')),
-            FilledButton(
-              onPressed: busy ? null : () async {
-                if (reason.text.trim().length < 3) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Explica el motivo en al menos 3 caracteres.')));
-                  return;
-                }
-                setDialogState(() => busy = true);
-                try {
-                  await ref.read(commerceApiProvider).createReturn(
-                    saleId: order.idVenta,
-                    detailId: selected.idDetalle,
-                    quantity: quantity,
-                    kind: kind,
-                    reason: reason.text.trim(),
-                  );
-                  ref.invalidate(orderReturnsProvider(order.idVenta));
-                  if (dialogContext.mounted) Navigator.pop(dialogContext);
-                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Solicitud enviada a la tienda.')));
-                } catch (error) {
-                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo enviar: $error')));
-                  setDialogState(() => busy = false);
-                }
-              },
-              child: const Text('Enviar solicitud'),
-            ),
-          ],
-        ),
-      ),
-    );
-    reason.dispose();
   }
 
   Widget _buildDeliveryConfirmationCard(BuildContext context, Order order) {

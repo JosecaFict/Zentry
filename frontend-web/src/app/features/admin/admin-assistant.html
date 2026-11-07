@@ -47,7 +47,10 @@
               </div>
             }
             @for (message of messages(); track message.id_mensaje) {
-              <div class="admin-advisor-message" [class.is-user]="message.rol === 'USUARIO'">{{ message.contenido }}</div>
+              <div class="admin-advisor-message" [class.is-user]="message.rol === 'USUARIO'">
+                @if (message.rol === 'USUARIO') { {{ message.contenido }} }
+                @else { <app-assistant-message [text]="message.contenido" /> }
+              </div>
             }
             @if (busy()) { <p class="admin-advisor-status" role="status">Analizando tu consulta…</p> }
           </div>

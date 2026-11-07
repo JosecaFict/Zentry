@@ -95,6 +95,29 @@ async def test_basic_admin_report_question_does_not_query_business_data(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_professional_report_preserves_verified_boliviano_answer(monkeypatch):
+    service = AssistantService(AsyncMock(), principal())
+    service.settings = SimpleNamespace(groq_api_key="test-key", groq_reports_model="test-model")
+    conversation = Conversation(
+        id_conversacion=uuid4(), modo="EMPRESA", proveedor="GROQ", modelo="test-model", estado="ACTIVA",
+        created_at="2026-01-01T00:00:00Z", updated_at="2026-01-01T00:00:00Z",
+    )
+    service.get = AsyncMock(return_value=conversation)
+    service.repo.messages = AsyncMock(return_value=[])
+    service._business_context = AsyncMock(return_value='{"respuesta_verificada":"21 unidades e ingresos de **Bs 4.200,00**."}')
+    service.repo.append_exchange = AsyncMock(return_value=(
+        Message(id_mensaje=1, rol="USUARIO", contenido="ventas", created_at="2026-01-01T00:00:00Z"),
+        Message(id_mensaje=2, rol="ASISTENTE", contenido="", created_at="2026-01-01T00:00:00Z"),
+    ))
+    provider = AsyncMock(return_value="4.200 euros")
+    monkeypatch.setattr("app.modules.assistant.service.answer_with_provider", provider)
+    await service.send(conversation.id_conversacion, "¿Qué producto fue el más vendido?")
+    assert service.repo.append_exchange.await_args.args[2] == '21 unidades e ingresos de **Bs 4.200,00**.'
+    assert service.repo.append_exchange.await_args.kwargs['report_restricted'] is True
+    provider.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_basic_admin_cannot_read_saved_professional_report():
     service = AssistantService(
         AsyncMock(), principal(plan="BASICO", ai=False, permissions=frozenset())

@@ -289,6 +289,15 @@ class CommerceApi {
     }
   }
 
+  Future<List<Map<String, dynamic>>> listPurchases() async {
+    try {
+      final response = await _dio.get('/history/purchases');
+      return (response.data as List? ?? []).map((item) => _asMap(item)).toList();
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
   Future<List<int>> getOrderInvoicePdf(int orderId) async {  // [CU-12] Descargar factura en PDF
     try {
       final response = await _dio.get<List<int>>(

@@ -522,6 +522,14 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const Divider(height: 1),
               ListTile(
+                leading: const Icon(Icons.swap_horiz_rounded),
+                title: const Text('Compras y devoluciones'),
+                subtitle: const Text('Solicitar cambios y consultar su resolución'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => context.push('/compras'),
+              ),
+              const Divider(height: 1),
+              ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(

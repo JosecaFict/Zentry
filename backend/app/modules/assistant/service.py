@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.modules.assistant.catalog import ShoppingCatalog, requested_color, shopping_filters
+from app.modules.assistant.business_answer import business_answer
 from app.modules.assistant.providers import ProviderUnavailable, answer_with_provider
 from app.modules.assistant.repository import AssistantRepository
 from app.modules.assistant.schemas import AssistantProduct, Conversation, Message, MessageExchange
@@ -219,7 +220,8 @@ class AssistantService:
             system += (
                 "\nEres un asistente para la administración de esta tienda. Conversa con "
                 "naturalidad. Si el contexto incluye un reporte, explica sus datos con claridad. "
-                "Si no incluye datos, responde solo orientación general y no inventes cifras."
+                "Si no incluye datos, responde solo orientación general y no inventes cifras. "
+                "La moneda de esta plataforma es BOB (bolivianos): escribe Bs y nunca euros ni dólares."
             )
         turns = [
             {"role": "user" if item.rol == "USUARIO" else "assistant", "content": item.contenido}
@@ -276,6 +278,9 @@ class AssistantService:
             ):
                 answer = self._no_results_message(question)
                 selected: list[AssistantProduct] = []
+            elif report_restricted and 'respuesta_verificada' in json.loads(context):
+                answer = json.loads(context)['respuesta_verificada']
+                selected = []
             else:
                 raw = await answer_with_provider(
                     provider=conversation.proveedor,
@@ -416,5 +421,6 @@ class AssistantService:
 
         data = await _execute_ai_plan(plan, self.principal, ReportsService(self.session), None)
         return json.dumps(
-            {"reporte": plan.tipo_reporte, "datos": data}, ensure_ascii=False, default=str
-        )[:24000]
+            {"reporte": plan.tipo_reporte, "moneda": "BOB", "respuesta_verificada": business_answer(plan.tipo_reporte, data)},
+            ensure_ascii=False,
+        )
