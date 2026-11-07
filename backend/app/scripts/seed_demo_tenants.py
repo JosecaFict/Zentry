@@ -23,6 +23,7 @@ from app.core.security import hash_password
 from app.db.audit_context import AuditContext, apply_audit_context
 from app.db.session import async_session_factory, engine
 from app.modules.auth.models import Usuario
+from app.modules.catalog.models import Coleccion, Temporada
 from app.modules.platform.models import Plan, Subscription, Tenant
 from app.modules.platform.repository import PlatformRepository
 from app.modules.platform.schemas import TenantAdminCreate, TenantCreate
@@ -163,6 +164,36 @@ async def create_demo_tenants() -> list[dict[str, str]]:
             if set(plans) != {"BASICO", "PROFESIONAL"}:
                 raise SeedError("Los planes activos BASICO y PROFESIONAL deben existir.")
 
+            source = await session.scalar(
+                select(Tenant)
+                .where(Tenant.slug == "capricho-store")
+                .execution_options(include_all_tenants=True)
+            )
+            if source is None:
+                raise SeedError("Capricho Store no existe para copiar temporadas y colecciones.")
+            source_seasons = list(
+                (
+                    await session.scalars(
+                        select(Temporada)
+                        .where(Temporada.id_tenant == source.id_tenant)
+                        .order_by(Temporada.id_temporada)
+                        .execution_options(include_all_tenants=True)
+                    )
+                ).all()
+            )
+            if not source_seasons:
+                raise SeedError("Capricho Store no tiene temporadas para copiar.")
+            source_collections = list(
+                (
+                    await session.scalars(
+                        select(Coleccion)
+                        .where(Coleccion.id_tenant == source.id_tenant)
+                        .order_by(Coleccion.id_coleccion)
+                        .execution_options(include_all_tenants=True)
+                    )
+                ).all()
+            )
+
             repository = PlatformRepository(session)
             for index, item in enumerate(DEMO_TENANTS, start=1):
                 plan = plans[item.plan_codigo]
@@ -192,6 +223,32 @@ async def create_demo_tenants() -> list[dict[str, str]]:
                     email=item.correo,
                     password_hash=hash_password(DEMO_PASSWORD),
                 )
+                season_ids: dict[int, int] = {}
+                for source_season in source_seasons:
+                    season = Temporada(
+                        id_tenant=tenant_id,
+                        nombre=source_season.nombre,
+                        anio=source_season.anio,
+                        fecha_inicio=source_season.fecha_inicio,
+                        fecha_fin=source_season.fecha_fin,
+                        activo=source_season.activo,
+                    )
+                    session.add(season)
+                    await session.flush()
+                    season_ids[source_season.id_temporada] = season.id_temporada
+                session.add_all(
+                    [
+                        Coleccion(
+                            id_tenant=tenant_id,
+                            id_temporada=season_ids.get(source_collection.id_temporada),
+                            nombre=source_collection.nombre,
+                            descripcion=source_collection.descripcion,
+                            activo=source_collection.activo,
+                        )
+                        for source_collection in source_collections
+                    ]
+                )
+                await session.flush()
                 subscription = await session.scalar(
                     select(Subscription)
                     .where(Subscription.id_tenant == tenant_id)
