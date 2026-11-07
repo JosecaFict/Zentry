@@ -1731,14 +1731,14 @@ export class AddressesPage {
               </div>
               @if (isReturnEligible(sale.fecha_venta).eligible && (sale.estado === 'PAGADA' || sale.estado === 'CONFIRMADA')) {
                 <span class="status-chip" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; font-size: 0.75rem;">
-                  ✓ Devolución disponible ({{ isReturnEligible(sale.fecha_venta).remaining }} d. hábiles)
+                  ✓ Cambios y devoluciones disponibles ({{ isReturnEligible(sale.fecha_venta).remaining }} d. hábiles)
                 </span>
                 <button class="button button--quiet" type="button" (click)="startReturn(sale)">
-                  Solicitar devolución
+                  Solicitar cambio o devolución
                 </button>
               } @else {
                 <span class="status-chip" style="background: #f1f5f9; color: #64748b; font-size: 0.75rem;">
-                  Plazo de devolución finalizado (>5 días hábiles)
+                  Plazo de cambios y devoluciones finalizado (>5 días hábiles)
                 </span>
               }
             </div>
@@ -1756,8 +1756,16 @@ export class AddressesPage {
                 ><label class="field"
                   ><span>Cantidad</span
                   ><input type="number" min="1" formControlName="cantidad" /></label
+                ><label class="field"
+                  ><span>¿Qué necesitas?</span><select formControlName="tipo_solicitud">
+                    <option value="CAMBIO_TALLA">Cambiar talla</option>
+                    <option value="CAMBIO_COLOR">Cambiar color</option>
+                    <option value="CAMBIO_PRENDA">Cambiar prenda</option>
+                    <option value="REEMBOLSO">Solicitar reembolso</option>
+                    <option value="CREDITO">Solicitar crédito en tienda</option>
+                  </select></label
                 ><label class="field field--wide"
-                  ><span>Motivo</span><input formControlName="motivo" /></label
+                  ><span>Motivo y talla/color deseado, si corresponde</span><input formControlName="motivo" /></label
                 ><button
                   class="button button--primary"
                   type="submit"
@@ -1794,7 +1802,7 @@ export class AddressesPage {
           <article>
             <header>
               <div>
-                <h2>Devolución #{{ item.id_devolucion }}</h2>
+                <h2>Solicitud #{{ item.id_devolucion }} · {{ returnKindLabel(item.tipo_solicitud) }}</h2>
                 <p>Compra #{{ item.id_venta }} · Solicitado el {{ item.fecha_solicitud | date: 'medium' }}</p>
               </div>
               <span class="status-chip" [class]="returnBadgeClass(item.estado)">
@@ -1820,7 +1828,7 @@ export class AddressesPage {
               <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 10px 14px; font-size: 0.84rem; color: #065f46; display: flex; align-items: center; gap: 8px; margin: 10px 0;">
                 <span style="font-size: 1.1rem;">✅</span>
                 <div>
-                  <strong>Devolución completada con éxito.</strong> Se procesó la recepción en tienda{{ item.fecha_resolucion ? ' el ' + (item.fecha_resolucion | date: 'medium') : '' }}.
+                  <strong>Recepción completada.</strong> La tienda registró la prenda{{ item.fecha_resolucion ? ' el ' + (item.fecha_resolucion | date: 'medium') : '' }}. Consulta con la tienda la entrega del cambio o la liquidación correspondiente.
                 </div>
               </div>
             } @else if (item.estado === 'RECHAZADA') {
@@ -1878,6 +1886,7 @@ export class HistoryPage {
   readonly returnForm = this.fb.nonNullable.group({
     id_detalle_venta: ['', Validators.required],
     cantidad: [1, [Validators.required, Validators.min(1)]],
+    tipo_solicitud: ['CAMBIO_TALLA', Validators.required],
     motivo: ['', [Validators.required, Validators.minLength(3)]],
   });
   constructor() {
@@ -1902,6 +1911,7 @@ export class HistoryPage {
     this.returnForm.reset({
       id_detalle_venta: String(sale.items[0]?.id_detalle ?? ''),
       cantidad: 1,
+      tipo_solicitud: 'CAMBIO_TALLA',
       motivo: '',
     });
   }
@@ -1913,12 +1923,12 @@ export class HistoryPage {
     this.commerce
       .createReturn({
         id_venta: sale.id_venta,
+        tipo_solicitud: value.tipo_solicitud,
         motivo: value.motivo,
         items: [
           {
             id_detalle_venta: Number(value.id_detalle_venta),
             cantidad: value.cantidad,
-            estado_prenda: 'APTA_REINGRESO',
           },
         ],
       })
@@ -1982,6 +1992,17 @@ export class HistoryPage {
     }
     const remaining = Math.max(0, 5 - elapsed);
     return { eligible, remaining };
+  }
+
+  returnKindLabel(kind: ReturnRequest['tipo_solicitud']): string {
+    return ({
+      DEVOLUCION: 'Devolución',
+      CAMBIO_TALLA: 'Cambio de talla',
+      CAMBIO_COLOR: 'Cambio de color',
+      CAMBIO_PRENDA: 'Cambio de prenda',
+      REEMBOLSO: 'Reembolso solicitado',
+      CREDITO: 'Crédito solicitado',
+    })[kind] ?? 'Devolución';
   }
 
   returnBadgeClass(state: string): string {

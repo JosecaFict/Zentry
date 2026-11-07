@@ -2003,12 +2003,18 @@ class CommerceService:
                 id_venta=sale.id_venta,
                 id_cliente=customer.id_cliente,
                 motivo=payload.motivo,
+                tipo_solicitud=payload.tipo_solicitud,
                 estado="PENDIENTE",
             )
         )
         for item in payload.items:
             await self.repository.add(
-                DetalleDevolucion(id_devolucion=returned.id_devolucion, **item.model_dump())
+                DetalleDevolucion(
+                    id_devolucion=returned.id_devolucion,
+                    id_detalle_venta=item.id_detalle_venta,
+                    cantidad=item.cantidad,
+                    estado_prenda="PENDIENTE_INSPECCION",
+                )
             )
         await self._notify(
             customer.id_usuario,
@@ -2071,6 +2077,7 @@ class CommerceService:
             id_cliente=returned.id_cliente,
             cliente_nombre=cliente_nombre,
             motivo=returned.motivo,
+            tipo_solicitud=returned.tipo_solicitud,
             estado=returned.estado,
             fecha_solicitud=returned.fecha_solicitud,
             fecha_resolucion=returned.fecha_resolucion,
@@ -2227,6 +2234,7 @@ class CommerceService:
                 id_cliente=sale.id_cliente,
                 id_empleado=employee.id_empleado,
                 motivo=payload.motivo,
+                tipo_solicitud=payload.tipo_solicitud,
                 estado=initial_state,
                 fecha_resolucion=resolution_date,
             )
@@ -2349,7 +2357,12 @@ class CommerceService:
                     returned.motivo = f"{returned.motivo} [Nota: {obs}]"[:255]
 
             if payload.estado == "COMPLETADA":
-                for detail in await self.repository.return_details(returned.id_devolucion):
+                inspected_details = await self.repository.return_details(returned.id_devolucion)
+                if any(detail.estado_prenda == "PENDIENTE_INSPECCION" for detail in inspected_details):
+                    raise InvalidCommerceOperationError(
+                        "Inspeccione todas las prendas antes de completar la devolución"
+                    )
+                for detail in inspected_details:
                     if detail.estado_prenda != "APTA_REINGRESO":
                         continue
                     sale_detail = await self.repository.get(DetalleVenta, detail.id_detalle_venta)
@@ -2415,10 +2428,10 @@ class CommerceService:
                         "Por favor acércate a la sucursal con tus prendas para la inspección física y recepción."
                     )
                 elif payload.estado == "COMPLETADA":
-                    notif_title = "Devolución completada con éxito ✅"
+                    notif_title = "Prenda recibida e inspeccionada ✅"
                     notif_body = (
-                        f"Tu devolución #{returned.id_devolucion} ha sido completada exitosamente. "
-                        "Se procesó la recepción física en tienda."
+                        f"La tienda registró la recepción de tu solicitud #{returned.id_devolucion}. "
+                        "Consulta con la sucursal la entrega del cambio o la liquidación correspondiente."
                     )
                 elif payload.estado == "RECHAZADA":
                     notif_title = "Solicitud de devolución no aprobada ✕"

@@ -26,6 +26,7 @@ OrderState = Literal[
     "CANCELADO",
 ]
 ReturnState = Literal["PENDIENTE", "APROBADA", "RECHAZADA", "COMPLETADA"]
+ReturnKind = Literal["DEVOLUCION", "CAMBIO_TALLA", "CAMBIO_COLOR", "CAMBIO_PRENDA", "REEMBOLSO", "CREDITO"]
 DeliveryMode = Literal["ENTREGA_DIRECTA", "MOSTRADOR", "RETIRO_SUCURSAL", "DELIVERY"]
 
 
@@ -261,17 +262,19 @@ class ShippingQuoteResponse(ORMResponse):
 class ReturnLineCreate(BaseModel):
     id_detalle_venta: int = Field(gt=0)
     cantidad: int = Field(gt=0)
-    estado_prenda: Literal["APTA_REINGRESO", "NO_APTA"] = "APTA_REINGRESO"
+    estado_prenda: Literal["PENDIENTE_INSPECCION", "APTA_REINGRESO", "NO_APTA"] = "PENDIENTE_INSPECCION"
 
 
 class ReturnCreate(BaseModel):
     id_venta: int = Field(gt=0)
+    tipo_solicitud: ReturnKind = "DEVOLUCION"
     motivo: str = Field(min_length=3, max_length=255)
     items: list[ReturnLineCreate] = Field(min_length=1)
 
 
 class AdminReturnCreate(BaseModel):
     id_venta: int = Field(gt=0)
+    tipo_solicitud: ReturnKind = "DEVOLUCION"
     motivo: str = Field(min_length=3, max_length=255)
     items: list[ReturnLineCreate] = Field(min_length=1)
     completar_inmediato: bool = True
@@ -302,6 +305,7 @@ class ReturnLineResponse(ORMResponse):
 class ReturnResponse(ORMResponse):
     id_devolucion: int
     id_venta: int
+    tipo_solicitud: ReturnKind
     id_cliente: int | None = None
     cliente_nombre: str | None = None
     motivo: str

@@ -68,6 +68,7 @@ STRIPE_CHECKOUT = {
 }
 RETURN = {
     "id_devolucion": 10,
+    "tipo_solicitud": "DEVOLUCION",
     "id_venta": 6,
     "motivo": "La talla no corresponde",
     "estado": "PENDIENTE",
@@ -333,12 +334,30 @@ async def test_customer_can_request_return() -> None:
         actor=principal(),
         json={
             "id_venta": 6,
+            "tipo_solicitud": "CAMBIO_TALLA",
             "motivo": "La talla no corresponde",
             "items": [{"id_detalle_venta": 1, "cantidad": 1}],
         },
     )
     assert response.status_code == 201
     assert response.json()["estado"] == "PENDIENTE"
+    assert service.create_return.await_args.args[1].tipo_solicitud == "CAMBIO_TALLA"
+
+
+async def test_customer_return_rejects_unknown_request_kind() -> None:
+    response = await call(
+        "POST",
+        "/api/v1/returns",
+        service=AsyncMock(),
+        actor=principal(),
+        json={
+            "id_venta": 6,
+            "tipo_solicitud": "CAMBIO_DESCONOCIDO",
+            "motivo": "No me quedó",
+            "items": [{"id_detalle_venta": 1, "cantidad": 1}],
+        },
+    )
+    assert response.status_code == 422
 
 
 async def test_delivery_requires_address_and_quote() -> None:

@@ -323,6 +323,9 @@ class Devolucion(Base):
         BigInteger, ForeignKey("capricho.empleado.id_empleado", ondelete="SET NULL")
     )
     motivo: Mapped[str] = mapped_column(String(255), nullable=False)
+    tipo_solicitud: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'DEVOLUCION'")
+    )
     estado: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'PENDIENTE'")
     )

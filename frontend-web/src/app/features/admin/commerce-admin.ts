@@ -2416,7 +2416,7 @@ export class OrdersAdmin {
           <div class="kpi-info">
             <span class="kpi-label">Completadas</span>
             <strong class="kpi-value" style="color: #059669;">{{ kpis().completed }}</strong>
-            <span class="kpi-sub">Stock reintegrado</span>
+            <span class="kpi-sub">Recepción inspeccionada</span>
           </div>
         </div>
 
@@ -2541,7 +2541,7 @@ export class OrdersAdmin {
                   <!-- 3. Motivo -->
                   <td>
                     <div style="font-size: 0.85rem; color: var(--ink); line-height: 1.4; font-style: italic;">
-                      "{{ item.motivo }}"
+                      <strong>{{ item.tipo_solicitud.replaceAll('_', ' ') }}</strong><br />"{{ item.motivo }}"
                     </div>
                   </td>
 
@@ -2561,7 +2561,7 @@ export class OrdersAdmin {
                               [class.condition-badge--apta]="line.estado_prenda === 'APTA_REINGRESO'"
                               [class.condition-badge--no-apta]="line.estado_prenda === 'NO_APTA'"
                             >
-                              {{ line.estado_prenda === 'APTA_REINGRESO' ? '✓ Apta' : '⚠️ No Apta' }}
+                              {{ line.estado_prenda === 'APTA_REINGRESO' ? '✓ Apta' : line.estado_prenda === 'NO_APTA' ? '⚠️ No Apta' : 'Pendiente de inspección' }}
                             </span>
                           </div>
                         </div>
@@ -2884,7 +2884,7 @@ export class OrdersAdmin {
               <div>
                 <span class="admin-modal-kicker">Inspección Física y Kardex</span>
                 <h2 id="inspection-modal-title" class="admin-modal-title">
-                  Devolución #{{ item.id_devolucion }}
+                  Devolución #{{ item.id_devolucion }} · {{ item.tipo_solicitud.replaceAll('_', ' ') }}
                 </h2>
                 <p class="admin-modal-subtitle">
                   Venta original #{{ item.id_venta }} · Solicitado el {{ item.fecha_solicitud | date: 'short' }}
@@ -2965,14 +2965,15 @@ export class OrdersAdmin {
                                 [class.condition-badge--apta]="line.estado_prenda === 'APTA_REINGRESO'"
                                 [class.condition-badge--no-apta]="line.estado_prenda === 'NO_APTA'"
                               >
-                                {{ line.estado_prenda === 'APTA_REINGRESO' ? '✓ Apta para Reingreso' : '⚠️ No Apta (Merma/Defecto)' }}
+                                {{ line.estado_prenda === 'APTA_REINGRESO' ? '✓ Apta para Reingreso' : line.estado_prenda === 'NO_APTA' ? '⚠️ No Apta (Merma/Defecto)' : 'Pendiente de inspección' }}
                               </span>
                             } @else {
                               <select
-                                [value]="inspectionConditions()[line.id_detalle_devolucion] || 'APTA_REINGRESO'"
+                                [value]="inspectionConditions()[line.id_detalle_devolucion] || 'PENDIENTE_INSPECCION'"
                                 (change)="updateInspectionCondition(line.id_detalle_devolucion, $any($event.target).value)"
                                 style="width: 100%; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 0.8rem;"
                               >
+                                <option value="PENDIENTE_INSPECCION">Pendiente de inspección</option>
                                 <option value="APTA_REINGRESO">✓ Apta para Reingreso (Suma stock a tienda)</option>
                                 <option value="NO_APTA">⚠️ No Apta (Daño/Uso - no suma stock)</option>
                               </select>
@@ -3083,7 +3084,7 @@ export class ReturnsAdmin {
 
   // Inspection & Resolution modal state
   readonly inspectingReturn = signal<ReturnRequest | null>(null);
-  readonly inspectionConditions = signal<Record<number, 'APTA_REINGRESO' | 'NO_APTA'>>({});
+  readonly inspectionConditions = signal<Record<number, 'PENDIENTE_INSPECCION' | 'APTA_REINGRESO' | 'NO_APTA'>>({});
   readonly inspectionObservations = signal('');
 
   // Counter return modal state
@@ -3189,10 +3190,10 @@ export class ReturnsAdmin {
 
   openInspectionModal(item: ReturnRequest): void {
     this.inspectingReturn.set(item);
-    const condMap: Record<number, 'APTA_REINGRESO' | 'NO_APTA'> = {};
+    const condMap: Record<number, 'PENDIENTE_INSPECCION' | 'APTA_REINGRESO' | 'NO_APTA'> = {};
     (item.items || []).forEach((line) => {
       condMap[line.id_detalle_devolucion] =
-        (line.estado_prenda as 'APTA_REINGRESO' | 'NO_APTA') || 'APTA_REINGRESO';
+        (line.estado_prenda as 'PENDIENTE_INSPECCION' | 'APTA_REINGRESO' | 'NO_APTA') || 'PENDIENTE_INSPECCION';
     });
     this.inspectionConditions.set(condMap);
     this.inspectionObservations.set('');
@@ -3202,7 +3203,7 @@ export class ReturnsAdmin {
     this.inspectingReturn.set(null);
   }
 
-  updateInspectionCondition(detailId: number, condition: 'APTA_REINGRESO' | 'NO_APTA'): void {
+  updateInspectionCondition(detailId: number, condition: 'PENDIENTE_INSPECCION' | 'APTA_REINGRESO' | 'NO_APTA'): void {
     this.inspectionConditions.update((map) => ({
       ...map,
       [detailId]: condition,
@@ -3213,12 +3214,19 @@ export class ReturnsAdmin {
     const item = this.inspectingReturn();
     if (!item) return;
 
+    if (newState === 'COMPLETADA' && item.items.some((line) =>
+      (this.inspectionConditions()[line.id_detalle_devolucion] || 'PENDIENTE_INSPECCION') === 'PENDIENTE_INSPECCION'
+    )) {
+      this.error.set('Inspecciona todas las prendas antes de completar la devolución.');
+      return;
+    }
+
     const payload: ReturnStatusUpdatePayload = {
       estado: newState,
-      items: item.items.map((line) => ({
+      items: newState === 'COMPLETADA' ? item.items.map((line) => ({
         id_detalle_devolucion: line.id_detalle_devolucion,
-        estado_prenda: this.inspectionConditions()[line.id_detalle_devolucion] || 'APTA_REINGRESO',
-      })),
+        estado_prenda: this.inspectionConditions()[line.id_detalle_devolucion] as 'APTA_REINGRESO' | 'NO_APTA',
+      })) : undefined,
       observaciones: this.inspectionObservations().trim() || null,
     };
 

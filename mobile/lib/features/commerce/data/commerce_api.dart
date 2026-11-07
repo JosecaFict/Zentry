@@ -257,6 +257,38 @@ class CommerceApi {
     }
   }
 
+  Future<List<Map<String, dynamic>>> listReturns() async {
+    try {
+      final response = await _dio.get('/returns');
+      return (response.data as List? ?? [])
+          .map((item) => _asMap(item))
+          .toList();
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  Future<void> createReturn({
+    required int saleId,
+    required int detailId,
+    required int quantity,
+    required String kind,
+    required String reason,
+  }) async {
+    try {
+      await _dio.post('/returns', data: {
+        'id_venta': saleId,
+        'tipo_solicitud': kind,
+        'motivo': reason,
+        'items': [
+          {'id_detalle_venta': detailId, 'cantidad': quantity},
+        ],
+      });
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
   Future<List<int>> getOrderInvoicePdf(int orderId) async {  // [CU-12] Descargar factura en PDF
     try {
       final response = await _dio.get<List<int>>(

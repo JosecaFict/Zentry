@@ -126,6 +126,7 @@ export interface ShippingQuote {
 export interface ReturnRequest {
   id_devolucion: number;
   id_venta: number;
+  tipo_solicitud: 'DEVOLUCION' | 'CAMBIO_TALLA' | 'CAMBIO_COLOR' | 'CAMBIO_PRENDA' | 'REEMBOLSO' | 'CREDITO';
   id_cliente?: number | null;
   cliente_nombre?: string | null;
   motivo: string;
