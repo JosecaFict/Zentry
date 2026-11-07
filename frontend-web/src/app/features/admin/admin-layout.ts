@@ -4,10 +4,11 @@ import { AuthService } from '../../core/auth/auth.service';
 import { AdminNavGroup, visibleAdminNavigation } from './admin-navigation';
 import { NotificationBell } from '../../shared/components/notification-bell/notification-bell';
 import { TenantContextService } from '../../core/tenant/tenant-context.service';
+import { AdminAssistant } from './admin-assistant';
 
 @Component({
   selector: 'app-admin-layout',
-  imports: [RouterLink, RouterLinkActive, RouterOutlet, NotificationBell],
+  imports: [RouterLink, RouterLinkActive, RouterOutlet, NotificationBell, AdminAssistant],
   template: `
     <!-- THESIS: Un taller operativo de moda, no un mosaico SaaS; la tarea y el estado mandan. OWN-WORLD: papel frío, grafito, líneas cromadas y cobalto reservado a acción y selección. STORY: el equipo reconoce su alcance, entra al módulo permitido y actúa con contexto. FIRST VIEWPORT: rail lateral estable, cabecera de identidad y área de trabajo densa sin tarjetas decorativas. FORM: extensión Operate del sistema aprobado. FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance -->
     <div class="admin-shell" [class.sidebar-collapsed]="sidebarCollapsed()">
@@ -227,6 +228,7 @@ import { TenantContextService } from '../../core/tenant/tenant-context.service';
         }
         <main class="admin-main" id="contenido"><router-outlet /></main>
       </div>
+      <app-admin-assistant />
     </div>
   `,
 })

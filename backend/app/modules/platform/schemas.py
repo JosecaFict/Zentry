@@ -25,6 +25,7 @@ class TenantContextResponse(BaseModel):
     color_primario: str = "#064FE8"
     color_primario_oscuro: str = "#0039B8"
     estado: str
+    plan_codigo: str | None = None
     subscription_estado: str | None = None
     fecha_fin: date | None = None
     fecha_fin_gracia: date | None = None

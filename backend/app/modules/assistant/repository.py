@@ -91,8 +91,8 @@ class AssistantRepository:
             (
                 await self.session.execute(
                     text("""
-            SELECT id_mensaje, rol, contenido, created_at, producto_ids FROM (
-                SELECT id_mensaje, rol, contenido, created_at, producto_ids
+            SELECT id_mensaje, rol, contenido, created_at, producto_ids, requiere_reportes_ia FROM (
+                SELECT id_mensaje, rol, contenido, created_at, producto_ids, requiere_reportes_ia
                 FROM capricho.asistente_mensaje
                 WHERE id_conversacion = :id AND id_tenant = :tenant AND id_usuario = :user
                 ORDER BY id_mensaje DESC LIMIT :limit
@@ -113,21 +113,24 @@ class AssistantRepository:
         answer: str,
         model: str,
         product_ids: list[int] | None = None,
+        *,
+        report_restricted: bool = False,
     ) -> tuple[Message, Message]:
         await self._user_context()
         messages = []
-        for role, content, ids in (
-            ("USUARIO", question, []),
-            ("ASISTENTE", answer, product_ids or []),
+        for role, content, ids, restricted in (
+            ("USUARIO", question, [], False),
+            ("ASISTENTE", answer, product_ids or [], report_restricted),
         ):
             row = (
                 (
                     await self.session.execute(
                         text("""
                 INSERT INTO capricho.asistente_mensaje
-                    (id_conversacion, id_tenant, id_usuario, rol, contenido, producto_ids)
-                VALUES (:id, :tenant, :user, :role, :content, :product_ids)
-                RETURNING id_mensaje, rol, contenido, created_at, producto_ids
+                    (id_conversacion, id_tenant, id_usuario, rol, contenido,
+                     producto_ids, requiere_reportes_ia)
+                VALUES (:id, :tenant, :user, :role, :content, :product_ids, :restricted)
+                RETURNING id_mensaje, rol, contenido, created_at, producto_ids, requiere_reportes_ia
             """),
                         {
                             **self.scope,
@@ -135,6 +138,7 @@ class AssistantRepository:
                             "role": role,
                             "content": content,
                             "product_ids": ids,
+                            "restricted": restricted,
                         },
                     )
                 )

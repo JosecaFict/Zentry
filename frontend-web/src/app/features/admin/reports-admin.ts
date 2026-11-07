@@ -1,6 +1,7 @@
 import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { Branch } from '../../core/models/catalog.model';
@@ -283,6 +284,7 @@ import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
 })
 export class ReportsAdmin implements OnInit, OnDestroy {
   private readonly reportsService = inject(ReportsService);
+  private readonly route = inject(ActivatedRoute);
   private readonly catalogService = inject(CatalogService);
   readonly branches = signal<Branch[]>([]);
   readonly sales = signal<SalesReport | null>(null);
@@ -317,6 +319,11 @@ export class ReportsAdmin implements OnInit, OnDestroy {
   ngOnInit() {
     this.catalogService.branches().subscribe({ next: (items) => this.branches.set(items) });
     this.loadReports();
+    const question = this.route.snapshot.queryParamMap.get('pregunta')?.trim();
+    if (question) {
+      this.aiQuestion = question.slice(0, 500);
+      this.askAssistant();
+    }
   }
 
   ngOnDestroy() {

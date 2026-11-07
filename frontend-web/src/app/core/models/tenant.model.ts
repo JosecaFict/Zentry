@@ -6,6 +6,7 @@ export interface TenantBrand {
   color_primario: string;
   color_primario_oscuro: string;
   estado: string;
+  plan_codigo?: string | null;
   subscription_estado: string | null;
   fecha_fin: string | null;
   fecha_fin_gracia: string | null;

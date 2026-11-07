@@ -1,0 +1,75 @@
+@if (visible()) {
+  <div class="admin-advisor" [style.--chat-accent]="tenant.primaryColor()">
+    @if (open()) {
+      <section class="admin-advisor-panel" role="dialog" aria-modal="false" aria-label="Asistente de administración">
+        <header class="admin-advisor-header">
+          <div>
+            <h2>Asistente de administración</h2>
+            <p>{{ tenant.name() }} · Consultas y orientación</p>
+          </div>
+          <div class="admin-advisor-actions">
+            <button type="button" (click)="historyOpen.set(!historyOpen())" [attr.aria-expanded]="historyOpen()" aria-label="Conversaciones anteriores" title="Conversaciones anteriores">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.6-6.4M3 4v5h5"/><path d="M12 7v5l3 2"/></svg>
+            </button>
+            <button type="button" (click)="toggle()" aria-label="Ocultar asistente" title="Ocultar asistente">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+        </header>
+
+        @if (historyOpen()) {
+          <div class="admin-advisor-history">
+            <div class="admin-advisor-history-heading"><strong>Tus conversaciones</strong><button type="button" (click)="newConversation()">Nueva</button></div>
+            @if (loading()) { <p>Cargando…</p> }
+            @else if (!conversations().length) { <p>Aún no tienes conversaciones.</p> }
+            @else {
+              @for (conversation of conversations(); track conversation.id_conversacion) {
+                <button type="button" class="admin-advisor-history-item" (click)="select(conversation)">
+                  <span>{{ conversation.created_at.slice(0, 10) }}</span>
+                  <small>{{ conversation.estado === 'ARCHIVADA' ? 'Archivada' : 'Abrir conversación' }}</small>
+                </button>
+              }
+            }
+          </div>
+        } @else {
+          <div #messageList class="admin-advisor-messages" aria-live="polite" aria-relevant="additions text">
+            @if (loading()) { <p class="admin-advisor-status">Cargando conversación…</p> }
+            @else if (!messages().length) {
+              <div class="admin-advisor-welcome">
+                <h3>¿Qué necesitas revisar?</h3>
+                <p>Puedes consultarme sobre la operación de {{ tenant.name() }}.</p>
+                @if (professional()) {
+                  <button type="button" (click)="draft = '¿Cuáles fueron los productos más vendidos este mes?'; send()">Productos más vendidos</button>
+                  <button type="button" (click)="draft = '¿Qué productos tienen stock crítico?'; send()">Stock crítico</button>
+                } @else {
+                  <p class="admin-advisor-plan">Los reportes con datos de la empresa están disponibles en el plan Profesional.</p>
+                }
+              </div>
+            }
+            @for (message of messages(); track message.id_mensaje) {
+              <div class="admin-advisor-message" [class.is-user]="message.rol === 'USUARIO'">{{ message.contenido }}</div>
+            }
+            @if (busy()) { <p class="admin-advisor-status" role="status">Analizando tu consulta…</p> }
+          </div>
+          @if (professional()) {
+            <a routerLink="/admin/reportes" fragment="asistente-ia" [queryParams]="lastQuestion() ? { pregunta: lastQuestion() } : {}" class="admin-advisor-report-link" (click)="toggle()">Abrir en reportes para descargar PDF o Excel →</a>
+          }
+          @if (active()?.estado === 'ARCHIVADA') { <p class="admin-advisor-note">Esta conversación está archivada. Inicia una nueva para continuar.</p> }
+          @if (error()) { <p class="admin-advisor-error" role="alert">{{ error() }}</p> }
+          <form class="admin-advisor-composer" (submit)="$event.preventDefault(); send()">
+            <label class="sr-only" for="admin-advisor-question">Tu pregunta</label>
+            <textarea id="admin-advisor-question" name="question" rows="2" maxlength="4000" [(ngModel)]="draft" (keydown)="onKeydown($event)" [disabled]="loading() || busy()" placeholder="Escribe tu pregunta…"></textarea>
+            <button type="submit" [disabled]="!draft.trim() || loading() || busy()" aria-label="Enviar pregunta" title="Enviar pregunta">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4 18-7Z"/></svg>
+            </button>
+          </form>
+          @if (active()?.estado === 'ACTIVA') { <button type="button" class="admin-advisor-archive" (click)="archive()" [disabled]="busy()">Archivar conversación</button> }
+        }
+      </section>
+    }
+    <button type="button" class="admin-advisor-launcher" [attr.aria-expanded]="open()" [attr.aria-label]="open() ? 'Ocultar asistente de administración' : 'Abrir asistente de administración'" (click)="toggle()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10h10M7 14h6M12 3c5.5 0 9 3.8 9 8.5S17.5 20 12 20a11 11 0 0 1-4-.7L3 21l1.5-4.8A8.3 8.3 0 0 1 3 11.5C3 6.8 6.5 3 12 3Z"/></svg>
+      <span>Asistente</span>
+    </button>
+  </div>
+}

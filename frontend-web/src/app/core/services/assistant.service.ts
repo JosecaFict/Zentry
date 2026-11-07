@@ -49,8 +49,8 @@ export class AssistantService {
     return this.http.get<AssistantConversation[]>(this.base);
   }
 
-  create() {
-    return this.http.post<AssistantConversation>(this.base, { modo: 'CLIENTE' });
+  create(mode: 'CLIENTE' | 'EMPRESA' = 'CLIENTE') {
+    return this.http.post<AssistantConversation>(this.base, { modo: mode });
   }
 
   messages(conversationId: string) {

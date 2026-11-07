@@ -29,9 +29,15 @@ class PlatformService:
         self.repository = repository
 
     async def overview(self) -> PlatformOverview:
-        total, active, suspended, branches, expiring, grace, subscription_suspended = (
-            await self.repository.overview()
-        )
+        (
+            total,
+            active,
+            suspended,
+            branches,
+            expiring,
+            grace,
+            subscription_suspended,
+        ) = await self.repository.overview()
         return PlatformOverview(
             tenants_total=total,
             tenants_activos=active,
@@ -51,6 +57,7 @@ class PlatformService:
             )
         subscription_row = await self.repository.get_subscription(tenant_id)
         subscription = subscription_row[0] if subscription_row else None
+        plan = subscription_row[1] if subscription_row else None
         days = None
         if subscription and subscription.fecha_fin:
             days = (subscription.fecha_fin - date.today()).days
@@ -62,6 +69,7 @@ class PlatformService:
             color_primario=tenant.color_primario,
             color_primario_oscuro=tenant.color_primario_oscuro,
             estado=tenant.estado,
+            plan_codigo=plan.codigo if plan else None,
             subscription_estado=subscription.estado if subscription else None,
             fecha_fin=subscription.fecha_fin if subscription else None,
             fecha_fin_gracia=subscription.fecha_fin_gracia if subscription else None,

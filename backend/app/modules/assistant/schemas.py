@@ -47,6 +47,7 @@ class Message(BaseModel):
     contenido: str
     created_at: datetime
     producto_ids: list[int] = Field(default_factory=list, exclude=True)
+    requiere_reportes_ia: bool = Field(default=False, exclude=True)
     productos: list[AssistantProduct] = Field(default_factory=list)
 
 

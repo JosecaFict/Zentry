@@ -50,16 +50,8 @@ class AssistantService:
         if p.id_tenant is None or "SUPERADMIN" in p.roles:
             raise HTTPException(403, "Asistente no disponible para este usuario")
         if mode == "EMPRESA":
-            if (
-                "ADMIN" not in p.roles
-                or p.plan_codigo != "PROFESIONAL"
-                or not p.permite_reportes_ia
-                or not {"ventas.ver", "inventario.ver"}.issubset(p.permissions)
-            ):
-                raise HTTPException(
-                    403,
-                    "El asistente empresarial requiere el plan Profesional y permisos de reportes",
-                )
+            if "ADMIN" not in p.roles:
+                raise HTTPException(403, "El asistente empresarial es para administradores")
         elif mode == "CLIENTE":
             if "CLIENTE" not in p.roles or "ADMIN" in p.roles:
                 raise HTTPException(403, "El asesor de compras es para clientes")
@@ -98,7 +90,22 @@ class AssistantService:
         messages = await self.repo.messages(conversation_id)
         if conversation.modo == "CLIENTE":
             await self._attach_products(messages)
+        elif not self._can_report():
+            self._mask_report_messages(messages)
         return messages
+
+    def _can_report(self) -> bool:
+        return (
+            self.principal.plan_codigo == "PROFESIONAL"
+            and self.principal.permite_reportes_ia
+            and {"ventas.ver", "inventario.ver"}.issubset(self.principal.permissions)
+        )
+
+    @staticmethod
+    def _mask_report_messages(messages: list[Message]) -> None:
+        for item in messages:
+            if item.requiere_reportes_ia:
+                item.contenido = "Este reporte requiere el plan Profesional y permisos de reportes."
 
     async def archive(self, conversation_id: UUID) -> None:
         await self.get(conversation_id)
@@ -120,6 +127,10 @@ class AssistantService:
             raise HTTPException(503, "El asistente no está configurado")
         history = await self.repo.messages(conversation_id, limit=12)
         products: list[AssistantProduct] = []
+        can_report = conversation.modo == "EMPRESA" and self._can_report()
+        if conversation.modo == "EMPRESA" and not can_report:
+            self._mask_report_messages(history)
+        report_restricted = False
         if conversation.modo == "CLIENTE":
             prior_ids = next(
                 (item.producto_ids for item in reversed(history) if item.producto_ids), []
@@ -160,7 +171,28 @@ class AssistantService:
                 ensure_ascii=False,
             )
         else:
-            context = await self._business_context(question)
+            previous_question = next(
+                (item.contenido for item in reversed(history) if item.rol == "USUARIO"), None
+            )
+            report_question = self._business_report_intent(question)
+            followup = bool(
+                previous_question
+                and self._business_report_intent(previous_question)
+                and re.search(
+                    r"\b(?:anterior|antes|compar|y en|y del|y la|y el)\b", question.casefold()
+                )
+            )
+            context = (
+                await self._business_context(
+                    f"{previous_question}. Seguimiento: {question}" if followup else question
+                )
+                if can_report and (report_question or followup)
+                else json.dumps(
+                    {"reportes_habilitados": can_report, "datos_de_empresa": None},
+                    ensure_ascii=False,
+                )
+            )
+            report_restricted = bool(can_report and (report_question or followup))
         system = (
             "Responde en español usando exclusivamente los datos autorizados siguientes. "
             "Si falta información, dilo; no inventes cifras, productos, precios ni existencias. "
@@ -176,6 +208,19 @@ class AssistantService:
                 "Elige hasta tres IDs exclusivamente del catálogo recibido y pertinentes a "
                 "la pregunta. Si solo saludan, usa una pregunta amable y producto_ids vacío."
             )
+        elif not can_report:
+            system += (
+                "\nEres un asistente para la administración de una tienda. Puedes conversar y "
+                "orientar sobre procesos generales. No tienes acceso a cifras ni reportes de "
+                "esta empresa. Si piden un reporte o datos concretos, explica que los reportes "
+                "con IA requieren el plan Profesional y permisos de reportes."
+            )
+        else:
+            system += (
+                "\nEres un asistente para la administración de esta tienda. Conversa con "
+                "naturalidad. Si el contexto incluye un reporte, explica sus datos con claridad. "
+                "Si no incluye datos, responde solo orientación general y no inventes cifras."
+            )
         turns = [
             {"role": "user" if item.rol == "USUARIO" else "assistant", "content": item.contenido}
             for item in history
@@ -188,7 +233,18 @@ class AssistantService:
             else self.settings.gemini_chat_model
         )
         try:
-            if conversation.modo == "CLIENTE" and self._promotion_intent(question):
+            if (
+                conversation.modo == "EMPRESA"
+                and not can_report
+                and self._business_report_intent(question)
+            ):
+                answer = (
+                    "Puedo ayudarte con dudas generales de gestión. Para consultar datos y "
+                    "generar reportes de esta empresa necesitas el plan Profesional y permisos "
+                    "de reportes."
+                )
+                selected: list[AssistantProduct] = []
+            elif conversation.modo == "CLIENTE" and self._promotion_intent(question):
                 selected = products[:3]
                 answer = (
                     "Sí, encontré estas prendas con descuento vigente. "
@@ -235,15 +291,33 @@ class AssistantService:
                     answer, selected = raw, []
         except ProviderUnavailable as exc:
             raise HTTPException(503, "El asistente no pudo responder en este momento") from exc
-        user_message, assistant_message = await self.repo.append_exchange(
-            conversation_id,
-            question,
-            answer,
-            model,
-            [item.id_producto for item in selected],
-        )
+        if conversation.modo == "EMPRESA":
+            user_message, assistant_message = await self.repo.append_exchange(
+                conversation_id,
+                question,
+                answer,
+                model,
+                report_restricted=report_restricted,
+            )
+        else:
+            user_message, assistant_message = await self.repo.append_exchange(
+                conversation_id,
+                question,
+                answer,
+                model,
+                [item.id_producto for item in selected],
+            )
         assistant_message.productos = selected
         return MessageExchange(usuario=user_message, asistente=assistant_message)
+
+    @staticmethod
+    def _business_report_intent(question: str) -> bool:
+        return bool(
+            re.search(
+                r"\b(?:reporte|ventas?|vendid[oa]s?|vendi(?:mos|eron|[oó])|ingresos?|facturaci[oó]n|inventario|stock|clientes?|productos?|sucursales?)\b",
+                question.casefold(),
+            )
+        )
 
     @staticmethod
     def _promotion_intent(question: str) -> bool:

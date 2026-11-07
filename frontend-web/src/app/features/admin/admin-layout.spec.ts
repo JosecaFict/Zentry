@@ -6,6 +6,7 @@ import { of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthService } from '../../core/auth/auth.service';
 import { CommerceService } from '../../core/services/commerce.service';
+import { AssistantService } from '../../core/services/assistant.service';
 import { AdminLayout } from './admin-layout';
 
 describe('AdminLayout', () => {
@@ -44,6 +45,7 @@ describe('AdminLayout', () => {
         ]),
         { provide: AuthService, useValue: authServiceMock },
         { provide: CommerceService, useValue: commerceServiceMock },
+        { provide: AssistantService, useValue: { list: vi.fn(() => of([])) } },
       ],
     });
 

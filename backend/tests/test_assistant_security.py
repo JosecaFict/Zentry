@@ -34,13 +34,12 @@ def principal(
 @pytest.mark.parametrize(
     "user,mode",
     [
-        (principal(plan="BASICO", ai=False), "EMPRESA"),
         (principal(roles=frozenset({"CLIENTE"}), permissions=frozenset()), "EMPRESA"),
         (principal(), "CLIENTE"),
         (principal(roles=frozenset({"SUPERADMIN"}), tenant=None), "EMPRESA"),
     ],
 )
-def test_mode_authorization_rejects_cross_role_and_plan(user, mode):
+def test_mode_authorization_rejects_cross_role(user, mode):
     with pytest.raises(HTTPException) as exc:
         AssistantService(AsyncMock(), user).authorize(mode)
     assert exc.value.status_code == 403
@@ -50,6 +49,82 @@ def test_client_can_use_shopping_assistant():
     AssistantService(
         AsyncMock(), principal(roles=frozenset({"CLIENTE"}), permissions=frozenset())
     ).authorize("CLIENTE")
+
+
+def test_basic_admin_can_chat_without_report_entitlement():
+    AssistantService(
+        AsyncMock(), principal(plan="BASICO", ai=False, permissions=frozenset())
+    ).authorize("EMPRESA")
+
+
+@pytest.mark.asyncio
+async def test_basic_admin_report_question_does_not_query_business_data(monkeypatch):
+    service = AssistantService(
+        AsyncMock(), principal(plan="BASICO", ai=False, permissions=frozenset())
+    )
+    service.settings = SimpleNamespace(groq_api_key="test-key", groq_reports_model="test-model")
+    conversation = Conversation(
+        id_conversacion=uuid4(),
+        modo="EMPRESA",
+        proveedor="GROQ",
+        modelo="test-model",
+        estado="ACTIVA",
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+    service.get = AsyncMock(return_value=conversation)
+    service.repo.messages = AsyncMock(return_value=[])
+    service.repo.append_exchange = AsyncMock(
+        return_value=(
+            Message(
+                id_mensaje=1, rol="USUARIO", contenido="ventas", created_at="2026-01-01T00:00:00Z"
+            ),
+            Message(id_mensaje=2, rol="ASISTENTE", contenido="", created_at="2026-01-01T00:00:00Z"),
+        )
+    )
+    context = AsyncMock()
+    provider = AsyncMock()
+    monkeypatch.setattr(service, "_business_context", context)
+    monkeypatch.setattr("app.modules.assistant.service.answer_with_provider", provider)
+
+    await service.send(conversation.id_conversacion, "¿Cuánto vendimos este mes?")
+
+    assert "plan Profesional" in service.repo.append_exchange.await_args.args[2]
+    context.assert_not_awaited()
+    provider.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_basic_admin_cannot_read_saved_professional_report():
+    service = AssistantService(
+        AsyncMock(), principal(plan="BASICO", ai=False, permissions=frozenset())
+    )
+    conversation = Conversation(
+        id_conversacion=uuid4(),
+        modo="EMPRESA",
+        proveedor="GROQ",
+        modelo="test-model",
+        estado="ACTIVA",
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+    service.get = AsyncMock(return_value=conversation)
+    service.repo.messages = AsyncMock(
+        return_value=[
+            Message(
+                id_mensaje=2,
+                rol="ASISTENTE",
+                contenido="Ingresos: Bs 500",
+                requiere_reportes_ia=True,
+                created_at="2026-01-01T00:00:00Z",
+            )
+        ]
+    )
+
+    messages = await service.messages(conversation.id_conversacion)
+
+    assert "500" not in messages[0].contenido
+    assert "plan Profesional" in messages[0].contenido
 
 
 @pytest.mark.asyncio
