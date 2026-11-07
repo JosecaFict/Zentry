@@ -1,9 +1,10 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { PermissionService } from '../../core/permissions/permission.service';
 import { TenantContextService } from '../../core/tenant/tenant-context.service';
 import { NotificationBell } from '../../shared/components/notification-bell/notification-bell';
+import { CommerceService } from '../../core/services/commerce.service';
 
 @Component({
   selector: 'app-site-header',
@@ -38,7 +39,14 @@ import { NotificationBell } from '../../shared/components/notification-bell/noti
         <a routerLink="/catalogo" routerLinkActive="active" (click)="closeMenu()">Catálogo</a>
         @if (auth.currentUser()) {
           @if (!permissions.hasAdminAccess()) {
-            <a routerLink="/carrito" routerLinkActive="active" (click)="closeMenu()">Carrito</a>
+            <a class="nav-cart-link" routerLink="/carrito" routerLinkActive="active" (click)="closeMenu()"
+              [attr.aria-label]="commerce.cartCount() ? 'Carrito, ' + commerce.cartCount() + (commerce.cartCount() === 1 ? ' prenda' : ' prendas') : 'Carrito vacío'">
+              <span>Carrito</span>
+              @if (commerce.cartCount() > 0) {
+                <span class="nav-cart-count" aria-hidden="true">{{ commerce.cartCount() > 99 ? '99+' : commerce.cartCount() }}</span>
+              }
+            </a>
+            <span class="sr-only" role="status" aria-live="polite" aria-atomic="true">{{ commerce.cartCount() ? commerce.cartCount() + (commerce.cartCount() === 1 ? ' prenda en el carrito' : ' prendas en el carrito') : '' }}</span>
           }
           <app-notification-bell mode="public" />
           @if (permissions.hasAdminAccess()) {
@@ -89,16 +97,31 @@ import { NotificationBell } from '../../shared/components/notification-bell/noti
       </nav>
     </header>
   `,
+  styles: `
+    .nav-cart-link { display: inline-flex; align-items: center; gap: 7px; }
+    .nav-cart-count { display: inline-flex; justify-content: center; align-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--accent, #064fe8); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  `,
 })
 export class SiteHeader {
   readonly auth = inject(AuthService);
   readonly permissions = inject(PermissionService);
   readonly tenant = inject(TenantContextService);
+  readonly commerce = inject(CommerceService);
   private readonly router = inject(Router);
   readonly menuOpen = signal(false);
 
   constructor() {
     this.auth.restoreSession();
+    effect((onCleanup) => {
+      const user = this.auth.currentUser();
+      const tenantId = this.tenant.tenant()?.id_tenant;
+      const owner = user && tenantId && !this.permissions.hasAdminAccess() ? `${tenantId}:${user.id_usuario}` : '';
+      this.commerce.setCartOwner(owner);
+      if (owner) {
+        const request = this.commerce.cart().subscribe({ error: () => {} });
+        onCleanup(() => request.unsubscribe());
+      }
+    });
   }
 
   closeMenu(): void {
@@ -106,6 +129,7 @@ export class SiteHeader {
   }
   logout(): void {
     this.auth.logout();
+    this.commerce.setCartOwner('');
     this.closeMenu();
     void this.router.navigateByUrl('/');
   }

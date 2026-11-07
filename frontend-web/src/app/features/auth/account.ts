@@ -251,6 +251,18 @@ import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
                 </div>
                 <span class="service-tile__arrow">→</span>
               </a>
+              <a class="service-tile service-tile--returns" routerLink="/historial" [queryParams]="{ seccion: 'devoluciones' }">
+                <div class="service-tile__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 7h14m-4-4 4 4-4 4M20 17H6m4-4-4 4 4 4" />
+                  </svg>
+                </div>
+                <div class="service-tile__body">
+                  <h3>Cambios y devoluciones</h3>
+                  <p>Solicita un cambio de talla, color o prenda, o una devolución, y consulta su estado.</p>
+                </div>
+                <span class="service-tile__arrow" aria-hidden="true">→</span>
+              </a>
             </div>
           </article>
         </section>
@@ -354,6 +366,7 @@ import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
       }
     </main>
   `,
+  styles: `.service-tile--returns { grid-column: 1 / -1; }`,
 })
 export class Account implements OnInit {
   readonly auth = inject(AuthService);

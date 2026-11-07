@@ -1,5 +1,6 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, finalize, forkJoin, of } from 'rxjs';
@@ -1674,10 +1675,11 @@ export class AddressesPage {
 @Component({
   selector: 'app-history-page',
   imports: [DatePipe, BolivianosPipe, ReactiveFormsModule, StatusPanel],
+  styles: `.history-return-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0; } .history-return-actions p { flex: 1 1 260px; margin: 0; color: var(--ink-soft); line-height: 1.5; }`,
   template: `<section class="commerce-page page-shell">
     <header class="commerce-heading">
       <div>
-        <h1>Historial</h1>
+        <h1>{{ tab() === 'devoluciones' ? 'Cambios y devoluciones' : 'Historial' }}</h1>
         <p>Compras, reservas y devoluciones en un solo lugar.</p>
       </div>
     </header>
@@ -1691,9 +1693,15 @@ export class AddressesPage {
         [class.active]="tab() === 'devoluciones'"
         (click)="tab.set('devoluciones')"
       >
-        Devoluciones
+        Cambios y devoluciones
       </button>
     </div>
+    @if (tab() === 'devoluciones') {
+      <div class="history-return-actions">
+        <p>Para iniciar una solicitud, elige la compra y la prenda que quieres cambiar o devolver.</p>
+        <button type="button" class="button button--primary" (click)="tab.set('compras')">Solicitar cambio o devolución</button>
+      </div>
+    }
     @if (error()) {
       <p class="notice notice--error">{{ error() }}</p>
     }
@@ -1885,6 +1893,7 @@ export class HistoryPage {
   private readonly fb = inject(FormBuilder);
   private readonly commerce = inject(CommerceService);
   private readonly errors = inject(ApiErrorService);
+  private readonly route = inject(ActivatedRoute);
   readonly tab = signal<'compras' | 'reservas' | 'devoluciones'>('compras');
   readonly sales = signal<Sale[]>([]);
   readonly reservations = signal<Reservation[]>([]);
@@ -1902,6 +1911,10 @@ export class HistoryPage {
     requisitos_aceptados: [false, Validators.requiredTrue],
   });
   constructor() {
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const section = params.get('seccion');
+      this.tab.set(section === 'reservas' || section === 'devoluciones' ? section : 'compras');
+    });
     forkJoin({
       sales: this.commerce.purchaseHistory(),
       reservations: this.commerce.reservations(),

@@ -51,6 +51,42 @@ describe('CommerceService', () => {
     const status = http.expectOne(`${API_BASE_URL}/checkout/cs_test_capricho/status`);
     expect(status.request.method).toBe('GET');
     status.flush({ status: 'PAGADO', message: 'Confirmado', order: null });
+    http.expectOne(`${API_BASE_URL}/cart`).flush({ items: [], total: '0' });
+  });
+
+  it('keeps the total quantity in sync when adding, changing, removing and clearing', () => {
+    service.setCartOwner('7:1');
+    service.cart().subscribe();
+    http.expectOne(`${API_BASE_URL}/cart`).flush({ items: [{ cantidad: 2 }, { cantidad: 3 }] });
+    expect(service.cartCount()).toBe(5);
+    service.addCartItem(42).subscribe();
+    http.expectOne(`${API_BASE_URL}/cart/items`).flush({ items: [{ cantidad: 3 }, { cantidad: 3 }] });
+    expect(service.cartCount()).toBe(6);
+    service.updateCartItem(1, 1).subscribe();
+    http.expectOne(`${API_BASE_URL}/cart/items/1`).flush({ items: [{ cantidad: 1 }, { cantidad: 3 }] });
+    expect(service.cartCount()).toBe(4);
+    service.removeCartItem(1).subscribe();
+    http.expectOne(`${API_BASE_URL}/cart/items/1/remove`).flush({ items: [{ cantidad: 3 }] });
+    expect(service.cartCount()).toBe(3);
+    service.clearCart().subscribe();
+    http.expectOne(`${API_BASE_URL}/cart/clear`).flush({ items: [] });
+    expect(service.cartCount()).toBe(0);
+  });
+
+  it('ignores late responses from another user or tenant and stale initial loads', () => {
+    service.setCartOwner('7:1');
+    service.cart().subscribe();
+    const oldLoad = http.expectOne(`${API_BASE_URL}/cart`);
+    service.addCartItem(42).subscribe();
+    http.expectOne(`${API_BASE_URL}/cart/items`).flush({ items: [{ cantidad: 2 }] });
+    oldLoad.flush({ items: [{ cantidad: 1 }] });
+    expect(service.cartCount()).toBe(2);
+    service.addCartItem(43).subscribe();
+    const oldMutation = http.expectOne(`${API_BASE_URL}/cart/items`);
+    service.setCartOwner('8:2');
+    expect(service.cartCount()).toBe(0);
+    oldMutation.flush({ items: [{ cantidad: 3 }] });
+    expect(service.cartCount()).toBe(0);
   });
 
   it('updates an existing delivery address through FastAPI', () => {

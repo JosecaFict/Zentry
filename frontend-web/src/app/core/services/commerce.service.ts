@@ -1,5 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
+import { Observable, tap } from 'rxjs';
 import { API_BASE_URL } from '../config/api.config';
 import {
   ActivePromotionItem,
@@ -40,6 +41,30 @@ type Params = Record<string, string | number | boolean | null | undefined>;
 @Injectable({ providedIn: 'root' })
 export class CommerceService {
   private readonly http = inject(HttpClient);
+  private readonly cartCountState = signal(0);
+  readonly cartCount = this.cartCountState.asReadonly();
+  private cartOwner = '';
+  private cartRevision = 0;
+
+  setCartOwner(owner: string): void {
+    if (owner === this.cartOwner) return;
+    this.cartOwner = owner;
+    this.cartRevision++;
+    this.cartCountState.set(0);
+  }
+
+  private trackCart(request: Observable<Cart>, mutation = false): Observable<Cart> {
+    const owner = this.cartOwner;
+    const revision = mutation ? ++this.cartRevision : this.cartRevision;
+    return request.pipe(tap((cart) => {
+      if (owner !== this.cartOwner || revision !== this.cartRevision) return;
+      this.cartCountState.set((cart.items ?? []).reduce((total, item) => total + item.cantidad, 0));
+    }));
+  }
+
+  private refreshCartAfterCheckout(owner: string): void {
+    if (owner === this.cartOwner) this.cart().subscribe({ error: () => {} });
+  }
 
   private params(values?: Params): HttpParams {
     let params = new HttpParams();
@@ -52,7 +77,7 @@ export class CommerceService {
   }
 
   cart() {
-    return this.http.get<Cart>(`${API_BASE_URL}/cart`);
+    return this.trackCart(this.http.get<Cart>(`${API_BASE_URL}/cart`));
   }
   addCartItem(id_variante: number, cantidad = 1, id_sucursal?: number | null) {
     const payload: { id_variante: number; cantidad: number; id_sucursal?: number } = {
@@ -62,16 +87,16 @@ export class CommerceService {
     if (id_sucursal) {
       payload.id_sucursal = id_sucursal;
     }
-    return this.http.post<Cart>(`${API_BASE_URL}/cart/items`, payload);
+    return this.trackCart(this.http.post<Cart>(`${API_BASE_URL}/cart/items`, payload), true);
   }
   updateCartItem(id: number, cantidad: number) {
-    return this.http.patch<Cart>(`${API_BASE_URL}/cart/items/${id}`, { cantidad });
+    return this.trackCart(this.http.patch<Cart>(`${API_BASE_URL}/cart/items/${id}`, { cantidad }), true);
   }
   removeCartItem(id: number) {
-    return this.http.post<Cart>(`${API_BASE_URL}/cart/items/${id}/remove`, {});
+    return this.trackCart(this.http.post<Cart>(`${API_BASE_URL}/cart/items/${id}/remove`, {}), true);
   }
   clearCart() {
-    return this.http.post<Cart>(`${API_BASE_URL}/cart/clear`, {});
+    return this.trackCart(this.http.post<Cart>(`${API_BASE_URL}/cart/clear`, {}), true);
   }
   addresses() {
     return this.http.get<Address[]>(`${API_BASE_URL}/addresses`);
@@ -98,15 +123,19 @@ export class CommerceService {
     return this.http.post<StripeCheckoutSession>(`${API_BASE_URL}/checkout`, payload);
   }
   checkoutStatus(sessionId: string) {
+    const owner = this.cartOwner;
     return this.http.get<StripeCheckoutStatus>(
       `${API_BASE_URL}/checkout/${encodeURIComponent(sessionId)}/status`,
-    );
+    ).pipe(tap((result) => {
+      if (['PAGADO', 'CANCELADO', 'RECHAZADO'].includes(result.status)) this.refreshCartAfterCheckout(owner);
+    }));
   }
   cancelCheckout(sessionId: string) {
+    const owner = this.cartOwner;
     return this.http.post<void>(
       `${API_BASE_URL}/checkout/${encodeURIComponent(sessionId)}/cancel`,
       {},
-    );
+    ).pipe(tap(() => this.refreshCartAfterCheckout(owner)));
   }
   orders() {
     return this.http.get<Order[]>(`${API_BASE_URL}/orders`);
