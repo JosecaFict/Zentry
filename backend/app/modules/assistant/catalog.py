@@ -1,6 +1,7 @@
 """Read-only, tenant-scoped product facts for the shopping advisor."""
 
 import re
+import unicodedata
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -8,6 +9,44 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.assistant.schemas import AssistantProduct
 from app.modules.commerce.repository import CommerceRepository
+
+COLORS = (
+    "verde",
+    "azul",
+    "rojo",
+    "negro",
+    "blanco",
+    "gris",
+    "amarillo",
+    "rosa",
+    "rosado",
+    "morado",
+    "violeta",
+    "naranja",
+    "beige",
+    "marron",
+    "cafe",
+    "celeste",
+    "turquesa",
+)
+
+
+def normalized_words(value: str) -> str:
+    without_accents = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", value.casefold())
+        if not unicodedata.combining(char)
+    )
+    return " ".join(re.findall(r"[a-z]+", without_accents))
+
+
+def requested_color(question: str) -> str | None:
+    words = normalized_words(question)
+    return next((color for color in COLORS if re.search(rf"\b{color}\b", words)), None)
+
+
+def matches_color(product: AssistantProduct, color: str) -> bool:
+    return any(re.search(rf"\b{color}\b", normalized_words(name)) for name in product.colores)
 
 
 def shopping_filters(
@@ -129,11 +168,19 @@ class ShoppingCatalog:
         return products
 
     async def for_question(
-        self, question: str, prioritize_ids: list[int] | None = None, limit: int = 40
+        self,
+        question: str,
+        prioritize_ids: list[int] | None = None,
+        limit: int = 40,
+        restrict_to_prior: bool = False,
     ) -> list[AssistantProduct]:
         category, minimum, maximum, size = shopping_filters(question)
-        products = await self.available(category=category)
-        if prioritize_ids:
+        color = requested_color(question)
+        products = await self.available(
+            category=category,
+            ids=prioritize_ids if restrict_to_prior and prioritize_ids else None,
+        )
+        if prioritize_ids and not restrict_to_prior:
             previous = await self.for_ids(prioritize_ids)
             known = {item.id_producto for item in previous}
             products = previous + [item for item in products if item.id_producto not in known]
@@ -144,6 +191,7 @@ class ShoppingCatalog:
             and (minimum is None or item.precio >= minimum)
             and (maximum is None or item.precio <= maximum)
             and (size is None or size in item.tallas)
+            and (color is None or matches_color(item, color))
         ][:limit]
 
     async def for_ids(self, ids: list[int]) -> list[AssistantProduct]:

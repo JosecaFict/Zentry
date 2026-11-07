@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.modules.assistant.catalog import ShoppingCatalog, shopping_filters
+from app.modules.assistant.catalog import ShoppingCatalog, requested_color, shopping_filters
 from app.modules.assistant.providers import ProviderUnavailable, answer_with_provider
 from app.modules.assistant.repository import AssistantRepository
 from app.modules.assistant.schemas import AssistantProduct, Conversation, Message, MessageExchange
@@ -124,10 +124,17 @@ class AssistantService:
             prior_ids = next(
                 (item.producto_ids for item in reversed(history) if item.producto_ids), []
             )
+            refers_to_previous = bool(
+                prior_ids
+                and re.search(
+                    r"\b(?:estos|estas|mencionaste|mostraste|anteriores)\b", question.casefold()
+                )
+            )
             products = await ShoppingCatalog(self.session, self.principal.id_tenant).for_question(
                 question,
                 prioritize_ids=prior_ids,
                 limit=300 if self._promotion_intent(question) else 40,
+                restrict_to_prior=refers_to_previous,
             )
             if self._promotion_intent(question):
                 products = [item for item in products if item.descuento_porcentaje is not None][:40]
@@ -190,6 +197,24 @@ class AssistantService:
                     else "Por ahora no encontré prendas disponibles con descuentos vigentes. "
                     "¿Buscamos alguna prenda en particular?"
                 )
+            elif conversation.modo == "CLIENTE" and requested_color(question):
+                selected = products[:3]
+                color = requested_color(question)
+                if selected:
+                    answer = (
+                        f"Estas prendas tienen una variante disponible en color {color}. "
+                        "La foto puede mostrar otro color. ¿Revisamos alguna talla?"
+                    )
+                elif refers_to_previous:
+                    answer = (
+                        f"No encontré prendas disponibles en color {color} "
+                        "entre las que revisamos. ¿Quieres que busque otro color?"
+                    )
+                else:
+                    answer = (
+                        f"No encontré prendas disponibles en color {color} ahora mismo. "
+                        "¿Quieres que busque otro color?"
+                    )
             elif (
                 conversation.modo == "CLIENTE" and not products and self._shopping_intent(question)
             ):
@@ -235,6 +260,7 @@ class AssistantService:
         filters = shopping_filters(question)
         return bool(
             any(value is not None for value in filters)
+            or requested_color(question) is not None
             or any(
                 word in normalized
                 for word in ("busco", "recomienda", "recomendación", "prenda", "ropa", "comprar")

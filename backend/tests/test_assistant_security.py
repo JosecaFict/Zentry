@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.modules.assistant.catalog import shopping_filters
+from app.modules.assistant.catalog import ShoppingCatalog, requested_color, shopping_filters
 from app.modules.assistant.providers import ProviderUnavailable, answer_with_provider
 from app.modules.assistant.schemas import AssistantProduct, Conversation, Message
 from app.modules.assistant.service import AssistantService
@@ -147,6 +147,93 @@ def test_shopping_filters_extract_category_budget_and_size():
     assert shopping_filters(
         "Quería recomendación de polera rondando precio de 200 a máximo 300 Bs en talla M"
     ) == ("POLERA", 200, 300, "M")
+
+
+def test_requested_color_recognizes_green_without_matching_other_words():
+    assert requested_color("¿Cuál de estos tiene color verde?") == "verde"
+    assert requested_color("¿Tienes algo café?") == "cafe"
+    assert requested_color("¿Cuál es el precio?") is None
+
+
+@pytest.mark.asyncio
+async def test_color_followup_filters_only_previous_products():
+    catalog = ShoppingCatalog(AsyncMock(), 7)
+    blue = AssistantProduct(
+        id_producto=1,
+        nombre="Polo azul",
+        categoria="POLO",
+        marca="Marca",
+        precio="200",
+        imagen_url=None,
+        tallas=["M"],
+        colores=["Azul"],
+        permite_vestidor=False,
+    )
+    green = blue.model_copy(
+        update={"id_producto": 2, "nombre": "Polo verde", "colores": ["Verde oliva"]}
+    )
+    catalog.available = AsyncMock(return_value=[blue, green])
+
+    result = await catalog.for_question(
+        "¿Cuál de estos tiene color verde?",
+        prioritize_ids=[1, 2],
+        restrict_to_prior=True,
+    )
+
+    assert result == [green]
+    catalog.available.assert_awaited_once_with(category=None, ids=[1, 2])
+
+
+@pytest.mark.asyncio
+async def test_color_followup_without_match_does_not_claim_green_product(monkeypatch):
+    service = AssistantService(
+        AsyncMock(), principal(roles=frozenset({"CLIENTE"}), permissions=frozenset())
+    )
+    service.settings = SimpleNamespace(
+        gemini_api_key="test-key", gemini_chat_model="gemini-3.5-flash"
+    )
+    conversation = Conversation(
+        id_conversacion=uuid4(),
+        modo="CLIENTE",
+        proveedor="GEMINI",
+        modelo="gemini-3.5-flash",
+        estado="ACTIVA",
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+    )
+    previous = Message(
+        id_mensaje=2,
+        rol="ASISTENTE",
+        contenido="Mira estas opciones.",
+        created_at="2026-01-01T00:00:00Z",
+        producto_ids=[7],
+    )
+    service.get = AsyncMock(return_value=conversation)
+    service.repo.messages = AsyncMock(return_value=[previous])
+    service.repo.append_exchange = AsyncMock(
+        return_value=(
+            Message(
+                id_mensaje=3, rol="USUARIO", contenido="verde", created_at="2026-01-01T00:00:00Z"
+            ),
+            Message(id_mensaje=4, rol="ASISTENTE", contenido="", created_at="2026-01-01T00:00:00Z"),
+        )
+    )
+    catalog = AsyncMock(return_value=[])
+    monkeypatch.setattr("app.modules.assistant.service.ShoppingCatalog.for_question", catalog)
+    provider = AsyncMock()
+    monkeypatch.setattr("app.modules.assistant.service.answer_with_provider", provider)
+
+    result = await service.send(conversation.id_conversacion, "¿Cuál de estos tiene color verde?")
+
+    assert result.asistente.productos == []
+    assert "No encontré" in service.repo.append_exchange.await_args.args[2]
+    catalog.assert_awaited_once_with(
+        "¿Cuál de estos tiene color verde?",
+        prioritize_ids=[7],
+        limit=40,
+        restrict_to_prior=True,
+    )
+    provider.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
