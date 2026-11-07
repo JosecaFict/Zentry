@@ -108,4 +108,15 @@ describe('ShoppingAssistant', () => {
     expect(card.textContent).toContain('Antes');
     expect(card.querySelector('a').getAttribute('href')).toBe('/productos/7');
   });
+
+  it('offers voice dictation and explains when the browser has no microphone API', () => {
+    const { fixture } = setup();
+    fixture.componentInstance.toggle();
+    fixture.detectChanges();
+    const microphone = fixture.nativeElement.querySelector('[aria-label="Dictar pregunta"]') as HTMLButtonElement;
+    expect(microphone).not.toBeNull();
+    microphone.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Este navegador no permite grabar audio');
+  });
 });

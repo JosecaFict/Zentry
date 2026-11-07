@@ -109,11 +109,18 @@
           }
           <form class="advisor-composer" (submit)="$event.preventDefault(); send()">
             <label class="sr-only" for="advisor-message">Escribe tu pregunta</label>
-            <textarea id="advisor-message" name="advisor-message" rows="2" maxlength="4000" [(ngModel)]="draft" (keydown)="onComposerKeydown($event)" [disabled]="busy() || loading()" placeholder="Pregúntame por prendas, tallas o colores…"></textarea>
-            <button type="submit" class="advisor-send" [disabled]="!draft.trim() || busy() || loading()" aria-label="Enviar mensaje" title="Enviar mensaje">
+            <textarea id="advisor-message" name="advisor-message" rows="2" maxlength="4000" [(ngModel)]="draft" (keydown)="onComposerKeydown($event)" [disabled]="busy() || loading() || voiceRecording() || voiceTranscribing()" placeholder="Pregúntame por prendas, tallas o colores…"></textarea>
+            <button type="button" class="advisor-voice" [class.is-recording]="voiceRecording()" (click)="toggleVoiceRecording()" [disabled]="busy() || loading() || voiceTranscribing()" [attr.aria-label]="voiceRecording() ? 'Detener grabación' : 'Dictar pregunta'" [attr.aria-pressed]="voiceRecording()" [title]="voiceRecording() ? 'Detener grabación' : 'Dictar pregunta'">
+              @if (voiceRecording()) { <span class="advisor-voice-stop" aria-hidden="true"></span> }
+              @else { <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg> }
+            </button>
+            <button type="submit" class="advisor-send" [disabled]="!draft.trim() || busy() || loading() || voiceRecording() || voiceTranscribing()" aria-label="Enviar mensaje" title="Enviar mensaje">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4 18-7Z"/></svg>
             </button>
           </form>
+          @if (voiceRecording() || voiceTranscribing() || voiceMessage()) {
+            <p class="advisor-voice-status" role="status">{{ voiceRecording() ? 'Grabando… toca el micrófono para terminar' : voiceTranscribing() ? 'Transcribiendo…' : voiceMessage() }}</p>
+          }
           @if (active() && active()?.estado === 'ACTIVA') {
             <button type="button" class="advisor-archive" (click)="archive()" [disabled]="busy()">Archivar conversación</button>
           }

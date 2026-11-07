@@ -56,8 +56,8 @@ const DASHBOARD_QUICK_LINKS: DashboardQuickLink[] = [
     permissions: ['productos.ver', 'productos.crear', 'productos.editar'],
   },
   {
-    label: 'Reportes',
-    description: 'Analizar resultados',
+    label: 'Asistente de reportes',
+    description: 'Preguntar, dictar y descargar PDF o Excel',
     path: '/admin/reportes',
     icon: 'reports',
     permissions: ['ventas.ver'],
@@ -97,6 +97,7 @@ interface DonutSegment {
           <p>
             Monitoreo en tiempo real de facturación, flujo de pedidos en tienda y probador virtual.
           </p>
+          <a routerLink="/admin/reportes" fragment="asistente-ia" class="dashboard-assistant-link">Preguntar al asistente de reportes →</a>
         </div>
 
         <div class="dashboard-toolbar">

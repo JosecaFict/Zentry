@@ -1,12 +1,14 @@
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 
 from app.modules.assistant.catalog import ShoppingCatalog, requested_color, shopping_filters
 from app.modules.assistant.providers import ProviderUnavailable, answer_with_provider
+from app.modules.assistant.router import transcribe_customer_question
 from app.modules.assistant.schemas import AssistantProduct, Conversation, Message
 from app.modules.assistant.service import AssistantService
 
@@ -48,6 +50,27 @@ def test_client_can_use_shopping_assistant():
     AssistantService(
         AsyncMock(), principal(roles=frozenset({"CLIENTE"}), permissions=frozenset())
     ).authorize("CLIENTE")
+
+
+@pytest.mark.asyncio
+async def test_customer_voice_transcribes_only_after_authorization():
+    transcriber = SimpleNamespace(transcribe=AsyncMock(return_value="Busco una polera verde"))
+    audio = UploadFile(
+        file=BytesIO(b"audio-data"),
+        filename="consulta.webm",
+        headers={"content-type": "audio/webm"},
+    )
+    customer = AssistantService(
+        AsyncMock(), principal(roles=frozenset({"CLIENTE"}), permissions=frozenset())
+    )
+    result = await transcribe_customer_question(customer, transcriber, audio)
+    assert result.texto == "Busco una polera verde"
+    transcriber.transcribe.assert_awaited_once_with("consulta.webm", "audio/webm", b"audio-data")
+
+    admin = AssistantService(AsyncMock(), principal())
+    with pytest.raises(HTTPException) as exc:
+        await transcribe_customer_question(admin, transcriber, audio)
+    assert exc.value.status_code == 403
 
 
 @pytest.mark.asyncio

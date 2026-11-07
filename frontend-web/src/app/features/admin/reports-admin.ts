@@ -43,7 +43,7 @@ import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
         <button type="submit" [disabled]="loading() || !dateFrom || !dateTo">Aplicar filtros</button>
       </form>
 
-      <section class="ai-assistant" aria-labelledby="ai-report-title">
+      <section id="asistente-ia" class="ai-assistant" aria-labelledby="ai-report-title">
         <div class="ai-copy">
           <span>PLAN PROFESIONAL · ASISTENTE DE IA</span>
           <h2 id="ai-report-title">Pregunta por tu operación</h2>

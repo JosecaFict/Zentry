@@ -1,9 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.db.session import get_db_session
 from app.modules.assistant.schemas import (
     Conversation,
@@ -14,6 +15,9 @@ from app.modules.assistant.schemas import (
 )
 from app.modules.assistant.service import AssistantService
 from app.modules.auth.dependencies import CurrentPrincipal, get_current_principal
+from app.modules.reports.dependencies import get_speech_transcriber
+from app.modules.reports.schemas import VoiceTranscriptionResponse
+from app.modules.reports.speech import GroqSpeechTranscriber, SpeechTranscriptionError
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
@@ -26,6 +30,45 @@ def service(
 
 
 Assistant = Annotated[AssistantService, Depends(service)]
+SpeechTranscriber = Annotated[GroqSpeechTranscriber | None, Depends(get_speech_transcriber)]
+
+
+@router.post("/transcribe", response_model=VoiceTranscriptionResponse)
+async def transcribe_customer_question(
+    assistant: Assistant,
+    transcriber: SpeechTranscriber,
+    audio: Annotated[UploadFile, File()],
+):
+    assistant.authorize("CLIENTE")
+    if transcriber is None:
+        raise HTTPException(503, "La consulta por voz no está configurada")
+    content_type = (audio.content_type or "").lower().split(";", 1)[0]
+    if content_type not in {
+        "audio/flac",
+        "audio/m4a",
+        "audio/mp4",
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/ogg",
+        "audio/wav",
+        "audio/webm",
+        "audio/x-m4a",
+        "audio/x-wav",
+    }:
+        raise HTTPException(415, "El formato de audio no es compatible")
+    max_bytes = get_settings().voice_max_file_size_mb * 1024 * 1024
+    content = await audio.read(max_bytes + 1)
+    if not content:
+        raise HTTPException(422, "La grabación está vacía")
+    if len(content) > max_bytes:
+        raise HTTPException(413, "La grabación supera el tamaño permitido")
+    try:
+        result = await transcriber.transcribe(
+            audio.filename or "consulta.webm", content_type, content
+        )
+    except SpeechTranscriptionError as exc:
+        raise HTTPException(503, "No pudimos transcribir la grabación en este momento") from exc
+    return VoiceTranscriptionResponse(texto=result)
 
 
 @router.post("/conversations", response_model=Conversation, status_code=status.HTTP_201_CREATED)

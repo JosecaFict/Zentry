@@ -99,7 +99,7 @@ export const ADMIN_NAVIGATION: AdminNavGroup[] = [
   {
     label: 'Análisis',
     items: [
-      { label: 'Reportes comerciales', path: '/admin/reportes', permissions: ['ventas.ver'] },
+      { label: 'Reportes y asistente IA', path: '/admin/reportes', permissions: ['ventas.ver'] },
       {
         label: 'Analítica inteligente',
         path: '/admin/analitica',

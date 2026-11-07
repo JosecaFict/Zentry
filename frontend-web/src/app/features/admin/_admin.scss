@@ -410,6 +410,16 @@
   margin: 0;
   color: var(--ink-soft);
 }
+.dashboard-assistant-link {
+  display: inline-flex;
+  margin-top: 14px;
+  color: var(--accent-dark);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.dashboard-assistant-link:focus-visible { outline: 3px solid var(--accent-dark); outline-offset: 4px; }
 .eyebrow {
   margin: 0 0 7px !important;
   color: var(--accent-dark) !important;

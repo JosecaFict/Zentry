@@ -63,6 +63,13 @@ export class AssistantService {
     });
   }
 
+  transcribe(audio: Blob) {
+    const form = new FormData();
+    const extension = audio.type.includes('ogg') ? 'ogg' : audio.type.includes('mp4') ? 'm4a' : 'webm';
+    form.append('audio', audio, `consulta.${extension}`);
+    return this.http.post<{ texto: string }>(`${API_BASE_URL}/assistant/transcribe`, form);
+  }
+
   archive(conversationId: string) {
     return this.http.post<void>(`${this.base}/${conversationId}/archive`, {});
   }

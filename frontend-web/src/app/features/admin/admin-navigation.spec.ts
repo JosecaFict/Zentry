@@ -16,7 +16,7 @@ describe('admin navigation permissions', () => {
       'Clientes',
       'Devoluciones',
       'Notificaciones',
-      'Reportes comerciales',
+      'Reportes y asistente IA',
       'Historial de ventas',
     ]);
   });

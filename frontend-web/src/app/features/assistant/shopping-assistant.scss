@@ -51,6 +51,12 @@
 .advisor-send { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border: 0; border-radius: 8px; background: var(--advisor-accent); color: var(--advisor-accent-text); }
 .advisor-send:hover { background: var(--advisor-accent-dark); }
 .advisor-send svg { width: 19px; height: 19px; }
+.advisor-voice { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border: 1px solid #cbd0d6; border-radius: 8px; background: #fff; color: #343b46; cursor: pointer; }
+.advisor-voice:hover { background: #f3f5f7; }
+.advisor-voice.is-recording { border-color: #b42318; background: #fff0ee; color: #b42318; }
+.advisor-voice svg { width: 19px; height: 19px; }
+.advisor-voice-stop { width: 13px; height: 13px; border-radius: 3px; background: currentColor; }
+.advisor-voice-status { margin: -4px 14px 10px; color: #565d67; font-size: 11px; }
 .advisor-archive { align-self: center; margin: 0 0 10px; padding: 2px; border: 0; background: transparent; color: #565d67; font-size: 11px !important; text-decoration: underline; text-underline-offset: 3px; }
 .advisor-history { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 16px; }
 .history-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
