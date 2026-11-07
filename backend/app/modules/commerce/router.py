@@ -44,6 +44,7 @@ from app.modules.commerce.schemas import (
     ReturnCreate,
     ReturnResponse,
     ReturnStatusUpdate,
+    ReturnSettlement,
     SaleCreate,
     SaleResponse,
     SaleReturnInspectionResponse,
@@ -389,7 +390,32 @@ async def create_admin_return(
     )
 
 
-@router.patch("/admin/returns/{return_id}/status", response_model=ReturnResponse)  # [CU-14] Aprobar/rechazar devolución y emitir nota de crédito
+@router.post("/admin/returns/{return_id}/quote")
+async def quote_return(
+    return_id: int,
+    payload: ReturnSettlement,
+    principal: Annotated[CurrentPrincipal, Depends(require_permission("ventas.crear"))],
+    service: Service,
+):
+    return await service.quote_return(
+        principal.user.id_usuario, return_id, payload, all_branches="ADMIN" in principal.roles,
+    )
+
+
+@router.get("/returns/{return_id}/receipt")
+async def get_return_receipt(return_id: int, principal: Authenticated, service: Service):
+    pdf = await service.get_return_receipt(
+        principal.user.id_usuario, return_id,
+        operational="ventas.ver" in principal.permissions or "ADMIN" in principal.roles,
+        all_branches="ADMIN" in principal.roles,
+    )
+    return Response(pdf, media_type="application/pdf", headers={
+        "Content-Disposition": f'attachment; filename="devolucion-{return_id}.pdf"',
+        "Cache-Control": "no-store",
+    })
+
+
+@router.patch("/admin/returns/{return_id}/status", response_model=ReturnResponse)
 async def update_return_status(
     return_id: int,
     payload: ReturnStatusUpdate,

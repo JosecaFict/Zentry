@@ -73,6 +73,9 @@ export interface Sale {
   costo_envio: string;
   total: string;
   fecha_venta: string;
+  fecha_inicio_devolucion?: string | null;
+  fecha_limite_devolucion?: string | null;
+  devolucion_habilitada?: boolean;
   items: CommerceLine[];
 }
 
@@ -133,6 +136,8 @@ export interface ReturnRequest {
   estado: string;
   fecha_solicitud: string;
   fecha_resolucion: string | null;
+  id_sucursal?: number | null;
+  cierre?: ReturnReceipt | null;
   items: Array<{
     id_detalle_devolucion: number;
     id_detalle_venta: number;
@@ -145,6 +150,52 @@ export interface ReturnRequest {
   }>;
 }
 
+export interface ReturnChecklist {
+  comprobante_verificado: boolean;
+  sin_uso: boolean;
+  sin_lavado: boolean;
+  etiquetas_conservadas: boolean;
+  sin_danos_cliente: boolean;
+}
+
+export interface ReturnSettlementPayload {
+  tipo: 'CAMBIO' | 'REEMBOLSO';
+  reemplazos: Array<{ id_detalle_devolucion: number; id_variante: number }>;
+  monto_confirmado?: string;
+  medio?: 'EFECTIVO' | 'TRANSFERENCIA' | 'QR' | 'TARJETA' | null;
+  referencia?: string | null;
+}
+
+export interface ReturnQuote {
+  tipo: 'CAMBIO' | 'REEMBOLSO';
+  importe_devuelto: string;
+  importe_reemplazos: string;
+  diferencia: string;
+  accion: 'COBRAR' | 'REEMBOLSAR' | 'SIN_DIFERENCIA';
+  monto: string;
+  items: Array<{
+    id_detalle_devolucion: number;
+    id_variante_original: number;
+    cantidad: number;
+    importe_original: string;
+    id_variante?: number;
+    producto?: string;
+    talla?: string;
+    color?: string;
+    importe_reemplazo?: string;
+    conserva_precio?: boolean;
+  }>;
+}
+
+export interface ReturnReceipt extends ReturnQuote {
+  comprobante: string;
+  fecha: string;
+  medio: string | null;
+  referencia: string | null;
+  notas_entrada: number[];
+  notas_salida: number[];
+}
+
 export interface ReturnItemConditionUpdate {
   id_detalle_devolucion: number;
   estado_prenda: 'APTA_REINGRESO' | 'NO_APTA';
@@ -154,6 +205,8 @@ export interface ReturnStatusUpdatePayload {
   estado: 'PENDIENTE' | 'APROBADA' | 'COMPLETADA' | 'RECHAZADA';
   items?: ReturnItemConditionUpdate[];
   observaciones?: string | null;
+  checklist?: ReturnChecklist;
+  resolucion?: ReturnSettlementPayload;
 }
 
 export interface SaleReturnLineInspection {
@@ -192,6 +245,7 @@ export interface SaleReturnInspectionResponse {
 
 export interface AdminReturnCreate {
   id_venta: number;
+  tipo_solicitud?: ReturnRequest['tipo_solicitud'];
   motivo: string;
   items: Array<{
     id_detalle_venta: number;

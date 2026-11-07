@@ -14,6 +14,9 @@ import {
   SaleReturnInspectionResponse,
   SaleReturnLineInspection,
   ReturnStatusUpdatePayload,
+  ReturnChecklist,
+  ReturnQuote,
+  ReturnSettlementPayload,
 } from '../../core/models/commerce.model';
 import { ApiErrorService } from '../../core/services/api-error.service';
 import { CatalogService } from '../../core/services/catalog.service';
@@ -2823,6 +2826,14 @@ export class OrdersAdmin {
                 </div>
 
                 <!-- Motivo -->
+                <label class="field"><span>Solicitud del cliente</span>
+                  <select [value]="modalTipoSolicitud()" (change)="modalTipoSolicitud.set($any($event.target).value)">
+                    <option value="CAMBIO_TALLA">Cambio de talla</option>
+                    <option value="CAMBIO_COLOR">Cambio de color</option>
+                    <option value="CAMBIO_PRENDA">Cambio de prenda</option>
+                    <option value="REEMBOLSO">Reembolso</option>
+                  </select>
+                </label>
                 <label class="field">
                   <span>Motivo de la Devolución *</span>
                   <input
@@ -2833,17 +2844,7 @@ export class OrdersAdmin {
                   />
                 </label>
 
-                <!-- Checkbox de Procesamiento Inmediato -->
-                <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer;">
-                  <input
-                    type="checkbox"
-                    [checked]="modalCompletarInmediato()"
-                    (change)="modalCompletarInmediato.set($any($event.target).checked)"
-                  />
-                  <span>
-                    <strong>Completar inmediatamente en mostrador</strong> (reintegra stock físico en sucursal para prendas aptas).
-                  </span>
-                </label>
+                <p>La solicitud se registrará pendiente. Luego podrás inspeccionar las prendas y cerrar el cambio o reembolso desde su detalle.</p>
               }
             </div>
 
@@ -2902,6 +2903,7 @@ export class OrdersAdmin {
             </header>
 
             <div style="padding: 1.25rem 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; overflow-y: auto; max-height: 70vh;">
+              @if (error()) { <p class="notice notice--error" role="alert">{{ error() }}</p> }
               <!-- Resumen de Cliente y Estado -->
               <div class="counter-sale-grid">
                 <div class="metric-item">
@@ -2987,6 +2989,87 @@ export class OrdersAdmin {
               </div>
 
               <!-- Banner de Impacto en Inventario -->
+              @if (item.estado === 'APROBADA') {
+                <fieldset>
+                  <legend>Requisitos de recepción</legend>
+                  @for (requirement of returnRequirements; track requirement.key) {
+                    <label style="display: flex; align-items: center; gap: 10px; padding: 8px 0;">
+                      <input type="checkbox" [checked]="receiptChecklist()[requirement.key]"
+                        (change)="setReceiptRequirement(requirement.key, $any($event.target).checked)" />
+                      {{ requirement.label }}
+                    </label>
+                  }
+                </fieldset>
+                <label class="field"><span>Resolución</span>
+                  <select [value]="settlementType()" (change)="setSettlementType($any($event.target).value)">
+                    <option value="CAMBIO">Entregar otra talla, color o prenda</option>
+                    <option value="REEMBOLSO">Registrar reembolso</option>
+                  </select>
+                </label>
+                @if (settlementType() === 'CAMBIO') {
+                  <p>La misma prenda conserva el importe pagado. Otra prenda usa su precio vigente, con la promoción aplicable. Solo se muestran variantes con stock en esta sucursal.</p>
+                  <label class="field"><span>Filtrar prendas de esta página</span>
+                    <input type="search" [value]="replacementSearch()" (input)="replacementSearch.set($any($event.target).value)" />
+                  </label>
+                  <div style="display: flex; gap: 12px; align-items: center;">
+                    <button type="button" class="button button--quiet" [disabled]="replacementPage() <= 1 || replacementLoading()" (click)="loadReplacementProducts(replacementPage() - 1)">Anterior</button>
+                    <span>Página {{ replacementPage() }} de {{ replacementPages() }}</span>
+                    <button type="button" class="button button--quiet" [disabled]="replacementPage() >= replacementPages() || replacementLoading()" (click)="loadReplacementProducts(replacementPage() + 1)">Siguiente</button>
+                  </div>
+                  @if (replacementLoading()) { <p role="status">Cargando existencias…</p> }
+                  @for (line of item.items; track line.id_detalle_devolucion) {
+                    <label class="field"><span>Reemplazo de {{ line.producto }} · {{ line.cantidad }} u.</span>
+                      <select [value]="replacementSelections()[line.id_detalle_devolucion] || ''"
+                        (change)="selectReplacement(line.id_detalle_devolucion, $any($event.target).value)">
+                        <option value="">Seleccionar variante</option>
+                        @if (selectedReplacementLabels()[line.id_detalle_devolucion]; as selectedLabel) {
+                          <option [value]="replacementSelections()[line.id_detalle_devolucion]">{{ selectedLabel }}</option>
+                        }
+                        @for (option of replacementOptions(); track option.id) {
+                          @if (option.id !== line.id_variante && option.id !== replacementSelections()[line.id_detalle_devolucion]) {
+                            <option [value]="option.id" [disabled]="option.stock < line.cantidad">{{ option.label }}</option>
+                          }
+                        }
+                      </select>
+                    </label>
+                  }
+                }
+                <button type="button" class="button button--secondary" [disabled]="saving() || quoting()" (click)="quoteSettlement()">{{ quoting() ? 'Calculando…' : 'Calcular diferencia' }}</button>
+                @if (settlementQuote(); as quote) {
+                  <div role="status">
+                    <p>Importe reconocido: <strong>{{ quote.importe_devuelto | bolivianos }}</strong></p>
+                    <p>Reemplazos: <strong>{{ quote.importe_reemplazos | bolivianos }}</strong></p>
+                    <p><strong>{{ quote.accion === 'COBRAR' ? 'Cobrar al cliente' : quote.accion === 'REEMBOLSAR' ? 'Devolver al cliente' : 'Sin diferencia de precio' }}: {{ quote.monto | bolivianos }}</strong></p>
+                  </div>
+                  @if (Number(quote.monto) > 0) {
+                    <p>Registra el movimiento después de realizar el cobro o reembolso. Esta pantalla no ejecuta transferencias ni devoluciones automáticas de tarjeta.</p>
+                    <label class="field"><span>Medio utilizado</span>
+                      <select [value]="settlementMedium()" (change)="settlementMedium.set($any($event.target).value); settlementConfirmed.set(false)">
+                        <option value="EFECTIVO">Efectivo</option><option value="TRANSFERENCIA">Transferencia</option>
+                        <option value="QR">QR</option><option value="TARJETA">Tarjeta / pasarela</option>
+                      </select>
+                    </label>
+                    <label class="field"><span>Referencia del comprobante (obligatoria salvo efectivo)</span>
+                      <input maxlength="120" [value]="settlementReference()" (input)="settlementReference.set($any($event.target).value); settlementConfirmed.set(false)" />
+                    </label>
+                  }
+                  <label style="display: flex; gap: 10px; align-items: center; padding: 12px 0;">
+                    <input type="checkbox" [checked]="settlementConfirmed()" (change)="settlementConfirmed.set($any($event.target).checked)" />
+                    Confirmo la entrega del reemplazo y/o la liquidación de la diferencia indicada.
+                  </label>
+                }
+              }
+              @if (item.cierre; as receipt) {
+                <div>
+                  <h3>Comprobante {{ receipt.comprobante }}</h3>
+                  <p>{{ receipt.tipo }} · {{ receipt.accion }} · {{ receipt.monto | bolivianos }}</p>
+                  @for (line of receipt.items; track line.id_detalle_devolucion) {
+                    @if (line.producto) { <p>Entregado: {{ line.producto }} · {{ line.talla }} / {{ line.color }} × {{ line.cantidad }}</p> }
+                  }
+                  <p>Notas de entrada: {{ receipt.notas_entrada.join(', ') || 'Sin reingreso apto' }} · Notas de salida: {{ receipt.notas_salida.join(', ') || 'No corresponde' }}</p>
+                  <button type="button" class="button button--secondary" (click)="downloadReturnReceipt(item.id_devolucion)">Descargar comprobante PDF</button>
+                </div>
+              }
               @if (item.estado !== 'COMPLETADA' && item.estado !== 'RECHAZADA') {
                 <div class="policy-banner policy-banner--valid">
                   <span class="policy-banner__icon">ℹ️</span>
@@ -3055,10 +3138,10 @@ export class OrdersAdmin {
                   <button
                     type="button"
                     class="button button--primary"
-                    [disabled]="saving()"
+                    [disabled]="saving() || !settlementQuote() || !settlementConfirmed()"
                     (click)="resolveInspection('COMPLETADA')"
                   >
-                    {{ saving() ? 'Procesando...' : '✓ Completar y Reingresar Stock' }}
+                    {{ saving() ? 'Procesando...' : 'Cerrar cambio o reembolso' }}
                   </button>
                 }
               </div>
@@ -3071,6 +3154,7 @@ export class OrdersAdmin {
 })
 export class ReturnsAdmin {
   private readonly commerce = inject(CommerceService);
+  private readonly catalog = inject(CatalogService);
   private readonly errors = inject(ApiErrorService);
 
   readonly items = signal<ReturnRequest[]>([]);
@@ -3086,6 +3170,106 @@ export class ReturnsAdmin {
   readonly inspectingReturn = signal<ReturnRequest | null>(null);
   readonly inspectionConditions = signal<Record<number, 'PENDIENTE_INSPECCION' | 'APTA_REINGRESO' | 'NO_APTA'>>({});
   readonly inspectionObservations = signal('');
+  readonly returnRequirements: Array<{ key: keyof ReturnChecklist; label: string }> = [
+    { key: 'comprobante_verificado', label: 'Comprobante de compra verificado' },
+    { key: 'sin_uso', label: 'Prenda sin uso' },
+    { key: 'sin_lavado', label: 'Prenda sin lavar' },
+    { key: 'etiquetas_conservadas', label: 'Etiquetas conservadas' },
+    { key: 'sin_danos_cliente', label: 'Sin daños atribuibles al cliente' },
+  ];
+  readonly receiptChecklist = signal<ReturnChecklist>({ comprobante_verificado: false, sin_uso: false, sin_lavado: false, etiquetas_conservadas: false, sin_danos_cliente: false });
+  readonly settlementType = signal<'CAMBIO' | 'REEMBOLSO'>('CAMBIO');
+  readonly replacementProducts = signal<Product[]>([]);
+  readonly replacementLoading = signal(false);
+  readonly replacementPage = signal(1);
+  readonly replacementPages = signal(1);
+  readonly replacementSearch = signal('');
+  readonly replacementSelections = signal<Record<number, number>>({});
+  readonly selectedReplacementLabels = signal<Record<number, string>>({});
+  readonly settlementQuote = signal<ReturnQuote | null>(null);
+  readonly quoting = signal(false);
+  readonly settlementMedium = signal<'EFECTIVO' | 'TRANSFERENCIA' | 'QR' | 'TARJETA'>('EFECTIVO');
+  readonly settlementReference = signal('');
+  readonly settlementConfirmed = signal(false);
+  private quoteVersion = 0;
+  readonly replacementOptions = computed(() => this.replacementProducts()
+    .filter((product) => product.nombre.toLocaleLowerCase().includes(this.replacementSearch().trim().toLocaleLowerCase()))
+    .flatMap((product) => product.variantes.filter((variant) => variant.activo && Number(variant.stock_disponible) > 0).map((variant) => ({
+      id: variant.id_variante, stock: Number(variant.stock_disponible),
+      label: `${product.nombre} · ${variant.talla} / ${variant.color} · Stock ${variant.stock_disponible} · Bs ${product.precio_promocional ?? product.precio_actual}`,
+    }))));
+
+  setReceiptRequirement(key: keyof ReturnChecklist, checked: boolean): void {
+    this.receiptChecklist.update((value) => ({ ...value, [key]: checked }));
+  }
+  setSettlementType(value: 'CAMBIO' | 'REEMBOLSO'): void {
+    this.settlementType.set(value);
+    this.invalidateQuote();
+  }
+  private invalidateQuote(): void {
+    this.quoteVersion++;
+    this.settlementQuote.set(null);
+    this.settlementConfirmed.set(false);
+  }
+  loadReplacementProducts(page = 1): void {
+    const item = this.inspectingReturn();
+    if (!item?.id_sucursal) return;
+    this.replacementLoading.set(true);
+    this.catalog.products({ sucursal: item.id_sucursal, activo: true, page, page_size: 100 })
+      .pipe(finalize(() => this.replacementLoading.set(false))).subscribe({
+        next: (result) => {
+          if (this.inspectingReturn()?.id_devolucion !== item.id_devolucion) return;
+          this.replacementProducts.set(result.items);
+          this.replacementPage.set(result.page);
+          this.replacementPages.set(result.pages);
+        },
+        error: (error) => this.error.set(this.errors.message(error, 'No pudimos cargar los reemplazos.')),
+      });
+  }
+  selectReplacement(detailId: number, value: string): void {
+    const id = Number(value);
+    this.replacementSelections.update((current) => ({ ...current, [detailId]: id }));
+    const label = this.replacementOptions().find((option) => option.id === id)?.label ?? '';
+    this.selectedReplacementLabels.update((current) => ({ ...current, [detailId]: label }));
+    this.invalidateQuote();
+  }
+  private settlementPayload(): ReturnSettlementPayload {
+    const item = this.inspectingReturn();
+    return {
+      tipo: this.settlementType(),
+      reemplazos: this.settlementType() === 'CAMBIO' ? (item?.items ?? []).map((line) => ({
+        id_detalle_devolucion: line.id_detalle_devolucion,
+        id_variante: this.replacementSelections()[line.id_detalle_devolucion] || 0,
+      })) : [],
+    };
+  }
+  quoteSettlement(): void {
+    const item = this.inspectingReturn();
+    if (!item) return;
+    const payload = this.settlementPayload();
+    if (payload.reemplazos.some((line) => !line.id_variante)) {
+      this.error.set('Selecciona un reemplazo para cada prenda.');
+      return;
+    }
+    this.invalidateQuote();
+    const version = this.quoteVersion;
+    this.error.set('');
+    this.quoting.set(true);
+    this.commerce.quoteReturn(item.id_devolucion, payload).pipe(finalize(() => this.quoting.set(false))).subscribe({
+      next: (quote) => { if (version === this.quoteVersion) this.settlementQuote.set(quote); },
+      error: (error) => this.error.set(this.errors.message(error, 'No pudimos calcular la diferencia.')),
+    });
+  }
+  downloadReturnReceipt(id: number): void {
+    this.commerce.returnReceipt(id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a'); link.href = url; link.download = `devolucion-${id}.pdf`; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      },
+      error: (error) => this.error.set(this.errors.message(error, 'No pudimos descargar el comprobante.')),
+    });
+  }
 
   // Counter return modal state
   readonly showModal = signal(false);
@@ -3095,7 +3279,8 @@ export class ReturnsAdmin {
   readonly inspectedSale = signal<SaleReturnInspectionResponse | null>(null);
   readonly lineSelections = signal<Record<number, { selected: boolean; quantity: number; condition: 'APTA_REINGRESO' | 'NO_APTA' }>>({});
   readonly modalMotivo = signal('');
-  readonly modalCompletarInmediato = signal(true);
+  readonly modalTipoSolicitud = signal<ReturnRequest['tipo_solicitud']>('CAMBIO_TALLA');
+  readonly modalCompletarInmediato = signal(false);
 
   readonly kpis = computed(() => {
     const list = this.items();
@@ -3197,10 +3382,22 @@ export class ReturnsAdmin {
     });
     this.inspectionConditions.set(condMap);
     this.inspectionObservations.set('');
+    this.error.set('');
+    this.receiptChecklist.set({ comprobante_verificado: false, sin_uso: false, sin_lavado: false, etiquetas_conservadas: false, sin_danos_cliente: false });
+    this.settlementType.set(item.tipo_solicitud.startsWith('CAMBIO') ? 'CAMBIO' : 'REEMBOLSO');
+    this.replacementSelections.set({});
+    this.selectedReplacementLabels.set({});
+    this.replacementProducts.set([]);
+    this.replacementSearch.set('');
+    this.settlementReference.set('');
+    this.settlementMedium.set('EFECTIVO');
+    this.invalidateQuote();
+    if (item.estado === 'APROBADA') this.loadReplacementProducts();
   }
 
   closeInspectionModal(): void {
     this.inspectingReturn.set(null);
+    this.invalidateQuote();
   }
 
   updateInspectionCondition(detailId: number, condition: 'PENDIENTE_INSPECCION' | 'APTA_REINGRESO' | 'NO_APTA'): void {
@@ -3213,6 +3410,10 @@ export class ReturnsAdmin {
   resolveInspection(newState: 'APROBADA' | 'COMPLETADA' | 'RECHAZADA'): void {
     const item = this.inspectingReturn();
     if (!item) return;
+    if (newState === 'COMPLETADA' && (!this.settlementQuote() || !this.settlementConfirmed() || !Object.values(this.receiptChecklist()).every(Boolean))) {
+      this.error.set('Confirma los requisitos, calcula la diferencia y registra la entrega o liquidación.');
+      return;
+    }
 
     if (newState === 'COMPLETADA' && item.items.some((line) =>
       (this.inspectionConditions()[line.id_detalle_devolucion] || 'PENDIENTE_INSPECCION') === 'PENDIENTE_INSPECCION'
@@ -3228,6 +3429,11 @@ export class ReturnsAdmin {
         estado_prenda: this.inspectionConditions()[line.id_detalle_devolucion] as 'APTA_REINGRESO' | 'NO_APTA',
       })) : undefined,
       observaciones: this.inspectionObservations().trim() || null,
+      ...(newState === 'COMPLETADA' ? {
+        checklist: this.receiptChecklist(),
+        resolucion: { ...this.settlementPayload(), monto_confirmado: this.settlementQuote()!.monto,
+          medio: this.settlementMedium(), referencia: this.settlementReference().trim() || null },
+      } : {}),
     };
 
     this.saving.set(true);
@@ -3262,7 +3468,8 @@ export class ReturnsAdmin {
     this.inspectedSale.set(null);
     this.lineSelections.set({});
     this.modalMotivo.set('');
-    this.modalCompletarInmediato.set(true);
+    this.modalCompletarInmediato.set(false);
+    this.modalTipoSolicitud.set('CAMBIO_TALLA');
   }
 
   closeCounterReturnModal(): void {
@@ -3382,6 +3589,7 @@ export class ReturnsAdmin {
     this.commerce
       .createAdminReturn({
         id_venta: sale.id_venta,
+        tipo_solicitud: this.modalTipoSolicitud(),
         motivo: this.modalMotivo().trim(),
         items,
         completar_inmediato: this.modalCompletarInmediato(),

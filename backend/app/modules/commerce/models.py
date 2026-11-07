@@ -333,6 +333,7 @@ class Devolucion(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     fecha_resolucion: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cierre: Mapped[dict | None] = mapped_column(JSON)
 
 
 class DetalleDevolucion(Base):

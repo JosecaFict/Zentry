@@ -53,6 +53,21 @@ class CommerceRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def locked(self, model, identifier: int):
+        return await self.session.get(model, identifier, with_for_update=True, populate_existing=True)
+
+    async def completed_return_quantity(self, sale_detail_id: int) -> int:
+        return int(await self.session.scalar(
+            select(func.coalesce(func.sum(DetalleDevolucion.cantidad), 0))
+            .join(Devolucion, Devolucion.id_devolucion == DetalleDevolucion.id_devolucion)
+            .where(DetalleDevolucion.id_detalle_venta == sale_detail_id, Devolucion.estado == "COMPLETADA")
+        ) or 0)
+
+    async def confirmed_payment_total(self, sale_id: int) -> Decimal:
+        return Decimal(await self.session.scalar(
+            select(func.coalesce(func.sum(Pago.monto), 0)).where(Pago.id_venta == sale_id, Pago.estado == "PAGADO")
+        ) or 0)
+
     async def get(self, model, identity: int):
         return await self.session.get(model, identity)
 

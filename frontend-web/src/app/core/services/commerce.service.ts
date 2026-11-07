@@ -31,6 +31,8 @@ import {
   AdminReturnCreate,
   SaleReturnInspectionResponse,
   ReturnStatusUpdatePayload,
+  ReturnQuote,
+  ReturnSettlementPayload,
 } from '../models/commerce.model';
 
 type Params = Record<string, string | number | boolean | null | undefined>;
@@ -185,6 +187,12 @@ export class CommerceService {
   updateReturn(id: number, payload: string | ReturnStatusUpdatePayload) {
     const body = typeof payload === 'string' ? { estado: payload } : payload;
     return this.http.patch<ReturnRequest>(`${API_BASE_URL}/admin/returns/${id}/status`, body);
+  }
+  quoteReturn(id: number, payload: ReturnSettlementPayload) {
+    return this.http.post<ReturnQuote>(`${API_BASE_URL}/admin/returns/${id}/quote`, payload);
+  }
+  returnReceipt(id: number) {
+    return this.http.get(`${API_BASE_URL}/returns/${id}/receipt`, { responseType: 'blob' });
   }
   inspectSaleForReturn(saleId: number) {
     return this.http.get<SaleReturnInspectionResponse>(

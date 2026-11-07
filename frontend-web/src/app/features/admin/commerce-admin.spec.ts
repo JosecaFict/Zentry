@@ -477,6 +477,7 @@ describe('ReturnsAdmin', () => {
   const mockReturns: ReturnRequest[] = [
     {
       id_devolucion: 1,
+      tipo_solicitud: 'CAMBIO_TALLA',
       id_venta: 101,
       id_cliente: 1,
       cliente_nombre: 'María López',
@@ -499,6 +500,7 @@ describe('ReturnsAdmin', () => {
     },
     {
       id_devolucion: 2,
+      tipo_solicitud: 'DEVOLUCION',
       id_venta: 102,
       id_cliente: null,
       cliente_nombre: null,
@@ -576,6 +578,7 @@ describe('ReturnsAdmin', () => {
     TestBed.configureTestingModule({
       imports: [ReturnsAdmin],
       providers: [
+        { provide: CatalogService, useValue: { products: vi.fn(() => of({ items: [], page: 1, pages: 1 })) } },
         { provide: CommerceService, useValue: commerce },
         { provide: ApiErrorService, useValue: { message: (_e: unknown, f: string) => f } },
       ],
@@ -622,6 +625,7 @@ describe('ReturnsAdmin', () => {
 
     component.submitCounterReturn();
     expect(commerce.createAdminReturn).toHaveBeenCalled();
+    expect(commerce.createAdminReturn.mock.calls[0][0].completar_inmediato).toBe(false);
     expect(component.showModal()).toBe(false);
     expect(component.items().length).toBe(3);
   });
@@ -719,6 +723,8 @@ describe('SupplierHistoryAdmin', () => {
     const mockReturns: ReturnRequest[] = [
       {
         id_devolucion: 10,
+        tipo_solicitud: 'REEMBOLSO',
+        id_sucursal: 1,
         id_venta: 25,
         cliente_nombre: 'Carlos Perez',
         motivo: 'Talla grande',
@@ -750,11 +756,13 @@ describe('SupplierHistoryAdmin', () => {
       ),
       inspectSaleForReturn: vi.fn(),
       createAdminReturn: vi.fn(),
+      quoteReturn: vi.fn(() => of({ tipo: 'REEMBOLSO', importe_devuelto: '120.00', importe_reemplazos: '0.00', diferencia: '-120.00', accion: 'REEMBOLSAR', monto: '120.00', items: [] })),
     };
 
     TestBed.configureTestingModule({
       imports: [ReturnsAdmin],
       providers: [
+        { provide: CatalogService, useValue: { products: vi.fn(() => of({ items: [], page: 1, pages: 1 })) } },
         { provide: CommerceService, useValue: commerce },
         { provide: ApiErrorService, useValue: { message: () => 'Error' } },
       ],
@@ -780,12 +788,18 @@ describe('SupplierHistoryAdmin', () => {
     // Complete inspection
     component.inspectionObservations.set('Revisado con defecto');
     component.resolveInspection('COMPLETADA');
+    expect(commerce.updateReturn).not.toHaveBeenCalled();
+    component.receiptChecklist.set({ comprobante_verificado: true, sin_uso: true, sin_lavado: true, etiquetas_conservadas: true, sin_danos_cliente: true });
+    component.quoteSettlement();
+    component.settlementConfirmed.set(true);
+    component.resolveInspection('COMPLETADA');
 
-    expect(commerce.updateReturn).toHaveBeenCalledWith(10, {
+    expect(commerce.updateReturn).toHaveBeenCalledWith(10, expect.objectContaining({
       estado: 'COMPLETADA',
       items: [{ id_detalle_devolucion: 101, estado_prenda: 'NO_APTA' }],
       observaciones: 'Revisado con defecto',
-    });
+      resolucion: { tipo: 'REEMBOLSO', reemplazos: [], monto_confirmado: '120.00', medio: 'EFECTIVO', referencia: null },
+    }));
     expect(component.inspectingReturn()).toBeNull();
   });
 });

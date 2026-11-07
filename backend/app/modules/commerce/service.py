@@ -57,6 +57,8 @@ from app.modules.commerce.models import (
     Venta,
 )
 from app.modules.commerce.repository import CommerceRepository
+from app.modules.commerce.return_policy import allocate_paid_amounts, money, returned_amount
+from app.modules.commerce.return_receipt import return_receipt_pdf
 from app.modules.commerce.schemas import (
     ActivePromotionItem,
     AddressCreate,
@@ -97,6 +99,7 @@ from app.modules.commerce.schemas import (
     ReturnLineResponse,
     ReturnResponse,
     ReturnStatusUpdate,
+    ReturnSettlement,
     SaleCreate,
     SaleResponse,
     SaleReturnInspectionResponse,
@@ -1352,6 +1355,9 @@ class CommerceService:
         except Exception:
             metodo_pago = None
 
+        return_start = await self._return_start(sale)
+        return_window = is_return_window_valid(return_start) if return_start else None
+        paid = await self.repository.confirmed_payment_total(sale.id_venta)
         return SaleResponse(
             id_venta=sale.id_venta,
             id_cliente=sale.id_cliente,
@@ -1371,6 +1377,9 @@ class CommerceService:
             costo_envio=sale.costo_envio,
             total=sale.total,
             fecha_venta=sale.fecha_venta,
+            fecha_inicio_devolucion=return_start,
+            fecha_limite_devolucion=return_window[2] if return_window else None,
+            devolucion_habilitada=bool(return_window and return_window[0] and sale.estado in {"PAGADA", "CONFIRMADA"} and paid >= sale.total),
             items=items,
         )
 
@@ -1453,7 +1462,6 @@ class CommerceService:
             )
             for allocation, lot in allocations:
                 restored = min(remaining, allocation.cantidad)
-                lot.cantidad_disponible += restored
                 await self.repository.add(
                     MovimientoLote(
                         id_movimiento=movement.id_movimiento,
@@ -1462,6 +1470,7 @@ class CommerceService:
                         costo_unitario=allocation.costo_unitario,
                     )
                 )
+                set_committed_value(lot, "cantidad_disponible", lot.cantidad_disponible + restored)
                 remaining -= restored
                 if not remaining:
                     break
@@ -1968,19 +1977,133 @@ class CommerceService:
         await self.session.commit()
         return quote
 
+    async def _return_start(self, sale: Venta) -> datetime | None:
+        if sale.canal_venta == "WEB" or sale.modalidad_entrega in {"DELIVERY", "RETIRO_SUCURSAL"}:
+            order = await self.repository.order_by_sale(sale.id_venta)
+            if order is None or order.estado not in {"ENTREGADO", "RETIRADO"}:
+                return None
+            return order.fecha_finalizacion
+        return sale.fecha_venta
+
+    async def _validate_return_window(self, sale: Venta) -> datetime:
+        await self._validate_return_payment(sale)
+        start = await self._return_start(sale)
+        if start is None:
+            raise CommerceConflictError("Primero debe confirmarse la entrega o el retiro del pedido")
+        if not is_return_window_valid(start, max_days=5)[0]:
+            raise CommerceConflictError("El plazo de devolución de 5 días hábiles desde la recepción ha finalizado")
+        return start
+
+    async def _validate_return_payment(self, sale: Venta) -> None:
+        paid = await self.repository.confirmed_payment_total(sale.id_venta)
+        if sale.estado not in {"PAGADA", "CONFIRMADA"} or paid < sale.total:
+            raise CommerceConflictError("La devolución requiere una compra con pago confirmado")
+
+    async def _return_quote(self, returned: Devolucion, sale: Venta, settlement: ReturnSettlement) -> dict:
+        details = await self.repository.return_details(returned.id_devolucion)
+        replacements = {item.id_detalle_devolucion: item.id_variante for item in settlement.reemplazos}
+        if len(replacements) != len(settlement.reemplazos):
+            raise InvalidCommerceOperationError("No repita una prenda de origen en el cambio")
+        detail_ids = {item.id_detalle_devolucion for item in details}
+        if settlement.tipo == "CAMBIO" and set(replacements) != detail_ids:
+            raise InvalidCommerceOperationError("Seleccione un reemplazo para cada prenda devuelta")
+        if settlement.tipo == "REEMBOLSO" and replacements:
+            raise InvalidCommerceOperationError("Un reembolso no admite prendas de reemplazo")
+        sale_details = await self.repository.sale_details(sale.id_venta)
+        sum_lines = sum((item.subtotal for item in sale_details), Decimal(0))
+        paid_goods = max(Decimal(0), min(sum_lines, sale.total - sale.costo_envio))
+        by_id = {item.id_detalle_venta: item for item in sale_details}
+        ordered = sorted(sale_details, key=lambda item: item.id_detalle_venta)
+        paid_by_id = dict(zip(
+            (item.id_detalle_venta for item in ordered),
+            allocate_paid_amounts([item.subtotal for item in ordered], paid_goods), strict=True,
+        ))
+        lines = []
+        total_original = Decimal(0)
+        total_new = Decimal(0)
+        requested_stock: dict[int, int] = {}
+        for detail in details:
+            original = by_id[detail.id_detalle_venta]
+            completed = await self.repository.completed_return_quantity(original.id_detalle_venta)
+            line_paid = paid_by_id[original.id_detalle_venta]
+            amount = returned_amount(line_paid, original.cantidad, detail.cantidad, completed)
+            total_original += amount
+            original_row = await self.repository.variant_row(original.id_variante, sale.id_sucursal)
+            line = {"id_detalle_devolucion": detail.id_detalle_devolucion,
+                    "id_variante_original": original.id_variante, "cantidad": detail.cantidad,
+                    "producto_original": original_row["producto"],
+                    "talla_original": original_row["talla"], "color_original": original_row["color"],
+                    "importe_original": str(amount)}
+            if settlement.tipo == "CAMBIO":
+                variant_id = replacements[detail.id_detalle_devolucion]
+                row = await self.repository.variant_row(variant_id, sale.id_sucursal)
+                if row is None or not row["activo"] or Decimal(row["precio"]) <= 0:
+                    raise CommerceConflictError("El reemplazo no está disponible en el catálogo de esta empresa")
+                if variant_id == original.id_variante:
+                    raise InvalidCommerceOperationError("Seleccione otra talla, color o prenda")
+                same_product = row["id_producto"] == original_row["id_producto"]
+                current_price = Decimal(row["precio"])
+                if not same_product:
+                    discounts = await self.repository.get_active_discounts_for_products([row["id_producto"]])
+                    if row["id_producto"] in discounts:
+                        current_price = money(current_price * (1 - discounts[row["id_producto"]][0] / Decimal(100)))
+                new_amount = amount if same_product else money(current_price * detail.cantidad)
+                total_new += new_amount
+                requested_stock[variant_id] = requested_stock.get(variant_id, 0) + detail.cantidad
+                if requested_stock[variant_id] > int(row["stock_disponible"]):
+                    raise CommerceConflictError("Stock insuficiente del reemplazo en la sucursal de la devolución")
+                line.update(id_variante=variant_id, producto=row["producto"], talla=row["talla"],
+                            color=row["color"], importe_reemplazo=str(new_amount),
+                            conserva_precio=same_product)
+            lines.append(line)
+        difference = money(total_new - total_original)
+        return {"tipo": settlement.tipo, "importe_devuelto": str(total_original),
+                "importe_reemplazos": str(total_new), "diferencia": str(difference),
+                "accion": "COBRAR" if difference > 0 else "REEMBOLSAR" if difference < 0 else "SIN_DIFERENCIA",
+                "monto": str(abs(difference)), "items": lines}
+
+    async def quote_return(self, user_id: int, return_id: int, payload: ReturnSettlement, *, all_branches: bool = False) -> dict:
+        employee = await self._employee(user_id)
+        returned = await self.repository.get(Devolucion, return_id)
+        if returned is None:
+            raise CommerceNotFoundError("La devolución no existe")
+        sale = await self.repository.get(Venta, returned.id_venta)
+        if not all_branches and sale.id_sucursal != employee.id_sucursal:
+            raise CommerceNotFoundError("La devolución no existe")
+        if returned.estado not in {"PENDIENTE", "APROBADA"}:
+            raise CommerceConflictError("Esta devolución ya fue resuelta")
+        return await self._return_quote(returned, sale, payload)
+
+    async def get_return_receipt(self, user_id: int, return_id: int, *, operational: bool = False, all_branches: bool = False) -> bytes:
+        returned = await self.repository.get(Devolucion, return_id)
+        if returned is None:
+            raise CommerceNotFoundError("La devolución no existe")
+        sale = await self.repository.get(Venta, returned.id_venta)
+        if operational:
+            employee = await self._employee(user_id)
+            if not all_branches and employee.id_sucursal != sale.id_sucursal:
+                raise CommerceNotFoundError("La devolución no existe")
+        else:
+            customer = await self._customer(user_id)
+            if returned.id_cliente != customer.id_cliente:
+                raise CommerceNotFoundError("La devolución no existe")
+        if not returned.cierre:
+            raise CommerceConflictError("Esta devolución todavía no tiene un comprobante de liquidación")
+        branch = await self.repository.get(Sucursal, sale.id_sucursal)
+        response = await self._return_response(returned)
+        return return_receipt_pdf(returned.cierre, sale.id_venta, branch.nombre, response.cliente_nombre or "Consumidor final")
+
     async def create_return(self, user_id: int, payload: ReturnCreate) -> ReturnResponse:
+        if payload.tipo_solicitud == "CREDITO":
+            raise InvalidCommerceOperationError("El crédito en tienda no está habilitado; solicite cambio o reembolso")
         customer = await self._customer(user_id)
-        sale = await self.repository.get(Venta, payload.id_venta)
+        sale = await self.repository.locked(Venta, payload.id_venta)
         if sale is None or sale.id_cliente != customer.id_cliente:
             raise CommerceNotFoundError("La compra no existe")
         if sale.estado not in {"PAGADA", "CONFIRMADA"}:
             raise InvalidCommerceOperationError("La compra no admite devolución")
 
-        is_valid, remaining, deadline = is_return_window_valid(sale.fecha_venta, max_days=5)
-        if not is_valid:
-            raise CommerceConflictError(
-                "El plazo máximo para solicitar devolución es de 5 días hábiles a partir de la compra"
-            )
+        await self._validate_return_window(sale)
 
         sale_details = {
             item.id_detalle_venta: item
@@ -2081,6 +2204,8 @@ class CommerceService:
             estado=returned.estado,
             fecha_solicitud=returned.fecha_solicitud,
             fecha_resolucion=returned.fecha_resolucion,
+            cierre=returned.cierre,
+            id_sucursal=(await self.repository.get(Venta, returned.id_venta)).id_sucursal,
             items=items,
         )
 
@@ -2121,8 +2246,9 @@ class CommerceService:
         else:
             cliente_nombre = "Consumidor Final"
 
-        is_valid, remaining, deadline = is_return_window_valid(sale.fecha_venta, max_days=5)
-        elapsed = calculate_business_days_elapsed(sale.fecha_venta)
+        return_start = await self._return_start(sale)
+        is_valid, remaining, deadline = is_return_window_valid(return_start or sale.fecha_venta, max_days=5)
+        elapsed = calculate_business_days_elapsed(return_start or sale.fecha_venta)
 
         es_retornable = True
         motivo_invalidez = None
@@ -2132,6 +2258,12 @@ class CommerceService:
             motivo_invalidez = (
                 f"La venta se encuentra en estado {sale.estado}, no admite devolución"
             )
+        elif await self.repository.confirmed_payment_total(sale.id_venta) < sale.total:
+            es_retornable = False
+            motivo_invalidez = "La devolución requiere una compra con pago confirmado"
+        elif return_start is None:
+            es_retornable = False
+            motivo_invalidez = "Primero debe confirmarse la entrega o el retiro del pedido"
         elif not is_valid:
             es_retornable = False
             motivo_invalidez = (
@@ -2190,8 +2322,12 @@ class CommerceService:
     async def create_admin_return(
         self, user_id: int, payload: AdminReturnCreate, *, all_branches: bool = False
     ) -> ReturnResponse:
+        if payload.tipo_solicitud == "CREDITO":
+            raise InvalidCommerceOperationError("El crédito en tienda no está habilitado; registre cambio o reembolso")
+        if payload.completar_inmediato:
+            raise InvalidCommerceOperationError("Registre la solicitud y complete la inspección y liquidación desde su detalle")
         employee = await self._employee(user_id)
-        sale = await self.repository.get(Venta, payload.id_venta)
+        sale = await self.repository.locked(Venta, payload.id_venta)
         if sale is None:
             raise CommerceNotFoundError("La venta no existe")
         if not all_branches and sale.id_sucursal != employee.id_sucursal:
@@ -2201,11 +2337,7 @@ class CommerceService:
                 "La compra no admite devolución en su estado actual"
             )
 
-        is_valid, remaining, deadline = is_return_window_valid(sale.fecha_venta, max_days=5)
-        if not is_valid:
-            raise CommerceConflictError(
-                "El plazo máximo para registrar devolución es de 5 días hábiles a partir de la compra"
-            )
+        await self._validate_return_window(sale)
 
         sale_details = {
             item.id_detalle_venta: item
@@ -2225,8 +2357,8 @@ class CommerceService:
                     "La cantidad a devolver supera la cantidad comprada disponible"
                 )
 
-        initial_state = "COMPLETADA" if payload.completar_inmediato else "PENDIENTE"
-        resolution_date = datetime.now(UTC) if payload.completar_inmediato else None
+        initial_state = "PENDIENTE"
+        resolution_date = None
 
         returned = await self.repository.add(
             Devolucion(
@@ -2245,59 +2377,9 @@ class CommerceService:
                     id_devolucion=returned.id_devolucion,
                     id_detalle_venta=item.id_detalle_venta,
                     cantidad=item.cantidad,
-                    estado_prenda=item.estado_prenda,
+                    estado_prenda="PENDIENTE_INSPECCION",
                 )
             )
-
-        if payload.completar_inmediato:
-            for item in payload.items:
-                if item.estado_prenda != "APTA_REINGRESO":
-                    continue
-                sale_detail = sale_details[item.id_detalle_venta]
-                inventory = await self.repository.inventory_for_update(
-                    sale.id_sucursal, sale_detail.id_variante
-                )
-                movement = await self.repository.add(
-                    MovimientoInventario(
-                        id_inventario=inventory.id_inventario,
-                        id_empleado=employee.id_empleado,
-                        tipo_movimiento="DEVOLUCION",
-                        cantidad=item.cantidad,
-                        referencia_tipo="DEVOLUCION",
-                        referencia_id=returned.id_devolucion,
-                        motivo=returned.motivo,
-                    )
-                )
-                remaining = item.cantidad
-                restored_before = await self.repository.restored_sale_lots(
-                    sale.id_venta, sale_detail.id_variante
-                )
-                for allocation, lot in await self.repository.sale_lot_allocations(
-                    sale.id_venta, sale_detail.id_variante
-                ):
-                    capacity = max(
-                        0,
-                        allocation.cantidad - restored_before.get(lot.id_lote, 0),
-                    )
-                    restored = min(remaining, capacity)
-                    if not restored:
-                        continue
-                    lot.cantidad_disponible += restored
-                    await self.repository.add(
-                        MovimientoLote(
-                            id_movimiento=movement.id_movimiento,
-                            id_lote=lot.id_lote,
-                            cantidad=restored,
-                            costo_unitario=allocation.costo_unitario,
-                        )
-                    )
-                    remaining -= restored
-                    if not remaining:
-                        break
-                if remaining:
-                    raise CommerceConflictError(
-                        "No fue posible restaurar las capas FIFO de la venta"
-                    )
 
         if sale.id_cliente:
             customer = await self.repository.get(Cliente, sale.id_cliente)
@@ -2336,11 +2418,39 @@ class CommerceService:
         returned = await self.repository.get(Devolucion, return_id)
         if returned is None:
             raise CommerceNotFoundError("La devolución no existe")
-        sale = await self.repository.get(Venta, returned.id_venta)
+        sale = await self.repository.locked(Venta, returned.id_venta)
+        returned = await self.repository.locked(Devolucion, return_id)
         if not all_branches and sale.id_sucursal != employee.id_sucursal:
             raise CommerceNotFoundError("La devolución no existe")
+        if returned.estado == payload.estado:
+            return await self._return_response(returned)
         self._validate_transition(returned.estado, payload.estado, RETURN_TRANSITIONS)
         try:
+            quote = None
+            entry_notes = []
+            if payload.estado == "COMPLETADA":
+                await self._validate_return_payment(sale)
+                if payload.checklist is None or not all(payload.checklist.model_dump().values()):
+                    raise InvalidCommerceOperationError("Confirme todos los requisitos de recepción antes de cerrar")
+                if payload.resolucion is None:
+                    raise InvalidCommerceOperationError("Seleccione cambio o reembolso para completar la devolución")
+                details = await self.repository.return_details(return_id)
+                variant_ids = {item.id_variante for item in payload.resolucion.reemplazos}
+                for detail in details:
+                    original = await self.repository.get(DetalleVenta, detail.id_detalle_venta)
+                    variant_ids.add(original.id_variante)
+                for variant_id in sorted(variant_ids):
+                    inventory = await self.repository.inventory_for_update(sale.id_sucursal, variant_id)
+                    if inventory is None:
+                        raise CommerceConflictError("La variante no tiene inventario en la sucursal de la devolución")
+                quote = await self._return_quote(returned, sale, payload.resolucion)
+                if payload.resolucion.monto_confirmado != Decimal(quote["monto"]):
+                    raise CommerceConflictError("El importe confirmado no coincide con la diferencia calculada; vuelva a cotizar")
+                if Decimal(quote["monto"]) > 0:
+                    if not payload.resolucion.medio:
+                        raise InvalidCommerceOperationError("Registre el medio de cobro o reembolso")
+                    if payload.resolucion.medio != "EFECTIVO" and not (payload.resolucion.referencia or "").strip():
+                        raise InvalidCommerceOperationError("Registre la referencia del comprobante de pago o reembolso")
             if payload.items:
                 details_map = {
                     d.id_detalle_devolucion: d
@@ -2348,8 +2458,9 @@ class CommerceService:
                 }
                 for item_upd in payload.items:
                     detail = details_map.get(item_upd.id_detalle_devolucion)
-                    if detail:
-                        detail.estado_prenda = item_upd.estado_prenda
+                    if detail is None:
+                        raise InvalidCommerceOperationError("Una prenda de inspección no pertenece a esta devolución")
+                    detail.estado_prenda = item_upd.estado_prenda
 
             if payload.observaciones:
                 obs = payload.observaciones.strip()
@@ -2380,6 +2491,7 @@ class CommerceService:
                             motivo=returned.motivo,
                         )
                     )
+                    entry_notes.append(movement.id_movimiento)
                     remaining = detail.cantidad
                     restored_before = await self.repository.restored_sale_lots(
                         sale.id_venta, sale_detail.id_variante
@@ -2394,7 +2506,6 @@ class CommerceService:
                         restored = min(remaining, capacity)
                         if not restored:
                             continue
-                        lot.cantidad_disponible += restored
                         await self.repository.add(
                             MovimientoLote(
                                 id_movimiento=movement.id_movimiento,
@@ -2403,6 +2514,8 @@ class CommerceService:
                                 costo_unitario=allocation.costo_unitario,
                             )
                         )
+                        # The database trigger applies the lot change exactly once.
+                        set_committed_value(lot, "cantidad_disponible", lot.cantidad_disponible + restored)
                         remaining -= restored
                         if not remaining:
                             break
@@ -2410,6 +2523,31 @@ class CommerceService:
                         raise CommerceConflictError(
                             "No fue posible restaurar las capas FIFO de la venta"
                         )
+                exit_notes = []
+                for line in quote["items"]:
+                    if "id_variante" not in line:
+                        continue
+                    inventory = await self.repository.inventory_for_update(sale.id_sucursal, line["id_variante"])
+                    # Refresh trigger-maintained stock before creating the outgoing note.
+                    await self.session.refresh(inventory)
+                    if inventory.stock_fisico - inventory.stock_reservado < line["cantidad"]:
+                        raise CommerceConflictError("El reemplazo ya no tiene stock suficiente")
+                    outgoing = await self.repository.add(MovimientoInventario(
+                        id_inventario=inventory.id_inventario, id_empleado=employee.id_empleado,
+                        tipo_movimiento="AJUSTE_NEGATIVO", cantidad=line["cantidad"],
+                        referencia_tipo="DEVOLUCION", referencia_id=return_id,
+                        motivo=f"Salida por cambio de prenda · devolución #{return_id}",
+                    ))
+                    await self._consume_fifo(inventory, line["cantidad"], outgoing.id_movimiento)
+                    exit_notes.append(outgoing.id_movimiento)
+                returned.cierre = {
+                    **quote, "checklist": payload.checklist.model_dump(),
+                    "medio": payload.resolucion.medio, "referencia": payload.resolucion.referencia,
+                    "id_empleado": employee.id_empleado, "id_sucursal": sale.id_sucursal,
+                    "fecha": datetime.now(UTC).isoformat(),
+                    "comprobante": f"DEV-{return_id:06d}",
+                    "notas_entrada": entry_notes, "notas_salida": exit_notes,
+                }
                 returned.fecha_resolucion = datetime.now(UTC)
             elif payload.estado == "RECHAZADA":
                 returned.fecha_resolucion = datetime.now(UTC)
@@ -2428,10 +2566,10 @@ class CommerceService:
                         "Por favor acércate a la sucursal con tus prendas para la inspección física y recepción."
                     )
                 elif payload.estado == "COMPLETADA":
-                    notif_title = "Prenda recibida e inspeccionada ✅"
+                    notif_title = "Cambio o reembolso completado"
                     notif_body = (
-                        f"La tienda registró la recepción de tu solicitud #{returned.id_devolucion}. "
-                        "Consulta con la sucursal la entrega del cambio o la liquidación correspondiente."
+                        f"La tienda cerró tu solicitud #{returned.id_devolucion}. "
+                        f"Comprobante {returned.cierre['comprobante']}: {returned.cierre['accion'].lower()} Bs {returned.cierre['monto']}."
                     )
                 elif payload.estado == "RECHAZADA":
                     notif_title = "Solicitud de devolución no aprobada ✕"

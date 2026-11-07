@@ -200,6 +200,9 @@ class SaleResponse(ORMResponse):
     costo_envio: Decimal
     total: Decimal
     fecha_venta: datetime
+    fecha_inicio_devolucion: datetime | None = None
+    fecha_limite_devolucion: datetime | None = None
+    devolucion_habilitada: bool = False
     items: list[CommerceLineResponse]
 
 
@@ -277,7 +280,28 @@ class AdminReturnCreate(BaseModel):
     tipo_solicitud: ReturnKind = "DEVOLUCION"
     motivo: str = Field(min_length=3, max_length=255)
     items: list[ReturnLineCreate] = Field(min_length=1)
-    completar_inmediato: bool = True
+    completar_inmediato: bool = False
+
+
+class ReturnChecklist(BaseModel):
+    comprobante_verificado: bool
+    sin_uso: bool
+    sin_lavado: bool
+    etiquetas_conservadas: bool
+    sin_danos_cliente: bool
+
+
+class ReturnReplacement(BaseModel):
+    id_detalle_devolucion: int = Field(gt=0)
+    id_variante: int = Field(gt=0)
+
+
+class ReturnSettlement(BaseModel):
+    tipo: Literal["CAMBIO", "REEMBOLSO"]
+    reemplazos: list[ReturnReplacement] = Field(default_factory=list, max_length=100)
+    monto_confirmado: Decimal = Field(default=Decimal(0), ge=0, max_digits=12, decimal_places=2)
+    medio: Literal["EFECTIVO", "TRANSFERENCIA", "QR", "TARJETA"] | None = None
+    referencia: str | None = Field(default=None, max_length=120)
 
 
 class ReturnItemConditionUpdate(BaseModel):
@@ -289,6 +313,8 @@ class ReturnStatusUpdate(BaseModel):
     estado: ReturnState
     items: list[ReturnItemConditionUpdate] | None = None
     observaciones: str | None = Field(default=None, max_length=255)
+    checklist: ReturnChecklist | None = None
+    resolucion: ReturnSettlement | None = None
 
 
 class ReturnLineResponse(ORMResponse):
@@ -312,6 +338,8 @@ class ReturnResponse(ORMResponse):
     estado: ReturnState
     fecha_solicitud: datetime
     fecha_resolucion: datetime | None
+    cierre: dict | None = None
+    id_sucursal: int | None = None
     items: list[ReturnLineResponse]
 
 

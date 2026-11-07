@@ -1729,16 +1729,16 @@ export class AddressesPage {
                   {{ downloadingSaleId() === sale.id_venta ? 'Generando PDF…' : '📄 Descargar Factura PDF' }}
                 </button>
               </div>
-              @if (isReturnEligible(sale.fecha_venta).eligible && (sale.estado === 'PAGADA' || sale.estado === 'CONFIRMADA')) {
+              @if (sale.devolucion_habilitada) {
                 <span class="status-chip" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; font-size: 0.75rem;">
-                  ✓ Cambios y devoluciones disponibles ({{ isReturnEligible(sale.fecha_venta).remaining }} d. hábiles)
+                  Solicitudes hasta {{ sale.fecha_limite_devolucion | date: 'short' }}
                 </span>
                 <button class="button button--quiet" type="button" (click)="startReturn(sale)">
                   Solicitar cambio o devolución
                 </button>
               } @else {
                 <span class="status-chip" style="background: #f1f5f9; color: #64748b; font-size: 0.75rem;">
-                  Plazo de cambios y devoluciones finalizado (>5 días hábiles)
+                  {{ !sale.fecha_inicio_devolucion ? 'Disponible después de confirmar la entrega o retiro' : 'Compra fuera del plazo o estado habilitado' }}
                 </span>
               }
             </div>
@@ -1762,10 +1762,13 @@ export class AddressesPage {
                     <option value="CAMBIO_COLOR">Cambiar color</option>
                     <option value="CAMBIO_PRENDA">Cambiar prenda</option>
                     <option value="REEMBOLSO">Solicitar reembolso</option>
-                    <option value="CREDITO">Solicitar crédito en tienda</option>
                   </select></label
                 ><label class="field field--wide"
-                  ><span>Motivo y talla/color deseado, si corresponde</span><input formControlName="motivo" /></label
+                  ><span>Motivo y talla/color deseado, si corresponde</span><input maxlength="255" formControlName="motivo" /></label
+                ><label class="field field--wide">
+                  <span>Requisitos: sin uso, sin lavado, etiquetas conservadas y sin daños atribuibles al cliente. Presenta tu comprobante; la tienda verificará la prenda.</span>
+                  <span><input type="checkbox" formControlName="requisitos_aceptados" /> Leí los requisitos de devolución.</span>
+                </label
                 ><button
                   class="button button--primary"
                   type="submit"
@@ -1828,7 +1831,7 @@ export class AddressesPage {
               <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 10px 14px; font-size: 0.84rem; color: #065f46; display: flex; align-items: center; gap: 8px; margin: 10px 0;">
                 <span style="font-size: 1.1rem;">✅</span>
                 <div>
-                  <strong>Recepción completada.</strong> La tienda registró la prenda{{ item.fecha_resolucion ? ' el ' + (item.fecha_resolucion | date: 'medium') : '' }}. Consulta con la tienda la entrega del cambio o la liquidación correspondiente.
+                  <strong>{{ item.cierre ? 'Cambio o reembolso completado.' : 'Recepción completada.' }}</strong> La tienda registró el cierre{{ item.fecha_resolucion ? ' el ' + (item.fecha_resolucion | date: 'medium') : '' }}.
                 </div>
               </div>
             } @else if (item.estado === 'RECHAZADA') {
@@ -1840,6 +1843,14 @@ export class AddressesPage {
               </div>
             }
 
+            @if (item.cierre; as receipt) {
+              <p><strong>{{ receipt.comprobante }}</strong> · {{ receipt.tipo === 'CAMBIO' ? 'Cambio de prenda' : 'Reembolso' }}</p>
+              <p>{{ receipt.accion === 'COBRAR' ? 'Adicional pagado' : receipt.accion === 'REEMBOLSAR' ? 'Importe reembolsado' : 'Sin diferencia' }}: {{ receipt.monto | bolivianos }}</p>
+              @for (line of receipt.items; track line.id_detalle_devolucion) {
+                @if (line.producto) { <p>Recibiste: {{ line.producto }} · {{ line.talla }} / {{ line.color }} × {{ line.cantidad }}</p> }
+              }
+              <button type="button" class="button button--secondary" (click)="downloadReturnReceipt(item.id_devolucion)">Descargar comprobante PDF</button>
+            }
             <p style="margin: 8px 0; font-size: 0.88rem; color: var(--ink);">
               <strong>Motivo:</strong> "{{ item.motivo }}"
             </p>
@@ -1887,7 +1898,8 @@ export class HistoryPage {
     id_detalle_venta: ['', Validators.required],
     cantidad: [1, [Validators.required, Validators.min(1)]],
     tipo_solicitud: ['CAMBIO_TALLA', Validators.required],
-    motivo: ['', [Validators.required, Validators.minLength(3)]],
+    motivo: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(255)]],
+    requisitos_aceptados: [false, Validators.requiredTrue],
   });
   constructor() {
     forkJoin({
@@ -1913,6 +1925,7 @@ export class HistoryPage {
       cantidad: 1,
       tipo_solicitud: 'CAMBIO_TALLA',
       motivo: '',
+      requisitos_aceptados: false,
     });
   }
   submitReturn(): void {
@@ -1942,6 +1955,17 @@ export class HistoryPage {
         error: (error) =>
           this.error.set(this.errors.message(error, 'No pudimos crear la devolución.')),
       });
+  }
+
+  downloadReturnReceipt(id: number): void {
+    this.commerce.returnReceipt(id).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a'); link.href = url; link.download = `devolucion-${id}.pdf`; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      },
+      error: (error) => this.error.set(this.errors.message(error, 'No pudimos descargar el comprobante.')),
+    });
   }
 
   downloadSaleInvoice(saleId: number): void {
