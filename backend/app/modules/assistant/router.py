@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
@@ -95,3 +95,14 @@ async def send_message(conversation_id: UUID, payload: MessageCreate, assistant:
 async def archive_conversation(conversation_id: UUID, assistant: Assistant):
     await assistant.archive(conversation_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/conversations/{conversation_id}/messages/{message_id}/export/{file_format}")
+async def export_message_report(
+    conversation_id: UUID, message_id: int, file_format: Literal["pdf", "xlsx"], assistant: Assistant,
+):
+    content, media_type, filename = await assistant.export_report(conversation_id, message_id, file_format)
+    return Response(content, media_type=media_type, headers={
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Cache-Control": "no-store",
+    })

@@ -50,6 +50,16 @@
               <div class="admin-advisor-message" [class.is-user]="message.rol === 'USUARIO'">
                 @if (message.rol === 'USUARIO') { {{ message.contenido }} }
                 @else { <app-assistant-message [text]="message.contenido" /> }
+                @if (message.rol === 'ASISTENTE' && message.reporte_exportable && professional()) {
+                  <div class="admin-advisor-downloads" role="group" aria-label="Descargar este reporte">
+                    <button type="button" (click)="downloadReport(message, 'pdf')" [disabled]="downloading() !== null">
+                      {{ downloading()?.messageId === message.id_mensaje && downloading()?.format === 'pdf' ? 'Generando PDF…' : 'Descargar PDF' }}
+                    </button>
+                    <button type="button" (click)="downloadReport(message, 'xlsx')" [disabled]="downloading() !== null">
+                      {{ downloading()?.messageId === message.id_mensaje && downloading()?.format === 'xlsx' ? 'Generando Excel…' : 'Descargar Excel' }}
+                    </button>
+                  </div>
+                }
               </div>
             }
             @if (busy()) { <p class="admin-advisor-status" role="status">Analizando tu consulta…</p> }

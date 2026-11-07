@@ -14,8 +14,12 @@
 .admin-advisor-welcome button { display: block; margin: 8px 0; padding: 10px 12px; border: 1px solid #bdc4cc; border-radius: 8px; background: #fff; color: #121418; text-align: left; cursor: pointer; }
 .admin-advisor-welcome button:hover { border-color: var(--chat-accent); }
 .admin-advisor-welcome .admin-advisor-plan { padding: 12px; border-radius: 8px; background: #f1f3f6; font-size: 13px; }
-.admin-advisor-message { width: fit-content; min-width: 0; max-width: 90%; margin: 0 0 12px; padding: 11px 13px; border-radius: 12px 12px 12px 3px; background: #eef0f3; color: #121418; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-.admin-advisor-message.is-user { margin-left: auto; border-radius: 12px 12px 3px 12px; background: #1749d4; color: #fff; }
+.admin-advisor-message { width: fit-content; min-width: 0; max-width: 96%; margin: 0 0 16px; padding: 14px 16px; border-radius: 12px 12px 12px 3px; background: #eef0f3; color: #121418; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.admin-advisor-message.is-user { max-width: 90%; margin-left: auto; border-radius: 12px 12px 3px 12px; background: #1749d4; color: #fff; }
+.admin-advisor-downloads { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #cbd0d6; white-space: normal; }
+.admin-advisor-downloads button { padding: 9px 12px; border: 1px solid #9ba5b2; border-radius: 7px; background: #fff; color: #1645ba; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.admin-advisor-downloads button:hover:not(:disabled) { border-color: var(--chat-accent); background: #f7f8fa; }
+.admin-advisor-downloads button:disabled { opacity: .6; cursor: wait; }
 .admin-advisor-status,.admin-advisor-note { margin: 8px 14px; color: #565d67; font-size: 12px; }
 .admin-advisor-error { margin: 8px 14px; color: #a12418; font-size: 12px; }
 .admin-advisor-report-link { display: block; padding: 10px 15px; border-top: 1px solid #e6e8eb; color: #1645ba; font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }

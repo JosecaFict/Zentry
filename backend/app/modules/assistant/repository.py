@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from uuid import UUID
+import json
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -91,8 +92,8 @@ class AssistantRepository:
             (
                 await self.session.execute(
                     text("""
-            SELECT id_mensaje, rol, contenido, created_at, producto_ids, requiere_reportes_ia FROM (
-                SELECT id_mensaje, rol, contenido, created_at, producto_ids, requiere_reportes_ia
+            SELECT id_mensaje, rol, contenido, created_at, producto_ids, requiere_reportes_ia, reporte_snapshot FROM (
+                SELECT id_mensaje, rol, contenido, created_at, producto_ids, requiere_reportes_ia, reporte_snapshot
                 FROM capricho.asistente_mensaje
                 WHERE id_conversacion = :id AND id_tenant = :tenant AND id_usuario = :user
                 ORDER BY id_mensaje DESC LIMIT :limit
@@ -106,6 +107,16 @@ class AssistantRepository:
         )
         return [Message.model_validate(dict(row)) for row in rows]
 
+    async def report_message(self, conversation_id: UUID, message_id: int) -> Message | None:
+        await self._user_context()
+        row = (await self.session.execute(text("""
+            SELECT id_mensaje, rol, contenido, created_at, producto_ids, requiere_reportes_ia, reporte_snapshot
+            FROM capricho.asistente_mensaje
+            WHERE id_conversacion=:conversation AND id_mensaje=:message
+              AND id_tenant=:tenant AND id_usuario=:user
+        """), {**self.scope, "conversation": conversation_id, "message": message_id})).mappings().one_or_none()
+        return Message.model_validate(dict(row)) if row else None
+
     async def append_exchange(
         self,
         conversation_id: UUID,
@@ -115,6 +126,7 @@ class AssistantRepository:
         product_ids: list[int] | None = None,
         *,
         report_restricted: bool = False,
+        report_snapshot: dict | None = None,
     ) -> tuple[Message, Message]:
         await self._user_context()
         messages = []
@@ -128,9 +140,9 @@ class AssistantRepository:
                         text("""
                 INSERT INTO capricho.asistente_mensaje
                     (id_conversacion, id_tenant, id_usuario, rol, contenido,
-                     producto_ids, requiere_reportes_ia)
-                VALUES (:id, :tenant, :user, :role, :content, :product_ids, :restricted)
-                RETURNING id_mensaje, rol, contenido, created_at, producto_ids, requiere_reportes_ia
+                     producto_ids, requiere_reportes_ia, reporte_snapshot)
+                VALUES (:id, :tenant, :user, :role, :content, :product_ids, :restricted, CAST(:snapshot AS JSONB))
+                RETURNING id_mensaje, rol, contenido, created_at, producto_ids, requiere_reportes_ia, reporte_snapshot
             """),
                         {
                             **self.scope,
@@ -139,6 +151,7 @@ class AssistantRepository:
                             "content": content,
                             "product_ids": ids,
                             "restricted": restricted,
+                            "snapshot": json.dumps(report_snapshot, ensure_ascii=False) if role == "ASISTENTE" and restricted and report_snapshot is not None else None,
                         },
                     )
                 )

@@ -20,4 +20,18 @@ describe('Assistant report messages', () => {
   it('keeps normal text containing a pipe as text', () => {
     expect(parseAssistantMessage('Talla M | color verde')).toEqual([{ type: 'paragraph', text: 'Talla M | color verde' }]);
   });
+
+  it('presents product figures as labeled facts with no Markdown characters', () => {
+    TestBed.configureTestingModule({ imports: [AssistantMessageBody] });
+    const fixture = TestBed.createComponent(AssistantMessageBody);
+    fixture.componentRef.setInput('text', 'Claro. Para septiembre de 2026, encontré este resultado:\n\nProducto: Polo Ralph Lauren Classic Fit\nCategoría: Polo\nUnidades vendidas: 21\nIngresos: Bs 4.200,00\n\n¿Quieres que revisemos también las ventas por sucursal?');
+    fixture.detectChanges();
+    const element: HTMLElement = fixture.nativeElement;
+    expect(element.querySelectorAll('dl dt')).toHaveLength(4);
+    expect(element.querySelector('.product-name dd')?.textContent).toBe('Polo Ralph Lauren Classic Fit');
+    expect(element.querySelectorAll('dl dd')[2].textContent).toBe('21');
+    expect(element.querySelectorAll('dl dd')[3].textContent).toBe('Bs 4.200,00');
+    expect(element.textContent).not.toContain('**');
+    expect(element.textContent).toContain('septiembre de 2026');
+  });
 });

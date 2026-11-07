@@ -1,6 +1,21 @@
 """Render company figures from authorized report results, without model arithmetic."""
 
 from decimal import Decimal
+from datetime import date
+from calendar import monthrange
+
+MONTHS = ('enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre')
+
+
+def _period(data: dict) -> str:
+    if not data.get('desde') or not data.get('hasta'):
+        return 'el período consultado'
+    start, end = date.fromisoformat(str(data['desde'])), date.fromisoformat(str(data['hasta']))
+    if start.year == end.year and start.month == end.month and start.day == 1 and end.day == monthrange(end.year, end.month)[1]:
+        return f'{MONTHS[start.month - 1]} de {start.year}'
+    if start == end:
+        return f'el {start.day} de {MONTHS[start.month - 1]} de {start.year}'
+    return f'el período del {start.day} de {MONTHS[start.month - 1]} de {start.year} al {end.day} de {MONTHS[end.month - 1]} de {end.year}'
 
 
 def _money(value) -> str:
@@ -22,23 +37,27 @@ def _table(headers, rows) -> str:
 
 
 def business_answer(kind: str, data: dict) -> str:
-    period = f"Del {data['desde']} al {data['hasta']}.\n\n" if data.get('desde') and data.get('hasta') else ''
+    period = f"Para {_period(data)}, estos son los resultados:\n\n" if data.get('desde') and data.get('hasta') else ''
     if kind == "PRODUCTOS":
         products = data.get("productos", [])
         if not products:
             return period + "No encontré ventas de productos con esos filtros."
         if len(products) == 1:
             product = products[0]
-            return period + (
-                f"Encontré **{_text(product['producto'])}**, de la categoría {_text(product['categoria'])}, "
-                f"con **{product['unidades']} unidades vendidas** e ingresos de **{_money(product['ingresos'])}**."
+            return (
+                f"Claro. Para {_period(data)}, encontré este resultado:\n\n"
+                f"Producto: {_text(product['producto'])}\n"
+                f"Categoría: {_text(product['categoria']).capitalize()}\n"
+                f"Unidades vendidas: {product['unidades']}\n"
+                f"Ingresos: {_money(product['ingresos'])}\n\n"
+                "¿Quieres que revisemos también las ventas por sucursal?"
             )
         return period + "Estos son los productos del reporte:\n\n" + _table(
             ["Producto", "Unidades", "Ingresos"],
             [[row['producto'], row['unidades'], _money(row['ingresos'])] for row in products],
         )
     if kind == "VENTAS":
-        summary = f"Se registraron **{data['total_ventas']} ventas**, con **{data['total_unidades']} unidades** e ingresos de **{_money(data['ingresos'])}**."
+        summary = f"Se registraron {data['total_ventas']} ventas, con {data['total_unidades']} unidades e ingresos de {_money(data['ingresos'])}."
         if data.get('sucursales'):
             return period + summary + "\n\n" + _table(
                 ["Sucursal", "Ventas", "Ingresos"],
@@ -46,7 +65,7 @@ def business_answer(kind: str, data: dict) -> str:
             )
         return period + summary
     if kind == "INVENTARIO":
-        summary = f"Hay **{data['unidades_disponibles']} unidades disponibles** y **{data['items_criticos']} variantes con stock crítico**."
+        summary = f"Hay {data['unidades_disponibles']} unidades disponibles y {data['items_criticos']} variantes con stock crítico."
         if not data.get('items'):
             return summary + " No encontré prendas con los filtros solicitados."
         return summary + "\n\n" + _table(
@@ -61,7 +80,7 @@ def business_answer(kind: str, data: dict) -> str:
             [[row['cliente'], row['compras'], _money(row['gasto_total'])] for row in data['clientes']],
         )
     if kind == "INGRESOS_CATEGORIA":
-        summary = period + f"Los ingresos por categoría suman **{_money(data['ingresos'])}**."
+        summary = period + f"Los ingresos por categoría suman {_money(data['ingresos'])}."
         return summary + ("\n\n" + _table(
             ["Categoría", "Unidades", "Ingresos"],
             [[row['categoria'], row['unidades'], _money(row['ingresos'])] for row in data['categorias']],

@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 Mode = Literal["EMPRESA", "CLIENTE"]
 
@@ -48,7 +48,13 @@ class Message(BaseModel):
     created_at: datetime
     producto_ids: list[int] = Field(default_factory=list, exclude=True)
     requiere_reportes_ia: bool = Field(default=False, exclude=True)
+    reporte_snapshot: dict | None = Field(default=None, exclude=True)
     productos: list[AssistantProduct] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def reporte_exportable(self) -> bool:
+        return self.rol == "ASISTENTE" and self.requiere_reportes_ia and self.reporte_snapshot is not None
 
 
 class MessageExchange(BaseModel):

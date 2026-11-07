@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { AuthService } from '../../core/auth/auth.service';
 import { AssistantService } from '../../core/services/assistant.service';
@@ -29,6 +29,7 @@ describe('AdminAssistant', () => {
         asistente: { id_mensaje: 2, rol: 'ASISTENTE', contenido: '¿En qué te ayudo?', created_at: conversation.created_at, productos: [] },
       })),
       messages: vi.fn(() => of([])),
+      exportReport: vi.fn(() => of(new Blob(['test'], { type: 'application/pdf' }))),
     };
     TestBed.configureTestingModule({
       imports: [AdminAssistant],
@@ -70,5 +71,46 @@ describe('AdminAssistant', () => {
   it('does not show the window to other roles', () => {
     const { fixture } = setup('PROFESIONAL', ['CAJERO']);
     expect(fixture.nativeElement.querySelector('.admin-advisor-launcher')).toBeNull();
+  });
+
+  it('downloads the report attached to the selected message, not the latest question', () => {
+    const { fixture, assistant } = setup();
+    fixture.componentInstance.open.set(true);
+    fixture.componentInstance.draft = 'Ventas de septiembre';
+    fixture.componentInstance.send();
+    const message = { id_mensaje: 2, rol: 'ASISTENTE' as const, contenido: 'Reporte', created_at: '2026-11-07T12:00:00Z', productos: [], reporte_exportable: true };
+    fixture.componentInstance.messages.set([message]);
+    fixture.componentInstance.draft = 'Otra pregunta';
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Descargar PDF');
+    expect(fixture.nativeElement.textContent).toContain('Descargar Excel');
+    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:report');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const pending = new Subject<Blob>();
+    assistant.exportReport.mockReturnValue(pending);
+    fixture.componentInstance.downloadReport(message, 'xlsx');
+    fixture.componentInstance.downloadReport(message, 'pdf');
+    expect(assistant.exportReport).toHaveBeenCalledTimes(1);
+    expect(assistant.exportReport).toHaveBeenCalledWith('conversation-1', 2, 'xlsx');
+    expect(fixture.componentInstance.downloading()?.format).toBe('xlsx');
+    pending.next(new Blob(['report'])); pending.complete();
+    expect(click).toHaveBeenCalledOnce();
+    expect(fixture.componentInstance.downloading()).toBeNull();
+    create.mockRestore(); revoke.mockRestore(); click.mockRestore();
+  });
+
+  it('does not offer downloads for a normal message and handles changed permissions', () => {
+    const { fixture, assistant } = setup();
+    fixture.componentInstance.open.set(true);
+    fixture.componentInstance.draft = 'Hola';
+    fixture.componentInstance.send();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.admin-advisor-downloads')).toBeNull();
+    const message = { ...fixture.componentInstance.messages()[1], reporte_exportable: true };
+    assistant.exportReport.mockReturnValue(throwError(() => ({ status: 403 })));
+    fixture.componentInstance.downloadReport(message, 'pdf');
+    expect(fixture.componentInstance.downloading()).toBeNull();
+    expect(fixture.componentInstance.error()).toContain('acceso');
   });
 });

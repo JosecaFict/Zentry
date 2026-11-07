@@ -26,6 +26,7 @@ export class AdminAssistant {
   readonly loading = signal(false);
   readonly busy = signal(false);
   readonly error = signal('');
+  readonly downloading = signal<{ messageId: number; format: 'pdf' | 'xlsx' } | null>(null);
   readonly conversations = signal<AssistantConversation[]>([]);
   readonly active = signal<AssistantConversation | null>(null);
   readonly messages = signal<AssistantMessage[]>([]);
@@ -149,6 +150,35 @@ export class AdminAssistant {
     });
   }
 
+  downloadReport(message: AssistantMessage, format: 'pdf' | 'xlsx'): void {
+    const conversation = this.active();
+    if (!conversation || !message.reporte_exportable || !this.professional() || this.downloading()) return;
+    const owner = this.owner;
+    this.downloading.set({ messageId: message.id_mensaje, format });
+    this.error.set('');
+    this.assistant.exportReport(conversation.id_conversacion, message.id_mensaje, format).subscribe({
+      next: (blob) => {
+        if (owner !== this.owner) return;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `reporte-chat-${message.id_mensaje}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        this.downloading.set(null);
+      },
+      error: (error: HttpErrorResponse) => {
+        if (owner !== this.owner) return;
+        this.downloading.set(null);
+        this.error.set(error.status === 409
+          ? 'Este mensaje no tiene un reporte guardado. Realiza una nueva consulta para descargarlo.'
+          : this.errorText(error, 'No pudimos descargar el reporte. Inténtalo nuevamente.'));
+      },
+    });
+  }
+
   onKeydown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -199,6 +229,7 @@ export class AdminAssistant {
     this.busy.set(false);
     this.loading.set(false);
     this.error.set('');
+    this.downloading.set(null);
     this.draft = '';
   }
 }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
@@ -18,6 +18,8 @@ from app.modules.assistant.schemas import AssistantProduct, Conversation, Messag
 from app.modules.auth.dependencies import CurrentPrincipal
 from app.modules.reports.ai import AIReportInterpreterError, GroqReportInterpreter
 from app.modules.reports.service import ReportsService
+from app.modules.reports.schemas import AIReportPlan
+from app.modules.reports.export import generate_ai_excel, generate_ai_pdf
 
 
 class ShoppingPlan(BaseModel):
@@ -107,6 +109,45 @@ class AssistantService:
         for item in messages:
             if item.requiere_reportes_ia:
                 item.contenido = "Este reporte requiere el plan Profesional y permisos de reportes."
+                item.reporte_snapshot = None
+
+    async def export_report(self, conversation_id: UUID, message_id: int, file_format: str) -> tuple[bytes, str, str]:
+        conversation = await self.get(conversation_id)
+        if conversation.modo != "EMPRESA" or not self._can_report():
+            raise HTTPException(403, "La descarga requiere el plan Profesional y permisos de reportes")
+        if file_format not in {"pdf", "xlsx"}:
+            raise HTTPException(422, "Formato de reporte no compatible")
+        message = await self.repo.report_message(conversation_id, message_id)
+        if message is None:
+            raise HTTPException(404, "Reporte no encontrado en esta conversación")
+        if not message.reporte_exportable:
+            raise HTTPException(409, "Este mensaje no tiene un reporte guardado para descargar; realiza una nueva consulta")
+        snapshot = message.reporte_snapshot
+        plan = AIReportPlan.model_validate(snapshot["interpretacion"])
+        if plan.necesita_aclaracion:
+            raise HTTPException(409, "Completa la consulta antes de descargar")
+        data = snapshot["datos"]
+        from app.modules.reports.router import _summary
+
+        title, _ = _summary(plan.tipo_reporte, data)
+        tenant_name = self.principal.tenant_slug or "Zentry"
+        if file_format == "xlsx":
+            content = generate_ai_excel(title, tenant_name, plan, data)
+            media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        else:
+            content = generate_ai_pdf(title, tenant_name, plan, data)
+            media = "application/pdf"
+        await ReportsService(self.session).audit_access(
+            tenant_id=self.principal.id_tenant, user_id=self.principal.user.id_usuario,
+            session_id=self.principal.session_id, action="EXPORTAR", entity="REPORTE_IA",
+            record_id=str(message_id), metadata={
+                "origen_reporte": "ASISTENTE", "id_conversacion": str(conversation_id),
+                "formato": file_format, "tipo_reporte": plan.tipo_reporte,
+                "fecha_desde": plan.fecha_desde, "fecha_hasta": plan.fecha_hasta,
+                "fecha_consulta": snapshot.get("consultado_en"), "sucursal": plan.sucursal,
+            },
+        )
+        return content, media, f"reporte-chat-{message_id}.{file_format}"
 
     async def archive(self, conversation_id: UUID) -> None:
         await self.get(conversation_id)
@@ -176,17 +217,28 @@ class AssistantService:
                 (item.contenido for item in reversed(history) if item.rol == "USUARIO"), None
             )
             report_question = self._business_report_intent(question)
+            previous_answer = next(
+                (item.contenido for item in reversed(history) if item.rol == "ASISTENTE"), ""
+            )
+            accepts_branch_report = bool(
+                previous_question
+                and "¿Quieres que revisemos también las ventas por sucursal?" in previous_answer
+                and re.fullmatch(r"\s*(?:s[ií]|claro|dale|adelante|por favor)(?:[, ]+por favor)?[.!\s]*", question.casefold())
+            )
             followup = bool(
                 previous_question
                 and self._business_report_intent(previous_question)
-                and re.search(
-                    r"\b(?:anterior|antes|compar|y en|y del|y la|y el)\b", question.casefold()
-                )
+                and (accepts_branch_report or re.search(
+                    r"\b(?:anterior|antes|compar|y en|y del|y la|y el|ese per[ií]odo|por sucursal)\b", question.casefold()
+                ))
+            )
+            report_prompt = (
+                f"Período de referencia: {previous_question}. Solicitud actual: ventas agrupadas por sucursal para ese mismo período."
+                if accepts_branch_report
+                else f"{previous_question}. Seguimiento: {question}" if followup else question
             )
             context = (
-                await self._business_context(
-                    f"{previous_question}. Seguimiento: {question}" if followup else question
-                )
+                await self._business_context(report_prompt)
                 if can_report and (report_question or followup)
                 else json.dumps(
                     {"reportes_habilitados": can_report, "datos_de_empresa": None},
@@ -297,12 +349,14 @@ class AssistantService:
         except ProviderUnavailable as exc:
             raise HTTPException(503, "El asistente no pudo responder en este momento") from exc
         if conversation.modo == "EMPRESA":
+            report_snapshot = json.loads(context).get("snapshot") if report_restricted else None
             user_message, assistant_message = await self.repo.append_exchange(
                 conversation_id,
                 question,
                 answer,
                 model,
                 report_restricted=report_restricted,
+                report_snapshot=report_snapshot,
             )
         else:
             user_message, assistant_message = await self.repo.append_exchange(
@@ -420,7 +474,13 @@ class AssistantService:
         from app.modules.reports.router import _execute_ai_plan
 
         data = await _execute_ai_plan(plan, self.principal, ReportsService(self.session), None)
+        dated_data = data.get("ventas", data)
+        if dated_data.get("desde") and dated_data.get("hasta"):
+            plan.fecha_desde = date.fromisoformat(str(dated_data["desde"]))
+            plan.fecha_hasta = date.fromisoformat(str(dated_data["hasta"]))
         return json.dumps(
-            {"reporte": plan.tipo_reporte, "moneda": "BOB", "respuesta_verificada": business_answer(plan.tipo_reporte, data)},
+            {"reporte": plan.tipo_reporte, "moneda": "BOB", "respuesta_verificada": business_answer(plan.tipo_reporte, data),
+             "snapshot": {"interpretacion": plan.model_dump(mode="json"), "datos": data,
+                          "consultado_en": datetime.now(UTC).isoformat()}},
             ensure_ascii=False,
         )

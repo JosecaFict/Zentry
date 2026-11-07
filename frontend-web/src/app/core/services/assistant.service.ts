@@ -18,6 +18,7 @@ export interface AssistantMessage {
   contenido: string;
   created_at: string;
   productos: AssistantProduct[];
+  reporte_exportable?: boolean;
 }
 
 export interface AssistantProduct {
@@ -72,5 +73,9 @@ export class AssistantService {
 
   archive(conversationId: string) {
     return this.http.post<void>(`${this.base}/${conversationId}/archive`, {});
+  }
+
+  exportReport(conversationId: string, messageId: number, format: 'pdf' | 'xlsx') {
+    return this.http.get(`${this.base}/${conversationId}/messages/${messageId}/export/${format}`, { responseType: 'blob' });
   }
 }

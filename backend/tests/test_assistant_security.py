@@ -95,7 +95,8 @@ async def test_basic_admin_report_question_does_not_query_business_data(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_professional_report_preserves_verified_boliviano_answer(monkeypatch):
+@pytest.mark.parametrize('followup', [False, True])
+async def test_professional_report_preserves_verified_boliviano_answer(monkeypatch, followup):
     service = AssistantService(AsyncMock(), principal())
     service.settings = SimpleNamespace(groq_api_key="test-key", groq_reports_model="test-model")
     conversation = Conversation(
@@ -104,6 +105,11 @@ async def test_professional_report_preserves_verified_boliviano_answer(monkeypat
     )
     service.get = AsyncMock(return_value=conversation)
     service.repo.messages = AsyncMock(return_value=[])
+    if followup:
+        service.repo.messages.return_value = [
+            Message(id_mensaje=1, rol="USUARIO", contenido="Producto más vendido de septiembre de 2026", created_at="2026-01-01T00:00:00Z"),
+            Message(id_mensaje=2, rol="ASISTENTE", contenido="¿Quieres que revisemos también las ventas por sucursal?", created_at="2026-01-01T00:00:00Z"),
+        ]
     service._business_context = AsyncMock(return_value='{"respuesta_verificada":"21 unidades e ingresos de **Bs 4.200,00**."}')
     service.repo.append_exchange = AsyncMock(return_value=(
         Message(id_mensaje=1, rol="USUARIO", contenido="ventas", created_at="2026-01-01T00:00:00Z"),
@@ -111,7 +117,10 @@ async def test_professional_report_preserves_verified_boliviano_answer(monkeypat
     ))
     provider = AsyncMock(return_value="4.200 euros")
     monkeypatch.setattr("app.modules.assistant.service.answer_with_provider", provider)
-    await service.send(conversation.id_conversacion, "¿Qué producto fue el más vendido?")
+    await service.send(conversation.id_conversacion, "Sí" if followup else "¿Qué producto fue el más vendido?")
+    if followup:
+        assert 'septiembre de 2026' in service._business_context.await_args.args[0]
+        assert 'ventas agrupadas por sucursal' in service._business_context.await_args.args[0]
     assert service.repo.append_exchange.await_args.args[2] == '21 unidades e ingresos de **Bs 4.200,00**.'
     assert service.repo.append_exchange.await_args.kwargs['report_restricted'] is True
     provider.assert_not_awaited()
