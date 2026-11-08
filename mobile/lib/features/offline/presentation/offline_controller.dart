@@ -318,19 +318,19 @@ class OfflineController extends Notifier<OfflineState> {
 
   void setQuery(String query) => state = state.copyWith(query: query);
 
-  Future<void> queue() async {
+  Future<bool> queue() async {
     final scope = _scope;
-    if (scope == null || state.cart.isEmpty) return;
+    if (scope == null || state.busy || state.cart.isEmpty) return false;
     final wasOnline = state.online;
-    if (state.mode == OfflineOperationType.reservation &&
-        state.customerId == null) {
+    final type = state.mode;
+    if (type == OfflineOperationType.reservation && state.customerId == null) {
       state = state.copyWith(error: 'Selecciona el cliente de la reserva.');
-      return;
+      return false;
     }
     final items = state.cart.entries
         .map((entry) => {'id_variante': entry.key, 'cantidad': entry.value})
         .toList(growable: false);
-    final payload = state.mode == OfflineOperationType.sale
+    final payload = type == OfflineOperationType.sale
         ? <String, dynamic>{
             'id_sucursal': scope.branchId,
             'id_cliente': null,
@@ -348,20 +348,30 @@ class OfflineController extends Notifier<OfflineState> {
             'observacion': 'Reserva registrada desde Zentry móvil offline',
             'items': items,
           };
-    await ref
-        .read(offlineDatabaseProvider)
-        .queueOperation(scope: scope, type: state.mode, payload: payload);
-    if (!ref.mounted || _scope?.key != scope.key) return;
-    state = state.copyWith(
-      cart: const {},
-      clearCustomer: true,
-      message: state.mode == OfflineOperationType.sale
-          ? 'Venta en efectivo guardada en este dispositivo.'
-          : 'Reserva guardada; el stock se validará al sincronizar.',
-      clearError: true,
-    );
-    await _loadLocal();
-    if (ref.mounted && !wasOnline && state.online) _scheduleAutoSync();
+    state = state.copyWith(busy: true, clearError: true, clearMessage: true);
+    try {
+      await ref
+          .read(offlineDatabaseProvider)
+          .queueOperation(scope: scope, type: type, payload: payload);
+      if (!ref.mounted || _scope?.key != scope.key) return false;
+      state = state.copyWith(
+        cart: const {},
+        clearCustomer: true,
+        message: type == OfflineOperationType.sale
+            ? 'Venta en efectivo guardada en este dispositivo.'
+            : 'Reserva guardada; el stock se validará al sincronizar.',
+      );
+      await _loadLocal();
+      return true;
+    } catch (error) {
+      if (ref.mounted) state = state.copyWith(error: error.toString());
+      return false;
+    } finally {
+      if (ref.mounted) {
+        state = state.copyWith(busy: false);
+        if (!wasOnline && state.online) _scheduleAutoSync();
+      }
+    }
   }
 
   void _scheduleAutoSync([Duration delay = Duration.zero]) {

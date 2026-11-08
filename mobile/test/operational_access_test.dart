@@ -78,6 +78,39 @@ void main() {
   });
 
   group('protección de rutas del panel', () {
+    test('Offline abre para un administrador con acceso a inventario', () {
+      final user = _user(
+        roles: const ['ADMIN'],
+        permissions: const [OperationalPermissions.inventoryView],
+      );
+      expect(
+        NavigationMemory.panelRedirect(
+          initialized: true,
+          user: user,
+          location: '/admin/offline',
+        ),
+        isNull,
+      );
+    });
+
+    test(
+      'Offline exige acceso a inventario también al abrir la ruta directamente',
+      () {
+        final user = _user(
+          roles: const ['CAJERO'],
+          permissions: const [OperationalPermissions.salesCreate],
+        );
+        expect(
+          NavigationMemory.panelRedirect(
+            initialized: true,
+            user: user,
+            location: '/admin/offline',
+          ),
+          '/admin/403',
+        );
+      },
+    );
+
     test('un deep link sin sesión conserva returnUrl para el login', () {
       final redirect = NavigationMemory.panelRedirect(
         initialized: true,

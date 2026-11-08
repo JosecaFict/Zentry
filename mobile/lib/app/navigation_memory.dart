@@ -48,6 +48,7 @@ abstract final class NavigationMemory {
   }
 
   static bool canOpenPanelLocation(AppUser user, String location) {
+    if (location == '/admin/offline') return user.canOpenOffline;
     if (location.startsWith('/admin/inventario')) {
       return user.canAccessSection(OperationalSection.inventory);
     }

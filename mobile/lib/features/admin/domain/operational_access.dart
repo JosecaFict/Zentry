@@ -46,6 +46,8 @@ extension OperationalAccess on AppUser {
   bool get canViewInventory =>
       hasPermission(OperationalPermissions.inventoryView);
 
+  bool get canOpenOffline => canViewInventory && canManageOrders;
+
   bool get canManageInventory =>
       hasPermission(OperationalPermissions.inventoryMovement);
 

@@ -46,7 +46,7 @@ class AdminShell extends ConsumerWidget {
           icon: Icons.swap_horiz_outlined,
           selectedIcon: Icons.swap_horiz_rounded,
         ),
-      if (user.canViewInventory && user.canManageOrders)
+      if (user.canOpenOffline)
         const _PanelDestination(
           location: '/admin/offline',
           label: 'Offline',

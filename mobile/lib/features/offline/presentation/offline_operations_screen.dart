@@ -527,15 +527,17 @@ class _CatalogGrid extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: () async {
-                        await ctrl.queue();
-                        if (context.mounted &&
-                            ref.read(offlineControllerProvider).error == null) {
-                          Navigator.pop(context);
-                        }
-                      },
+                      onPressed: current.busy
+                          ? null
+                          : () async {
+                              final saved = await ctrl.queue();
+                              if (saved && context.mounted)
+                                Navigator.pop(context);
+                            },
                       child: Text(
-                        current.mode == OfflineOperationType.sale
+                        current.busy
+                            ? 'Guardando…'
+                            : current.mode == OfflineOperationType.sale
                             ? 'Guardar venta en efectivo'
                             : 'Guardar reserva',
                       ),

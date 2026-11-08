@@ -218,6 +218,7 @@ export class OfflineOperationsAdmin implements OnInit {
   }
 
   async queueOfflineSale(): Promise<void> {
+    if (this.queuingSale()) return;
     const scope = this.scope();
     const lines = this.cartLines();
     if (!scope || !lines.length) return;
@@ -253,6 +254,7 @@ export class OfflineOperationsAdmin implements OnInit {
   }
 
   async queueOfflineReservation(): Promise<void> {
+    if (this.queuingSale()) return;
     const scope = this.scope();
     const lines = this.cartLines();
     const customerId = this.selectedCustomerId();
