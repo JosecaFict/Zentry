@@ -44,7 +44,9 @@ describe('Customer returns navigation', () => {
     } as Sale;
     const requests = [
       { id_devolucion: 2, id_venta: 1869, tipo_solicitud: 'CAMBIO_TALLA', estado: 'COMPLETADA',
-        cierre: { comprobante: 'DEV-000002' }, items: [{ id_detalle_venta: 5, cantidad: 1 }] },
+        cierre: { comprobante: 'DEV-000002', tipo: 'CAMBIO', monto: '0.00',
+          items: [{ id_detalle_devolucion: 1, producto: 'Polo clásico', talla: 'M', color: 'Azul marino', cantidad: 1 }] },
+        items: [{ id_detalle_devolucion: 1, id_detalle_venta: 5, producto: 'Polo clásico', talla: 'S', color: 'Azul marino', cantidad: 1 }] },
       { id_devolucion: 3, id_venta: 1869, tipo_solicitud: 'REEMBOLSO', estado: 'PENDIENTE',
         items: [{ id_detalle_venta: 6, cantidad: 1 }] },
       { id_devolucion: 4, id_venta: 1869, tipo_solicitud: 'REEMBOLSO', estado: 'RECHAZADA',
@@ -64,8 +66,22 @@ describe('Customer returns navigation', () => {
     const harness = await RouterTestingHarness.create();
     const page = await harness.navigateByUrl('/historial', HistoryPage);
     const view = harness.routeNativeElement!;
-    expect(view.textContent).toMatch(/Cambio de talla · .*Completada/);
-    expect(view.textContent).toContain('Descargar comprobante DEV-000002');
+    expect(view.textContent).toContain('Completada');
+    const changeButton = [...view.querySelectorAll('button')].find(
+      (button) => button.textContent?.includes('Ver cambio'),
+    )!;
+    changeButton.click();
+    harness.detectChanges();
+    const detail = view.querySelector('#history-return-2');
+    expect(detail?.textContent).toContain('Cambio de talla');
+    expect(detail?.textContent).toContain('Talla S');
+    expect(detail?.textContent).toContain('Talla M');
+    expect(detail?.textContent).toContain('DEV-000002');
+    expect(detail?.textContent).toContain('Comprobante PDF');
+    expect(changeButton.getAttribute('aria-expanded')).toBe('true');
+    changeButton.click();
+    harness.detectChanges();
+    expect(view.querySelector('#history-return-2')).toBeNull();
     page.startReturn(sale);
     harness.detectChanges();
     const options = view.querySelectorAll('select[formControlName="id_detalle_venta"] option');

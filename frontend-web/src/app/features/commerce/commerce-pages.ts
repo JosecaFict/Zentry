@@ -1,4 +1,4 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DatePipe, DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -1675,23 +1675,21 @@ export class AddressesPage {
 
 @Component({
   selector: 'app-history-page',
-  imports: [DatePipe, BolivianosPipe, ReactiveFormsModule, StatusPanel],
-  styles: `.history-return-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0; } .history-return-actions p { flex: 1 1 260px; margin: 0; color: var(--ink-soft); line-height: 1.5; }`,
-  template: `<section class="commerce-page page-shell">
-    <header class="commerce-heading">
-      <div>
-        <h1>{{ tab() === 'devoluciones' ? 'Cambios y devoluciones' : 'Historial' }}</h1>
-        <p>Compras, reservas y devoluciones en un solo lugar.</p>
-      </div>
+  imports: [DatePipe, BolivianosPipe, NgTemplateOutlet, ReactiveFormsModule, StatusPanel],
+  styleUrl: './history-page.scss',
+  template: `<section class="commerce-page page-shell customer-history">
+    <header class="history-heading">
+      <h1>{{ tab() === 'devoluciones' ? 'Cambios y devoluciones' : 'Mi historial' }}</h1>
     </header>
-    <div class="commerce-tabs" role="tablist">
-      <button type="button" [class.active]="tab() === 'compras'" (click)="tab.set('compras')">
+    <div class="commerce-tabs" role="group" aria-label="Secciones del historial">
+      <button type="button" [class.active]="tab() === 'compras'" [attr.aria-pressed]="tab() === 'compras'" (click)="tab.set('compras')">
         Compras</button
-      ><button type="button" [class.active]="tab() === 'reservas'" (click)="tab.set('reservas')">
+      ><button type="button" [class.active]="tab() === 'reservas'" [attr.aria-pressed]="tab() === 'reservas'" (click)="tab.set('reservas')">
         Reservas</button
       ><button
         type="button"
         [class.active]="tab() === 'devoluciones'"
+        [attr.aria-pressed]="tab() === 'devoluciones'"
         (click)="tab.set('devoluciones')"
       >
         Cambios y devoluciones
@@ -1709,60 +1707,69 @@ export class AddressesPage {
     @if (loading()) {
       <div class="commerce-skeleton"><span></span></div>
     } @else if (tab() === 'compras') {
-      <div class="record-list">
+      <div class="history-list" [class.has-detail]="selectedReturn()"
+        [style.--purchase-count]="sales().length">
+        @if (sales().length) {
+          <div class="history-row history-columns" aria-hidden="true">
+            <span>Compra</span><span>Prenda</span><span>Total</span><span>Acciones</span>
+          </div>
+        }
         @for (sale of sales(); track sale.id_venta) {
           @let availableItems = returnableItems(sale);
-          <article>
-            <header>
+          @let requests = returnsBySale().get(sale.id_venta) ?? [];
+          @let selected = selectedReturn();
+          <article class="history-purchase" [class.is-selected]="selected?.id_venta === sale.id_venta">
+            <div class="history-row">
               <div>
-                <h2>Compra #{{ sale.id_venta }}</h2>
-                <p>{{ sale.fecha_venta | date: 'medium' }} / {{ sale.sucursal }}</p>
+                <h2>#{{ sale.id_venta }}</h2>
+                <p>{{ sale.fecha_venta | date: 'dd/MM/yyyy' }}</p>
+                <p>{{ sale.sucursal }}</p>
               </div>
-              <strong>{{ sale.total | bolivianos }}</strong>
-            </header>
-            <ul>
-              @for (item of sale.items; track item.id_detalle) {
-                <li>
-                  {{ item.producto }} / {{ item.color }} / {{ item.talla }} × {{ item.cantidad }}
-                </li>
-              }
-            </ul>
-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <button
-                  class="button button--small button--secondary"
-                  type="button"
+              <ul class="history-products">
+                @for (item of sale.items; track item.id_detalle) {
+                  <li>
+                    @if (item.imagen_url) {
+                      <img [src]="item.imagen_url" alt="" width="42" height="46" loading="lazy" />
+                    }
+                    <div><strong>{{ item.producto }}</strong>
+                      <p>{{ item.color }} · {{ item.talla }} · {{ item.cantidad }} u.</p>
+                    </div>
+                  </li>
+                }
+              </ul>
+              <strong class="history-total">{{ sale.total | bolivianos }}</strong>
+              <div class="history-actions">
+                <button class="history-link" type="button"
                   [disabled]="downloadingSaleId() === sale.id_venta"
-                  (click)="downloadSaleInvoice(sale.id_venta)"
-                  title="Descargar factura en PDF"
-                >
-                  {{ downloadingSaleId() === sale.id_venta ? 'Generando PDF…' : '📄 Descargar Factura PDF' }}
+                  (click)="downloadSaleInvoice(sale.id_venta)">
+                  {{ downloadingSaleId() === sale.id_venta ? 'Generando PDF…' : 'Factura PDF' }}
                 </button>
-              </div>
-              @if (sale.devolucion_habilitada && availableItems.length) {
-                <span class="status-chip" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; font-size: 0.75rem;">
-                  Solicitudes hasta {{ sale.fecha_limite_devolucion | date: 'short' }}
-                </span>
-                <button class="button button--quiet" type="button" (click)="startReturn(sale)">
-                  Solicitar cambio o devolución
-                </button>
-              } @else if (availableItems.length) {
-                <span class="status-chip" style="background: #f1f5f9; color: #64748b; font-size: 0.75rem;">
-                  {{ !sale.fecha_inicio_devolucion ? 'Disponible después de confirmar la entrega o retiro' : 'Compra fuera del plazo o estado habilitado' }}
-                </span>
-              }
-            </div>
-            @for (request of returnsBySale().get(sale.id_venta) ?? []; track request.id_devolucion) {
-              <div class="history-return-actions">
-                <p><strong>{{ returnKindLabel(request.tipo_solicitud) }}</strong> · {{ returnStateLabel(request.estado) }}</p>
-                @if (request.cierre) {
-                  <button class="button button--small button--secondary" type="button"
-                    (click)="downloadReturnReceipt(request.id_devolucion)">
-                    Descargar comprobante {{ request.cierre.comprobante }}
+                @for (request of requests; track request.id_devolucion) {
+                  <div class="history-request">
+                    <button class="history-link" type="button"
+                      [attr.aria-expanded]="selected?.id_devolucion === request.id_devolucion"
+                      [attr.aria-controls]="'history-return-' + request.id_devolucion"
+                      (click)="toggleReturnDetail(request)">
+                      {{ request.tipo_solicitud.startsWith('CAMBIO_') ? 'Ver cambio' : 'Ver solicitud' }}
+                      @if (requests.length > 1) { #{{ request.id_devolucion }} }
+                    </button>
+                    <span class="history-status" [class]="returnBadgeClass(request.estado)">
+                      {{ returnStateLabel(request.estado) }}
+                    </span>
+                  </div>
+                }
+                @if (sale.devolucion_habilitada && availableItems.length) {
+                  <button class="history-link" type="button" (click)="startReturn(sale)">
+                    Solicitar cambio o devolución
                   </button>
+                  @if (sale.fecha_limite_devolucion) {
+                    <p>Hasta el {{ sale.fecha_limite_devolucion | date: 'dd/MM/yyyy HH:mm' }}</p>
+                  }
+                } @else if (availableItems.length) {
+                  <p>{{ !sale.fecha_inicio_devolucion ? 'Disponible después de la entrega o retiro' : 'Compra fuera del plazo o estado habilitado' }}</p>
                 }
               </div>
-            }
+            </div>
             @if (returnSale()?.id_venta === sale.id_venta) {
               <form class="return-form" [formGroup]="returnForm" (ngSubmit)="submitReturn()">
                 <label class="field"
@@ -1813,6 +1820,12 @@ export class AddressesPage {
               </form>
             }
           </article>
+          @if (selected && selected.id_venta === sale.id_venta) {
+            <aside class="history-detail" [id]="'history-return-' + selected.id_devolucion"
+              [attr.aria-label]="returnKindLabel(selected.tipo_solicitud)">
+              <ng-container *ngTemplateOutlet="returnDetail; context: { $implicit: selected }" />
+            </aside>
+          }
         } @empty {
           <app-status-panel title="Sin compras" message="Todavía no registraste compras." />
         }
@@ -1834,86 +1847,96 @@ export class AddressesPage {
         }
       </div>
     } @else {
-      <div class="record-list">
-        @for (item of returns(); track item.id_devolucion) {
-          <article>
-            <header>
-              <div>
-                <h2>Solicitud #{{ item.id_devolucion }} · {{ returnKindLabel(item.tipo_solicitud) }}</h2>
-                <p>Compra #{{ item.id_venta }} · Solicitado el {{ item.fecha_solicitud | date: 'medium' }}</p>
-              </div>
-              <span class="status-chip" [class]="returnBadgeClass(item.estado)">
-                {{ returnStateLabel(item.estado) }}
-              </span>
-            </header>
-
-            @if (item.estado === 'APROBADA') {
-              <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; font-size: 0.84rem; color: #1e40af; display: flex; align-items: center; gap: 8px; margin: 10px 0;">
-                <span style="font-size: 1.1rem;">📍</span>
-                <div>
-                  <strong>¡Tu solicitud fue aprobada!</strong> Presenta la(s) prenda(s) en la tienda con tu comprobante para la inspección física y cierre de devolución.
-                </div>
-              </div>
-            } @else if (item.estado === 'PENDIENTE') {
-              <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; font-size: 0.84rem; color: #92400e; display: flex; align-items: center; gap: 8px; margin: 10px 0;">
-                <span style="font-size: 1.1rem;">⏳</span>
-                <div>
-                  <strong>Solicitud recibida.</strong> Nuestro equipo en tienda revisará los datos de tu compra dentro del plazo reglamentario (5 días hábiles).
-                </div>
-              </div>
-            } @else if (item.estado === 'COMPLETADA') {
-              <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 10px 14px; font-size: 0.84rem; color: #065f46; display: flex; align-items: center; gap: 8px; margin: 10px 0;">
-                <span style="font-size: 1.1rem;">✅</span>
-                <div>
-                  <strong>{{ item.cierre ? 'Cambio o reembolso completado.' : 'Recepción completada.' }}</strong> La tienda registró el cierre{{ item.fecha_resolucion ? ' el ' + (item.fecha_resolucion | date: 'medium') : '' }}.
-                </div>
-              </div>
-            } @else if (item.estado === 'RECHAZADA') {
-              <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; font-size: 0.84rem; color: #991b1b; display: flex; align-items: center; gap: 8px; margin: 10px 0;">
-                <span style="font-size: 1.1rem;">✕</span>
-                <div>
-                  <strong>Solicitud no aprobada.</strong> La devolución no cumplió con las condiciones de plazo o política de prendas.
-                </div>
-              </div>
-            }
-
-            @if (item.cierre; as receipt) {
-              <p><strong>{{ receipt.comprobante }}</strong> · {{ receipt.tipo === 'CAMBIO' ? 'Cambio de prenda' : 'Reembolso' }}</p>
-              <p>{{ receipt.accion === 'COBRAR' ? 'Adicional pagado' : receipt.accion === 'REEMBOLSAR' ? 'Importe reembolsado' : 'Sin diferencia' }}: {{ receipt.monto | bolivianos }}</p>
-              @for (line of receipt.items; track line.id_detalle_devolucion) {
-                @if (line.producto) { <p>Recibiste: {{ line.producto }} · {{ line.talla }} / {{ line.color }} × {{ line.cantidad }}</p> }
-              }
-              <button type="button" class="button button--secondary" (click)="downloadReturnReceipt(item.id_devolucion)">Descargar comprobante PDF</button>
-            }
-            <p style="margin: 8px 0; font-size: 0.88rem; color: var(--ink);">
-              <strong>Motivo:</strong> "{{ item.motivo }}"
-            </p>
-
-            @if (item.items && item.items.length > 0) {
-              <div style="margin-top: 10px;">
-                <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--ink-soft); display: block; margin-bottom: 6px;">
-                  Prendas incluidas:
-                </span>
-                <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px;">
-                  @for (line of item.items; track line.id_detalle_devolucion) {
-                    <li style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; background: var(--surface-muted); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line);">
-                      <span><strong>{{ line.producto }}</strong> · {{ line.color }} / {{ line.talla }}</span>
-                      <strong style="font-variant-numeric: tabular-nums;">{{ line.cantidad }} u.</strong>
-                    </li>
-                    @if (line.id_variante_solicitada) { <li>Solicitado: talla {{ line.talla_solicitada }} · color {{ line.color_solicitado }}</li> }
-                  }
-                </ul>
-              </div>
-            }
-          </article>
-        } @empty {
-          <app-status-panel
-            title="Sin devoluciones"
-            message="No tienes solicitudes de devolución."
-          />
-        }
-      </div>
+      @if (returns().length) {
+        <div class="history-list history-returns">
+          @for (request of returns(); track request.id_devolucion) {
+            <article class="history-detail">
+              <ng-container *ngTemplateOutlet="returnDetail; context: { $implicit: request }" />
+            </article>
+          }
+        </div>
+      } @else {
+        <app-status-panel title="Sin devoluciones" message="No tienes solicitudes de devolución." />
+      }
     }
+
+    <ng-template #returnDetail let-request>
+      <header class="history-detail-heading">
+        <div>
+          <h2>{{ returnKindLabel(request.tipo_solicitud) }}</h2>
+          <p>Solicitud #{{ request.id_devolucion }} · Compra #{{ request.id_venta }}</p>
+          <p>Solicitada el {{ request.fecha_solicitud | date: 'dd/MM/yyyy HH:mm' }}</p>
+        </div>
+        <span class="history-status" [class]="returnBadgeClass(request.estado)">
+          {{ returnStateLabel(request.estado) }}
+        </span>
+      </header>
+
+      @switch (request.estado) {
+        @case ('APROBADA') {
+          <p class="history-detail-note">Presenta la prenda y tu comprobante en la tienda para la inspección.</p>
+        }
+        @case ('PENDIENTE') {
+          <p class="history-detail-note">La tienda está revisando tu solicitud.</p>
+        }
+        @case ('RECHAZADA') {
+          <p class="history-detail-note">La tienda rechazó la solicitud.</p>
+        }
+      }
+
+      @if (request.items.length || request.cierre?.tipo === 'CAMBIO') {
+        <div class="history-comparison" [class.has-replacement]="request.cierre?.tipo === 'CAMBIO'">
+          <div>
+            <h3>{{ request.estado === 'COMPLETADA' ? 'Devolviste' : 'Prendas de la solicitud' }}</h3>
+            @for (line of request.items; track line.id_detalle_devolucion) {
+              <div class="history-variant">
+                <strong>{{ line.producto }}</strong>
+                <p>Talla {{ line.talla }} · {{ line.color }} · {{ line.cantidad }} u.</p>
+                @if (line.id_variante_solicitada && !request.cierre) {
+                  <p>Solicitaste talla {{ line.talla_solicitada }} · {{ line.color_solicitado }}</p>
+                }
+              </div>
+            }
+          </div>
+          @if (request.cierre?.tipo === 'CAMBIO') {
+            <div>
+              <h3>Recibiste</h3>
+              @for (line of request.cierre.items; track line.id_detalle_devolucion) {
+                @if (line.producto) {
+                  <div class="history-variant">
+                    <strong>{{ line.producto }}</strong>
+                    <p>Talla {{ line.talla }} · {{ line.color }} · {{ line.cantidad }} u.</p>
+                  </div>
+                }
+              }
+            </div>
+          }
+        </div>
+      }
+      @if (request.fecha_resolucion) {
+        <p class="history-detail-note">Resuelta el {{ request.fecha_resolucion | date: 'dd/MM/yyyy HH:mm' }}</p>
+      }
+      @if (request.cierre; as receipt) {
+        <div class="history-receipt">
+          <div class="history-receipt-row">
+            <span>{{ receipt.accion === 'COBRAR' ? 'Adicional pagado' : receipt.accion === 'REEMBOLSAR' ? 'Importe reembolsado' : 'Sin diferencia' }}</span>
+            <strong>{{ receipt.monto | bolivianos }}</strong>
+          </div>
+          <div class="history-receipt-row">
+            <span>{{ receipt.comprobante }}</span>
+            <button type="button" class="history-link history-document" (click)="downloadReturnReceipt(request.id_devolucion)">
+              Comprobante PDF
+            </button>
+          </div>
+        </div>
+      }
+      @if (request.motivo) {
+        <details class="history-reason">
+          <summary>Ver motivo de la solicitud</summary>
+          <p>{{ request.motivo }}</p>
+        </details>
+      }
+    </ng-template>
   </section>`,
 })
 export class HistoryPage {
@@ -1925,6 +1948,7 @@ export class HistoryPage {
   readonly sales = signal<Sale[]>([]);
   readonly reservations = signal<Reservation[]>([]);
   readonly returns = signal<ReturnRequest[]>([]);
+  readonly selectedReturn = signal<ReturnRequest | null>(null);
   readonly returnsBySale = computed(() => {
     const grouped = new Map<number, ReturnRequest[]>();
     for (const request of this.returns()) {
@@ -2000,6 +2024,11 @@ export class HistoryPage {
     return sale.items
       .map((item) => ({ ...item, available: item.cantidad - (used.get(item.id_detalle) ?? 0) }))
       .filter((item) => item.available > 0);
+  }
+  toggleReturnDetail(request: ReturnRequest): void {
+    this.selectedReturn.update((selected) =>
+      selected?.id_devolucion === request.id_devolucion ? null : request,
+    );
   }
   maxReturnQuantity(): number {
     const sale = this.returnSale();
@@ -2148,13 +2177,13 @@ export class HistoryPage {
   returnStateLabel(state: string): string {
     switch (state) {
       case 'PENDIENTE':
-        return '⏳ En Revisión';
+        return 'En revisión';
       case 'APROBADA':
-        return '📋 Aprobada';
+        return 'Aprobada';
       case 'COMPLETADA':
-        return '✅ Completada';
+        return 'Completada';
       case 'RECHAZADA':
-        return '✕ No Aprobada';
+        return 'Rechazada';
       default:
         return state;
     }
