@@ -353,6 +353,9 @@ class DetalleDevolucion(Base):
         nullable=False,
     )
     cantidad: Mapped[int] = mapped_column(Integer, nullable=False)
+    id_variante_solicitada: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey('capricho.variante_producto.id_variante', ondelete='RESTRICT')
+    )
     estado_prenda: Mapped[str] = mapped_column(
         String(25), nullable=False, server_default=text("'APTA_REINGRESO'")
     )

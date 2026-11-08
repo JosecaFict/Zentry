@@ -1,6 +1,6 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthService } from '../../core/auth/auth.service';
 import { Branch, Product } from '../../core/models/catalog.model';
@@ -522,6 +522,43 @@ describe('ReturnsAdmin', () => {
       ],
     },
   ];
+
+  it.each([false, true])('loads only compatible variants and binds the real select after async loading (requested=%s)', async (hasPreference) => {
+    const result = new Subject<{ items: Array<{ id_detalle_devolucion: number; opciones: any[] }> }>();
+    const request: ReturnRequest = {
+      ...mockReturns[0], estado: 'APROBADA', id_sucursal: 1,
+      items: [{ ...mockReturns[0].items[0], talla: 'S', color: 'Azul marino',
+        id_variante_solicitada: hasPreference ? 202 : null, talla_solicitada: hasPreference ? 'M' : null,
+        color_solicitado: hasPreference ? 'Azul marino' : null }],
+    };
+    const commerce = { adminReturns: vi.fn(() => of([request])), returnReplacementOptions: vi.fn(() => result) };
+    const catalog = { products: vi.fn() };
+    TestBed.configureTestingModule({ imports: [ReturnsAdmin], providers: [
+      { provide: CommerceService, useValue: commerce },
+      { provide: CatalogService, useValue: catalog },
+      { provide: ApiErrorService, useValue: { message: () => 'Error' } },
+    ] });
+    const fixture = TestBed.createComponent(ReturnsAdmin);
+    fixture.componentInstance.openInspectionModal(request);
+    fixture.detectChanges();
+    result.next({ items: [{ id_detalle_devolucion: 11, opciones: [
+      { id_variante: 202, id_producto: 10, producto: request.items[0].producto, talla: 'M', color: 'Azul marino', stock_disponible: 5 },
+      { id_variante: 203, id_producto: 10, producto: request.items[0].producto, talla: 'L', color: 'Azul marino', stock_disponible: 0 },
+    ] }] });
+    result.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(catalog.products).not.toHaveBeenCalled();
+    expect(commerce.returnReplacementOptions).toHaveBeenCalledWith(request.id_devolucion);
+    const select = Array.from(fixture.nativeElement.querySelectorAll('select') as NodeListOf<HTMLSelectElement>).find((element) => Array.from(element.options).some((option) => option.textContent?.includes('Seleccionar variante de reemplazo')))!;
+    const option = Array.from(select.options).find((entry) => entry.textContent?.includes('Talla M'))!;
+    if (!hasPreference) { select.value = option.value; select.dispatchEvent(new Event('change')); fixture.detectChanges(); }
+    expect(fixture.componentInstance.replacementSelections()[11]).toBe(202);
+    expect(select.selectedOptions[0].textContent).toContain('Color Azul marino');
+    expect(fixture.nativeElement.textContent).toContain('Talla S · Color Azul marino');
+    if (!hasPreference) expect(Array.from(select.options).find((entry) => entry.textContent?.includes('Talla L'))?.disabled).toBe(true);
+  });
 
   it('renders returns, computes KPIs, filters by tab, and manages counter returns', () => {
     const commerce = {

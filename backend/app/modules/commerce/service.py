@@ -57,7 +57,7 @@ from app.modules.commerce.models import (
     Venta,
 )
 from app.modules.commerce.repository import CommerceRepository
-from app.modules.commerce.return_policy import allocate_paid_amounts, money, returned_amount
+from app.modules.commerce.return_policy import allocate_paid_amounts, money, returned_amount, validate_exchange_choice
 from app.modules.commerce.return_receipt import return_receipt_pdf
 from app.modules.commerce.schemas import (
     ActivePromotionItem,
@@ -1999,6 +1999,57 @@ class CommerceService:
         if sale.estado not in {"PAGADA", "CONFIRMADA"} or paid < sale.total:
             raise CommerceConflictError("La devolución requiere una compra con pago confirmado")
 
+    async def _validate_requested_variant(self, kind: str, original_id: int, requested_id: int | None) -> None:
+        if requested_id is None:
+            return
+        if kind not in {'CAMBIO_TALLA', 'CAMBIO_COLOR', 'CAMBIO_PRENDA'}:
+            raise InvalidCommerceOperationError('Solo un cambio admite una variante solicitada')
+        original = await self.repository.variant_row(original_id)
+        requested = await self.repository.variant_row(requested_id)
+        if requested is None or not requested['activo'] or requested_id == original_id:
+            raise InvalidCommerceOperationError('La variante solicitada no está disponible en el catálogo de esta empresa')
+        try:
+            validate_exchange_choice(kind, original, requested)
+        except ValueError as exc:
+            raise InvalidCommerceOperationError(str(exc)) from exc
+
+    async def customer_return_options(self, user_id: int, sale_id: int, detail_id: int, kind: str) -> list[dict]:
+        customer = await self._customer(user_id)
+        sale = await self.repository.get(Venta, sale_id)
+        if sale is None or sale.id_cliente != customer.id_cliente:
+            raise CommerceNotFoundError('La compra no existe')
+        await self._validate_return_window(sale)
+        detail = next((line for line in await self.repository.sale_details(sale_id) if line.id_detalle_venta == detail_id), None)
+        if detail is None:
+            raise CommerceNotFoundError('La prenda no pertenece a la compra')
+        return await self._specific_return_options(detail.id_variante, sale.id_sucursal, kind)
+
+    async def _specific_return_options(self, original_id: int, branch_id: int, kind: str) -> list[dict]:
+        if kind not in {'CAMBIO_TALLA', 'CAMBIO_COLOR'}:
+            raise InvalidCommerceOperationError('Seleccione un cambio de talla o de color')
+        original = await self.repository.get(VarianteProducto, original_id)
+        if original is None:
+            raise CommerceNotFoundError('La variante original no existe')
+        rows = await self.repository.return_variant_options(original, branch_id, kind)
+        return [{'id_variante': row['id_variante'], 'id_producto': row['id_producto'], 'producto': row['producto'],
+                 'talla': row['talla'], 'color': row['color'], 'stock_disponible': max(0, int(row['stock_disponible']))}
+                for row in rows]
+
+    async def admin_return_options(self, user_id: int, return_id: int, *, all_branches: bool = False) -> dict:
+        employee = await self._employee(user_id)
+        returned = await self.repository.get(Devolucion, return_id)
+        if returned is None:
+            raise CommerceNotFoundError('La devolución no existe')
+        sale = await self.repository.get(Venta, returned.id_venta)
+        if not all_branches and sale.id_sucursal != employee.id_sucursal:
+            raise CommerceNotFoundError('La devolución no existe')
+        items = []
+        for detail in await self.repository.return_details(return_id):
+            original = await self.repository.get(DetalleVenta, detail.id_detalle_venta)
+            items.append({'id_detalle_devolucion': detail.id_detalle_devolucion,
+                          'opciones': await self._specific_return_options(original.id_variante, sale.id_sucursal, returned.tipo_solicitud)})
+        return {'items': items}
+
     async def _return_quote(self, returned: Devolucion, sale: Venta, settlement: ReturnSettlement) -> dict:
         details = await self.repository.return_details(returned.id_devolucion)
         replacements = {item.id_detalle_devolucion: item.id_variante for item in settlement.reemplazos}
@@ -2041,6 +2092,13 @@ class CommerceService:
                     raise CommerceConflictError("El reemplazo no está disponible en el catálogo de esta empresa")
                 if variant_id == original.id_variante:
                     raise InvalidCommerceOperationError("Seleccione otra talla, color o prenda")
+                try:
+                    validate_exchange_choice(returned.tipo_solicitud, original_row, row)
+                except ValueError as exc:
+                    raise InvalidCommerceOperationError(str(exc)) from exc
+                requested_id = getattr(detail, 'id_variante_solicitada', None)
+                if requested_id and requested_id != variant_id:
+                    raise InvalidCommerceOperationError('El reemplazo no coincide con la variante solicitada por el cliente')
                 same_product = row["id_producto"] == original_row["id_producto"]
                 current_price = Decimal(row["precio"])
                 if not same_product:
@@ -2116,6 +2174,7 @@ class CommerceService:
             detail = sale_details.get(item.id_detalle_venta)
             if detail is None:
                 raise InvalidCommerceOperationError("Un artículo no pertenece a la compra")
+            await self._validate_requested_variant(payload.tipo_solicitud, detail.id_variante, item.id_variante_solicitada)
             if (
                 item.cantidad + await self.repository.returned_quantity(item.id_detalle_venta)
                 > detail.cantidad
@@ -2137,6 +2196,7 @@ class CommerceService:
                     id_detalle_venta=item.id_detalle_venta,
                     cantidad=item.cantidad,
                     estado_prenda="PENDIENTE_INSPECCION",
+                    id_variante_solicitada=item.id_variante_solicitada,
                 )
             )
         await self._notify(
@@ -2168,6 +2228,8 @@ class CommerceService:
         items = []
         for detail in await self.repository.return_details(returned.id_devolucion):
             sale_detail = await self.repository.get(DetalleVenta, detail.id_detalle_venta)
+            original_variant = await self.repository.get(VarianteProducto, sale_detail.id_variante)
+            requested = await self.repository.variant_row(detail.id_variante_solicitada) if detail.id_variante_solicitada else None
             line = await self._line(
                 detail.id_detalle_devolucion, sale_detail.id_variante, detail.cantidad
             )
@@ -2181,6 +2243,10 @@ class CommerceService:
                     color=line.color,
                     cantidad=detail.cantidad,
                     estado_prenda=detail.estado_prenda,
+                    id_producto=original_variant.id_producto,
+                    id_variante_solicitada=detail.id_variante_solicitada,
+                    talla_solicitada=requested['talla'] if requested else None,
+                    color_solicitado=requested['color'] if requested else None,
                 )
             )
 
@@ -2352,6 +2418,7 @@ class CommerceService:
             if detail is None:
                 raise InvalidCommerceOperationError("Un artículo no pertenece a la compra")
             returned_qty = await self.repository.returned_quantity(item.id_detalle_venta)
+            await self._validate_requested_variant(payload.tipo_solicitud, detail.id_variante, item.id_variante_solicitada)
             if item.cantidad + returned_qty > detail.cantidad:
                 raise CommerceConflictError(
                     "La cantidad a devolver supera la cantidad comprada disponible"
@@ -2378,6 +2445,7 @@ class CommerceService:
                     id_detalle_venta=item.id_detalle_venta,
                     cantidad=item.cantidad,
                     estado_prenda="PENDIENTE_INSPECCION",
+                    id_variante_solicitada=item.id_variante_solicitada,
                 )
             )
 

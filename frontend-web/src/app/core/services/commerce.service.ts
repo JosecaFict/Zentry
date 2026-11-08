@@ -34,6 +34,7 @@ import {
   ReturnStatusUpdatePayload,
   ReturnQuote,
   ReturnSettlementPayload,
+  ReturnVariantOption,
 } from '../models/commerce.model';
 
 type Params = Record<string, string | number | boolean | null | undefined>;
@@ -219,6 +220,12 @@ export class CommerceService {
   }
   quoteReturn(id: number, payload: ReturnSettlementPayload) {
     return this.http.post<ReturnQuote>(`${API_BASE_URL}/admin/returns/${id}/quote`, payload);
+  }
+  returnReplacementOptions(id: number) {
+    return this.http.get<{ items: Array<{ id_detalle_devolucion: number; opciones: ReturnVariantOption[] }> }>(`${API_BASE_URL}/admin/returns/${id}/replacement-options`);
+  }
+  customerReturnOptions(saleId: number, detailId: number, kind: string) {
+    return this.http.get<ReturnVariantOption[]>(`${API_BASE_URL}/returns/purchases/${saleId}/items/${detailId}/options`, { params: { tipo_solicitud: kind } });
   }
   returnReceipt(id: number) {
     return this.http.get(`${API_BASE_URL}/returns/${id}/receipt`, { responseType: 'blob' });

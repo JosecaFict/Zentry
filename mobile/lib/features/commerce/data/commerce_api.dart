@@ -274,6 +274,7 @@ class CommerceApi {
     required int quantity,
     required String kind,
     required String reason,
+    int? requestedVariantId,
   }) async {
     try {
       await _dio.post('/returns', data: {
@@ -281,9 +282,18 @@ class CommerceApi {
         'tipo_solicitud': kind,
         'motivo': reason,
         'items': [
-          {'id_detalle_venta': detailId, 'cantidad': quantity},
+          {'id_detalle_venta': detailId, 'cantidad': quantity, if (requestedVariantId != null) 'id_variante_solicitada': requestedVariantId},
         ],
       });
+    } on DioException catch (e) {
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> returnOptions(int saleId, int detailId, String kind) async {
+    try {
+      final response = await _dio.get('/returns/purchases/$saleId/items/$detailId/options', queryParameters: {'tipo_solicitud': kind});
+      return (response.data as List? ?? []).map((item) => _asMap(item)).toList();
     } on DioException catch (e) {
       throw ApiException.fromDio(e);
     }

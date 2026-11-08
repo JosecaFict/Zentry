@@ -17,6 +17,7 @@ import {
   ReturnChecklist,
   ReturnQuote,
   ReturnSettlementPayload,
+  ReturnVariantOption,
 } from '../../core/models/commerce.model';
 import { ApiErrorService } from '../../core/services/api-error.service';
 import { CatalogService } from '../../core/services/catalog.service';
@@ -3008,6 +3009,9 @@ export class OrdersAdmin {
                 </label>
                 @if (settlementType() === 'CAMBIO') {
                   <p>La misma prenda conserva el importe pagado. Otra prenda usa su precio vigente, con la promoción aplicable. Solo se muestran variantes con stock en esta sucursal.</p>
+                  @if (specificExchange()) {
+                    <p>{{ item.tipo_solicitud === 'CAMBIO_TALLA' ? 'Cambio de talla: se conserva la prenda y su color original.' : 'Cambio de color: se conserva la prenda y su talla original.' }}</p>
+                  } @else {
                   <label class="field"><span>Filtrar prendas de esta página</span>
                     <input type="search" [value]="replacementSearch()" (input)="replacementSearch.set($any($event.target).value)" />
                   </label>
@@ -3016,22 +3020,28 @@ export class OrdersAdmin {
                     <span>Página {{ replacementPage() }} de {{ replacementPages() }}</span>
                     <button type="button" class="button button--quiet" [disabled]="replacementPage() >= replacementPages() || replacementLoading()" (click)="loadReplacementProducts(replacementPage() + 1)">Siguiente</button>
                   </div>
+                  }
                   @if (replacementLoading()) { <p role="status">Cargando existencias…</p> }
                   @for (line of item.items; track line.id_detalle_devolucion) {
-                    <label class="field"><span>Reemplazo de {{ line.producto }} · {{ line.cantidad }} u.</span>
-                      <select [value]="replacementSelections()[line.id_detalle_devolucion] || ''"
-                        (change)="selectReplacement(line.id_detalle_devolucion, $any($event.target).value)">
-                        <option value="">Seleccionar variante</option>
-                        @if (selectedReplacementLabels()[line.id_detalle_devolucion]; as selectedLabel) {
-                          <option [value]="replacementSelections()[line.id_detalle_devolucion]">{{ selectedLabel }}</option>
+                    <label class="field"><span>Devolver: {{ line.producto }} · Talla {{ line.talla }} · Color {{ line.color }} · {{ line.cantidad }} u.</span>
+                      <span>{{ line.id_variante_solicitada ? 'Variante solicitada: talla ' + line.talla_solicitada + ' · color ' + line.color_solicitado : 'Selecciona la variante que se entregará al cliente' }}</span>
+                      <select [ngModel]="replacementSelections()[line.id_detalle_devolucion] || null"
+                        [ngModelOptions]="{ standalone: true }" [disabled]="replacementLoading()"
+                        (ngModelChange)="selectReplacement(line.id_detalle_devolucion, $event)">
+                        <option [ngValue]="null">{{ replacementLoading() ? 'Cargando variantes…' : 'Seleccionar variante de reemplazo' }}</option>
+                        @if (selectedReplacementLabelOutsidePage(line); as selectedLabel) {
+                          <option [ngValue]="replacementSelections()[line.id_detalle_devolucion]">{{ selectedLabel }}</option>
                         }
-                        @for (option of replacementOptions(); track option.id) {
-                          @if (option.id !== line.id_variante && option.id !== replacementSelections()[line.id_detalle_devolucion]) {
-                            <option [value]="option.id" [disabled]="option.stock < line.cantidad">{{ option.label }}</option>
-                          }
+                        @for (option of replacementOptionsFor(line); track option.id) {
+                          <option [ngValue]="option.id" [disabled]="option.stock < line.cantidad">{{ option.label }}</option>
                         }
                       </select>
                     </label>
+                    @if (!replacementLoading() && !replacementOptionsFor(line).length) {
+                      <p role="status">No se encontraron variantes compatibles en esta sucursal. No se puede completar el cambio sin un reemplazo disponible.</p>
+                    } @else if (!replacementLoading() && !hasReplacementStock(line)) {
+                      <p role="status">Las variantes compatibles no tienen stock suficiente en esta sucursal. Puedes coordinar una reposición o acordar un reembolso.</p>
+                    }
                   }
                 }
                 <button type="button" class="button button--secondary" [disabled]="saving() || quoting()" (click)="quoteSettlement()">{{ quoting() ? 'Calculando…' : 'Calcular diferencia' }}</button>
@@ -3185,6 +3195,8 @@ export class ReturnsAdmin {
   readonly replacementPages = signal(1);
   readonly replacementSearch = signal('');
   readonly replacementSelections = signal<Record<number, number>>({});
+  readonly specificOptions = signal<Record<number, ReturnVariantOption[]>>({});
+  readonly specificExchange = computed(() => ['CAMBIO_TALLA', 'CAMBIO_COLOR'].includes(this.inspectingReturn()?.tipo_solicitud ?? ''));
   readonly selectedReplacementLabels = signal<Record<number, string>>({});
   readonly settlementQuote = signal<ReturnQuote | null>(null);
   readonly quoting = signal(false);
@@ -3205,16 +3217,46 @@ export class ReturnsAdmin {
   setSettlementType(value: 'CAMBIO' | 'REEMBOLSO'): void {
     this.settlementType.set(value);
     this.invalidateQuote();
+    if (value === 'CAMBIO') this.loadReplacementProducts();
   }
   private invalidateQuote(): void {
     this.quoteVersion++;
     this.settlementQuote.set(null);
     this.settlementConfirmed.set(false);
   }
+  replacementOptionsFor(line: ReturnRequest['items'][number]): Array<{ id: number; stock: number; label: string }> {
+    if (this.specificExchange()) return (this.specificOptions()[line.id_detalle_devolucion] ?? [])
+      .filter((option) => !line.id_variante_solicitada || option.id_variante === line.id_variante_solicitada)
+      .map((option) => ({ id: option.id_variante, stock: option.stock_disponible,
+        label: `Talla ${option.talla} · Color ${option.color} · ${option.stock_disponible > 0 ? 'Stock ' + option.stock_disponible : 'Sin stock'}` }));
+    return this.replacementOptions().filter((option) => option.id !== line.id_variante);
+  }
+  selectedReplacementLabelOutsidePage(line: ReturnRequest['items'][number]): string {
+    const selected = this.replacementSelections()[line.id_detalle_devolucion];
+    return !this.specificExchange() && selected && !this.replacementOptionsFor(line).some((option) => option.id === selected)
+      ? this.selectedReplacementLabels()[line.id_detalle_devolucion] || '' : '';
+  }
+  hasReplacementStock(line: ReturnRequest['items'][number]): boolean {
+    return this.replacementOptionsFor(line).some((option) => option.stock >= line.cantidad);
+  }
   loadReplacementProducts(page = 1): void {
     const item = this.inspectingReturn();
     if (!item?.id_sucursal) return;
     this.replacementLoading.set(true);
+    if (this.specificExchange()) {
+      this.commerce.returnReplacementOptions(item.id_devolucion).pipe(finalize(() => this.replacementLoading.set(false))).subscribe({
+        next: (result) => {
+          if (this.inspectingReturn()?.id_devolucion !== item.id_devolucion) return;
+          this.specificOptions.set(Object.fromEntries(result.items.map((entry) => [entry.id_detalle_devolucion, entry.opciones])));
+          for (const line of item.items) {
+            const requested = this.replacementOptionsFor(line).find((option) => option.id === line.id_variante_solicitada && option.stock >= line.cantidad);
+            if (requested) this.selectReplacement(line.id_detalle_devolucion, requested.id);
+          }
+        },
+        error: (error) => this.error.set(this.errors.message(error, 'No pudimos cargar las tallas o colores disponibles.')),
+      });
+      return;
+    }
     this.catalog.products({ sucursal: item.id_sucursal, activo: true, page, page_size: 100 })
       .pipe(finalize(() => this.replacementLoading.set(false))).subscribe({
         next: (result) => {
@@ -3226,10 +3268,11 @@ export class ReturnsAdmin {
         error: (error) => this.error.set(this.errors.message(error, 'No pudimos cargar los reemplazos.')),
       });
   }
-  selectReplacement(detailId: number, value: string): void {
+  selectReplacement(detailId: number, value: string | number | null): void {
     const id = Number(value);
     this.replacementSelections.update((current) => ({ ...current, [detailId]: id }));
-    const label = this.replacementOptions().find((option) => option.id === id)?.label ?? '';
+    const line = this.inspectingReturn()?.items.find((item) => item.id_detalle_devolucion === detailId);
+    const label = line ? this.replacementOptionsFor(line).find((option) => option.id === id)?.label ?? '' : '';
     this.selectedReplacementLabels.update((current) => ({ ...current, [detailId]: label }));
     this.invalidateQuote();
   }
@@ -3386,13 +3429,14 @@ export class ReturnsAdmin {
     this.receiptChecklist.set({ comprobante_verificado: false, sin_uso: false, sin_lavado: false, etiquetas_conservadas: false, sin_danos_cliente: false });
     this.settlementType.set(item.tipo_solicitud.startsWith('CAMBIO') ? 'CAMBIO' : 'REEMBOLSO');
     this.replacementSelections.set({});
+    this.specificOptions.set({});
     this.selectedReplacementLabels.set({});
     this.replacementProducts.set([]);
     this.replacementSearch.set('');
     this.settlementReference.set('');
     this.settlementMedium.set('EFECTIVO');
     this.invalidateQuote();
-    if (item.estado === 'APROBADA') this.loadReplacementProducts();
+    if (item.estado === 'APROBADA' && this.settlementType() === 'CAMBIO') this.loadReplacementProducts();
   }
 
   closeInspectionModal(): void {

@@ -196,6 +196,16 @@ class CommerceRepository:
             .with_for_update()
         )
 
+    async def return_variant_options(self, original: VarianteProducto, branch_id: int, kind: str):
+        filters = [VarianteProducto.id_producto == original.id_producto,
+                   VarianteProducto.id_variante != original.id_variante, VarianteProducto.activo.is_(True)]
+        if kind == 'CAMBIO_TALLA':
+            filters.append(VarianteProducto.id_color == original.id_color)
+        elif kind == 'CAMBIO_COLOR':
+            filters.append(VarianteProducto.id_talla == original.id_talla)
+        ids = (await self.session.scalars(select(VarianteProducto.id_variante).where(*filters).order_by(VarianteProducto.id_variante))).all()
+        return [row for identifier in ids if (row := await self.variant_row(identifier, branch_id)) is not None and row['activo']]
+
     async def reservation_details(self, reservation_id: int) -> list[DetalleReserva]:
         return list(
             (

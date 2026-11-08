@@ -147,6 +147,10 @@ export interface ReturnRequest {
     color: string;
     cantidad: number;
     estado_prenda: string;
+    id_producto?: number | null;
+    id_variante_solicitada?: number | null;
+    talla_solicitada?: string | null;
+    color_solicitado?: string | null;
   }>;
 }
 
@@ -156,6 +160,15 @@ export interface ReturnChecklist {
   sin_lavado: boolean;
   etiquetas_conservadas: boolean;
   sin_danos_cliente: boolean;
+}
+
+export interface ReturnVariantOption {
+  id_variante: number;
+  id_producto: number;
+  producto: string;
+  talla: string;
+  color: string;
+  stock_disponible: number;
 }
 
 export interface ReturnSettlementPayload {

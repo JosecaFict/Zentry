@@ -30,7 +30,7 @@ async def test_full_return_uses_real_stock_and_fifo_triggers(kind):
             try:
                 await connection.execute(text("SELECT set_config('app.rls_scope', 'global', true)"))
                 rows = (await connection.execute(text('''
-                    SELECT DISTINCT i.id_tenant, i.id_sucursal, i.id_variante, e.id_usuario,
+                    SELECT DISTINCT i.id_tenant, i.id_sucursal, i.id_variante, e.id_usuario, v.id_producto, v.id_talla, v.id_color,
                         i.stock_fisico, i.stock_reservado
                     FROM capricho.inventario_sucursal i
                     JOIN capricho.empleado e ON e.id_sucursal=i.id_sucursal AND e.id_tenant=i.id_tenant
@@ -42,7 +42,7 @@ async def test_full_return_uses_real_stock_and_fifo_triggers(kind):
                     AND EXISTS (SELECT 1 FROM capricho.lote_inventario l WHERE l.id_sucursal=i.id_sucursal AND l.id_variante=i.id_variante AND l.cantidad_disponible>=2 AND l.activo)
                     ORDER BY i.id_tenant, i.id_sucursal, i.id_variante LIMIT 200
                 '''))).mappings().all()
-                pair = next(((a, b) for a in rows for b in rows if a['id_sucursal'] == b['id_sucursal'] and a['id_tenant'] == b['id_tenant'] and a['id_variante'] != b['id_variante']), None)
+                pair = next(((a, b) for a in rows for b in rows if a['id_sucursal'] == b['id_sucursal'] and a['id_tenant'] == b['id_tenant'] and a['id_variante'] != b['id_variante'] and (kind != 'CAMBIO' or (a['id_producto'] == b['id_producto'] and a['id_color'] == b['id_color'] and a['id_talla'] != b['id_talla']))), None)
                 if pair is None:
                     pytest.skip('Seeded local database needs two stocked variants and an employee')
                 original, replacement = pair
@@ -59,9 +59,17 @@ async def test_full_return_uses_real_stock_and_fifo_triggers(kind):
                         ))
                         request = await service.create_admin_return(original['id_usuario'], AdminReturnCreate(
                             id_venta=sale.id_venta, motivo='Cambio de talla en prueba transaccional',
-                            items=[dict(id_detalle_venta=sale.items[0].id_detalle, cantidad=1)],
+                            tipo_solicitud='CAMBIO_TALLA' if kind == 'CAMBIO' else 'REEMBOLSO',
+                            items=[dict(id_detalle_venta=sale.items[0].id_detalle, cantidad=1,
+                                        id_variante_solicitada=replacement['id_variante'] if kind == 'CAMBIO' else None)],
                         ))
                         assert request.items[0].estado_prenda == 'PENDIENTE_INSPECCION'
+                        if kind == 'CAMBIO':
+                            assert request.items[0].id_variante_solicitada == replacement['id_variante']
+                            options = await service.admin_return_options(original['id_usuario'], request.id_devolucion)
+                            candidates = options['items'][0]['opciones']
+                            assert any(option['id_variante'] == replacement['id_variante'] for option in candidates)
+                            assert all(option['id_producto'] == original['id_producto'] and option['color'] == request.items[0].color and option['talla'] != request.items[0].talla for option in candidates)
                         await service.update_return_status(original['id_usuario'], request.id_devolucion, ReturnStatusUpdate(estado='APROBADA'))
                         settlement = ReturnSettlement(tipo=kind, reemplazos=[dict(id_detalle_devolucion=request.items[0].id_detalle_devolucion, id_variante=replacement['id_variante'])] if kind == 'CAMBIO' else [])
                         quote = await service.quote_return(original['id_usuario'], request.id_devolucion, settlement)

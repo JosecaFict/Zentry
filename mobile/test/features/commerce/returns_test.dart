@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 class ReturnTestApi extends CommerceApi {
   ReturnTestApi() : super(Dio());
   int requests = 0;
+  int? requestedVariantId;
   final pending = Completer<void>();
 
   @override
@@ -21,10 +22,27 @@ class ReturnTestApi extends CommerceApi {
     required int quantity,
     required String kind,
     required String reason,
+    int? requestedVariantId,
   }) {
     requests++;
+    this.requestedVariantId = requestedVariantId;
     return pending.future;
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> returnOptions(
+    int saleId,
+    int detailId,
+    String kind,
+  ) async => [
+    {
+      'id_variante': 8,
+      'producto': 'Polera de prueba',
+      'talla': 'L',
+      'color': 'Azul',
+      'stock_disponible': 5,
+    },
+  ];
 }
 
 void main() {
@@ -72,11 +90,17 @@ void main() {
     expect(tester.widget<FilledButton>(send).onPressed, isNull);
     await tester.tap(find.byType(CheckboxListTile));
     await tester.enterText(find.byType(TextField), 'La talla me quedó pequeña');
+    final requestedField = find.byKey(const ValueKey('requested-1-1'));
+    await tester.ensureVisible(requestedField);
+    await tester.tap(requestedField);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Talla L · Azul · Stock 5').last);
     await tester.pump();
     await tester.tap(send);
     await tester.pump();
     expect(tester.widget<FilledButton>(send).onPressed, isNull);
     expect(api.requests, 1);
+    expect(api.requestedVariantId, 8);
     api.pending.complete();
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);

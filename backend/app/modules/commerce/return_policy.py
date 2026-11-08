@@ -28,3 +28,11 @@ def allocate_paid_amounts(subtotals: list[Decimal], paid: Decimal) -> list[Decim
         result.append(next_total - allocated)
         allocated = next_total
     return result
+
+
+def validate_exchange_choice(kind: str, original, replacement) -> None:
+    same_product = original['id_producto'] == replacement['id_producto']
+    if kind == 'CAMBIO_TALLA' and (not same_product or original['color'] != replacement['color'] or original['talla'] == replacement['talla']):
+        raise ValueError('El cambio de talla debe conservar la misma prenda y color, con otra talla')
+    if kind == 'CAMBIO_COLOR' and (not same_product or original['talla'] != replacement['talla'] or original['color'] == replacement['color']):
+        raise ValueError('El cambio de color debe conservar la misma prenda y talla, con otro color')

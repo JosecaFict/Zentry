@@ -1,5 +1,5 @@
 from datetime import UTC, date, datetime, time
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
@@ -343,6 +343,23 @@ async def list_customer_returns(principal: Authenticated, service: Service):
 @router.post("/returns", response_model=ReturnResponse, status_code=status.HTTP_201_CREATED)  # [CU-14] Solicitar devolución de producto
 async def create_return(payload: ReturnCreate, principal: Authenticated, service: Service):
     return await service.create_return(principal.user.id_usuario, payload)
+
+
+@router.get('/returns/purchases/{sale_id}/items/{detail_id}/options')
+async def customer_return_options(
+    sale_id: int, detail_id: int, principal: Authenticated, service: Service,
+    tipo_solicitud: Literal['CAMBIO_TALLA', 'CAMBIO_COLOR'] = 'CAMBIO_TALLA',
+):
+    return await service.customer_return_options(principal.user.id_usuario, sale_id, detail_id, tipo_solicitud)
+
+
+@router.get('/admin/returns/{return_id}/replacement-options')
+async def admin_return_options(
+    return_id: int,
+    principal: Annotated[CurrentPrincipal, Depends(require_permission('ventas.crear'))],
+    service: Service,
+):
+    return await service.admin_return_options(principal.user.id_usuario, return_id, all_branches='ADMIN' in principal.roles)
 
 
 @router.get("/admin/returns", response_model=list[ReturnResponse])  # [CU-14] Listar devoluciones operativas

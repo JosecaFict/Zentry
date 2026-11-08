@@ -265,6 +265,7 @@ class ShippingQuoteResponse(ORMResponse):
 class ReturnLineCreate(BaseModel):
     id_detalle_venta: int = Field(gt=0)
     cantidad: int = Field(gt=0)
+    id_variante_solicitada: int | None = Field(default=None, gt=0)
     estado_prenda: Literal["PENDIENTE_INSPECCION", "APTA_REINGRESO", "NO_APTA"] = "PENDIENTE_INSPECCION"
 
 
@@ -326,6 +327,10 @@ class ReturnLineResponse(ORMResponse):
     color: str
     cantidad: int
     estado_prenda: str
+    id_producto: int | None = None
+    id_variante_solicitada: int | None = None
+    talla_solicitada: str | None = None
+    color_solicitado: str | None = None
 
 
 class ReturnResponse(ORMResponse):

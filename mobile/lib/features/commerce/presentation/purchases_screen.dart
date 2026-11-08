@@ -151,6 +151,14 @@ class ReturnStatusCard extends StatelessWidget {
               'Estado: ${{'PENDIENTE': 'Pendiente', 'APROBADA': 'Aprobada', 'COMPLETADA': 'Completada', 'RECHAZADA': 'Rechazada'}[item['estado']] ?? item['estado']}',
             ),
             Text('${item['motivo']}'),
+            ...(item['items'] as List? ?? [])
+                .whereType<Map>()
+                .where((line) => line['id_variante_solicitada'] != null)
+                .map(
+                  (line) => Text(
+                    'Devuelves: ${line['producto']} · ${line['talla']} / ${line['color']}. Solicitas: ${line['talla_solicitada']} / ${line['color_solicitado']}.',
+                  ),
+                ),
             if (item['estado'] == 'APROBADA')
               const Text(
                 'Presenta las prendas y el comprobante en la sucursal para la inspección.',

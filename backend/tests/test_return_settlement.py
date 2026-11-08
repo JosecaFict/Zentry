@@ -7,7 +7,7 @@ import pytest
 
 from app.modules.commerce.exceptions import CommerceConflictError, InvalidCommerceOperationError
 from app.modules.commerce.models import Devolucion, DetalleVenta, Venta
-from app.modules.commerce.return_policy import allocate_paid_amounts, returned_amount
+from app.modules.commerce.return_policy import allocate_paid_amounts, returned_amount, validate_exchange_choice
 from app.modules.commerce.return_receipt import return_receipt_pdf
 from app.modules.commerce.schemas import ReturnSettlement, ReturnStatusUpdate
 from app.modules.commerce.service import CommerceService
@@ -171,3 +171,30 @@ async def test_receipt_pdf_has_real_settlement_data():
     await service.update_return_status(1, 3, complete_payload())
     pdf = return_receipt_pdf(returned.cierre, 1, 'Sucursal <Centro>', 'Cliente & prueba')
     assert pdf.startswith(b'%PDF')
+
+
+@pytest.mark.parametrize(('kind', 'product', 'size', 'color', 'valid'), [
+    ('CAMBIO_TALLA', 20, 'L', 'Azul', True),
+    ('CAMBIO_TALLA', 20, 'L', 'Verde', False),
+    ('CAMBIO_TALLA', 20, 'M', 'Azul', False),
+    ('CAMBIO_TALLA', 99, 'L', 'Azul', False),
+    ('CAMBIO_COLOR', 20, 'M', 'Verde', True),
+    ('CAMBIO_COLOR', 20, 'L', 'Verde', False),
+    ('CAMBIO_COLOR', 99, 'M', 'Verde', False),
+])
+def test_size_and_color_exchanges_preserve_the_other_attributes(kind, product, size, color, valid):
+    original = {'id_producto': 20, 'talla': 'M', 'color': 'Azul'}
+    replacement = {'id_producto': product, 'talla': size, 'color': color}
+    if valid:
+        validate_exchange_choice(kind, original, replacement)
+    else:
+        with pytest.raises(ValueError):
+            validate_exchange_choice(kind, original, replacement)
+
+
+async def test_quote_rejects_a_different_variant_than_the_customer_requested():
+    service, _, _, sale, returned, detail, *_ = fixture_service()
+    returned.tipo_solicitud = 'CAMBIO_TALLA'
+    detail.id_variante_solicitada = 12
+    with pytest.raises(InvalidCommerceOperationError, match='solicitada'):
+        await service._return_quote(returned, sale, ReturnSettlement(tipo='CAMBIO', reemplazos=[dict(id_detalle_devolucion=5, id_variante=11)]))

@@ -3,7 +3,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { catchError, finalize, forkJoin, of } from 'rxjs';
+import { catchError, combineLatest, finalize, forkJoin, of, startWith, switchMap } from 'rxjs';
 import { Branch } from '../../core/models/catalog.model';
 import {
   Address,
@@ -12,6 +12,7 @@ import {
   Order,
   Reservation,
   ReturnRequest,
+  ReturnVariantOption,
   Sale,
   ShippingQuote,
   StripeCheckoutStatus,
@@ -1757,7 +1758,7 @@ export class AddressesPage {
                   ><select formControlName="id_detalle_venta">
                     @for (item of sale.items; track item.id_detalle) {
                       <option [value]="item.id_detalle">
-                        {{ item.producto }} / {{ item.talla }}
+                        {{ item.producto }} · Talla {{ item.talla }} · Color {{ item.color }}
                       </option>
                     }
                   </select></label
@@ -1771,7 +1772,20 @@ export class AddressesPage {
                     <option value="CAMBIO_PRENDA">Cambiar prenda</option>
                     <option value="REEMBOLSO">Solicitar reembolso</option>
                   </select></label
-                ><label class="field field--wide"
+                >
+                @if (returnForm.controls.tipo_solicitud.value === 'CAMBIO_TALLA' || returnForm.controls.tipo_solicitud.value === 'CAMBIO_COLOR') {
+                  <label class="field field--wide"><span>{{ returnForm.controls.tipo_solicitud.value === 'CAMBIO_TALLA' ? 'Talla solicitada (se conserva el color original)' : 'Color solicitado (se conserva la talla original)' }}</span>
+                    <select formControlName="id_variante_solicitada">
+                      <option value="">{{ returnOptionsLoading() ? 'Cargando variantes…' : 'Seleccionar talla o color' }}</option>
+                      @for (option of returnOptions(); track option.id_variante) {
+                        <option [value]="option.id_variante" [disabled]="option.stock_disponible < returnForm.controls.cantidad.value">Talla {{ option.talla }} · Color {{ option.color }} · {{ option.stock_disponible > 0 ? 'Stock ' + option.stock_disponible : 'Sin stock' }}</option>
+                      }
+                    </select>
+                  </label>
+                  @if (!returnOptionsLoading() && !returnOptions().length) { <p>No hay variantes compatibles para este cambio en la sucursal de la compra.</p> }
+                  <p>La disponibilidad se volverá a comprobar al recibir la prenda. Esta solicitud no reserva stock.</p>
+                }
+                <label class="field field--wide"
                   ><span>Motivo y talla/color deseado, si corresponde</span><input maxlength="255" formControlName="motivo" /></label
                 ><label class="field field--wide">
                   <span>Requisitos: sin uso, sin lavado, etiquetas conservadas y sin daños atribuibles al cliente. Presenta tu comprobante; la tienda verificará la prenda.</span>
@@ -1874,6 +1888,7 @@ export class AddressesPage {
                       <span><strong>{{ line.producto }}</strong> · {{ line.color }} / {{ line.talla }}</span>
                       <strong style="font-variant-numeric: tabular-nums;">{{ line.cantidad }} u.</strong>
                     </li>
+                    @if (line.id_variante_solicitada) { <li>Solicitado: talla {{ line.talla_solicitada }} · color {{ line.color_solicitado }}</li> }
                   }
                 </ul>
               </div>
@@ -1903,10 +1918,13 @@ export class HistoryPage {
   readonly saving = signal(false);
   readonly error = signal('');
   readonly downloadingSaleId = signal<number | null>(null);
+  readonly returnOptions = signal<ReturnVariantOption[]>([]);
+  readonly returnOptionsLoading = signal(false);
   readonly returnForm = this.fb.nonNullable.group({
     id_detalle_venta: ['', Validators.required],
     cantidad: [1, [Validators.required, Validators.min(1)]],
     tipo_solicitud: ['CAMBIO_TALLA', Validators.required],
+    id_variante_solicitada: [''],
     motivo: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(255)]],
     requisitos_aceptados: [false, Validators.requiredTrue],
   });
@@ -1915,6 +1933,25 @@ export class HistoryPage {
       const section = params.get('seccion');
       this.tab.set(section === 'reservas' || section === 'devoluciones' ? section : 'compras');
     });
+    combineLatest([
+      this.returnForm.controls.id_detalle_venta.valueChanges.pipe(startWith('')),
+      this.returnForm.controls.tipo_solicitud.valueChanges.pipe(startWith('CAMBIO_TALLA')),
+    ]).pipe(takeUntilDestroyed(), switchMap(([detail, kind]) => {
+      const sale = this.returnSale();
+      this.returnOptions.set([]);
+      const requested = this.returnForm.controls.id_variante_solicitada;
+      requested.reset('', { emitEvent: false });
+      if (!sale || !detail || !['CAMBIO_TALLA', 'CAMBIO_COLOR'].includes(kind)) {
+        requested.clearValidators(); requested.updateValueAndValidity({ emitEvent: false });
+        return of([] as ReturnVariantOption[]);
+      }
+      requested.setValidators(Validators.required); requested.updateValueAndValidity({ emitEvent: false });
+      this.returnOptionsLoading.set(true);
+      return this.commerce.customerReturnOptions(sale.id_venta, Number(detail), kind).pipe(
+        catchError((error) => { this.error.set(this.errors.message(error, 'No pudimos cargar las tallas o colores disponibles.')); return of([]); }),
+        finalize(() => this.returnOptionsLoading.set(false)),
+      );
+    })).subscribe((options) => this.returnOptions.set(options));
     forkJoin({
       sales: this.commerce.purchaseHistory(),
       reservations: this.commerce.reservations(),
@@ -1937,6 +1974,7 @@ export class HistoryPage {
       id_detalle_venta: String(sale.items[0]?.id_detalle ?? ''),
       cantidad: 1,
       tipo_solicitud: 'CAMBIO_TALLA',
+      id_variante_solicitada: '',
       motivo: '',
       requisitos_aceptados: false,
     });
@@ -1944,8 +1982,12 @@ export class HistoryPage {
   submitReturn(): void {
     const sale = this.returnSale();
     if (!sale || this.returnForm.invalid) return;
-    this.saving.set(true);
     const value = this.returnForm.getRawValue();
+    if (['CAMBIO_TALLA', 'CAMBIO_COLOR'].includes(value.tipo_solicitud) && !this.returnOptions().some((option) => option.id_variante === Number(value.id_variante_solicitada) && option.stock_disponible >= value.cantidad)) {
+      this.error.set('Selecciona una talla o color disponible para la cantidad solicitada.');
+      return;
+    }
+    this.saving.set(true);
     this.commerce
       .createReturn({
         id_venta: sale.id_venta,
@@ -1955,6 +1997,7 @@ export class HistoryPage {
           {
             id_detalle_venta: Number(value.id_detalle_venta),
             cantidad: value.cantidad,
+            id_variante_solicitada: value.id_variante_solicitada ? Number(value.id_variante_solicitada) : null,
           },
         ],
       })
