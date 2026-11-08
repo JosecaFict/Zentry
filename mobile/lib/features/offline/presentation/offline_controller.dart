@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:capricho_store/core/network/api_exception.dart';
 import 'package:capricho_store/core/tenant/tenant_context.dart';
 import 'package:capricho_store/features/admin/data/admin_repository.dart';
 import 'package:capricho_store/features/admin/domain/admin_models.dart';
@@ -8,11 +9,13 @@ import 'package:capricho_store/features/offline/data/offline_database.dart';
 import 'package:capricho_store/features/offline/data/offline_sync_repository.dart';
 import 'package:capricho_store/features/offline/domain/offline_models.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
 
 final offlineControllerProvider =
-    NotifierProvider<OfflineController, OfflineState>(OfflineController.new);
+    NotifierProvider.autoDispose<OfflineController, OfflineState>(
+      OfflineController.new,
+    );
 
 class OfflineState {
   const OfflineState({
@@ -50,7 +53,11 @@ class OfflineState {
   bool get prepared => catalog.isNotEmpty;
   int get cartUnits => cart.values.fold(0, (sum, quantity) => sum + quantity);
   int get pending => operations
-      .where((operation) => operation.status == OfflineOperationStatus.pending)
+      .where(
+        (operation) =>
+            operation.status == OfflineOperationStatus.pending ||
+            operation.status == OfflineOperationStatus.sending,
+      )
       .length;
   int get conflicts => operations
       .where((operation) => operation.status == OfflineOperationStatus.conflict)
@@ -98,10 +105,28 @@ class OfflineState {
 
 class OfflineController extends Notifier<OfflineState> {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  Timer? _retryTimer;
+  int _retryCount = 0;
+  bool _foreground = true;
 
   @override
   OfflineState build() {
-    ref.onDispose(() => _connectivitySubscription?.cancel());
+    final lifecycle = AppLifecycleListener(
+      onHide: () {
+        _foreground = false;
+        _retryTimer?.cancel();
+      },
+      onResume: () {
+        _foreground = true;
+        _retryCount = 0;
+        _scheduleAutoSync();
+      },
+    );
+    ref.onDispose(() {
+      lifecycle.dispose();
+      _retryTimer?.cancel();
+      _connectivitySubscription?.cancel();
+    });
     Future.microtask(initialize);
     return const OfflineState();
   }
@@ -110,21 +135,32 @@ class OfflineController extends Notifier<OfflineState> {
     try {
       final connectivity = Connectivity();
       final current = await connectivity.checkConnectivity();
-      _connectivitySubscription = connectivity.onConnectivityChanged.listen(
-        (results) => state = state.copyWith(online: _isOnline(results)),
-      );
+      if (!ref.mounted) return;
+      state = state.copyWith(online: _isOnline(current));
+      _connectivitySubscription = connectivity.onConnectivityChanged.listen((
+        results,
+      ) {
+        final online = _isOnline(results);
+        if (online == state.online) return;
+        state = state.copyWith(online: online);
+        _retryTimer?.cancel();
+        _retryCount = 0;
+        if (online) _scheduleAutoSync();
+      });
       final user = ref.read(authControllerProvider).user;
       final branches = await ref.read(adminRepositoryProvider).branches();
+      if (!ref.mounted) return;
       final branchId =
           user?.idSucursal ?? (branches.length == 1 ? branches.first.id : null);
       state = state.copyWith(
         loading: false,
-        online: _isOnline(current),
         branches: branches,
         branchId: branchId,
       );
       if (branchId != null) await _loadLocal();
+      if (ref.mounted) _scheduleAutoSync();
     } catch (error) {
+      if (!ref.mounted) return;
       state = state.copyWith(
         loading: false,
         error: 'No se pudo iniciar el modo offline: $error',
@@ -148,6 +184,9 @@ class OfflineController extends Notifier<OfflineState> {
   }
 
   Future<void> selectBranch(int? branchId) async {
+    if (state.busy) return;
+    _retryTimer?.cancel();
+    _retryCount = 0;
     state = state.copyWith(
       branchId: branchId,
       clearBranch: branchId == null,
@@ -160,9 +199,11 @@ class OfflineController extends Notifier<OfflineState> {
       clearError: true,
     );
     if (branchId != null) await _loadLocal();
+    if (ref.mounted) _scheduleAutoSync();
   }
 
   Future<void> prepare() async {
+    if (state.busy) return;
     final scope = _scope;
     if (scope == null) {
       state = state.copyWith(error: 'Selecciona una sucursal primero.');
@@ -180,6 +221,7 @@ class OfflineController extends Notifier<OfflineState> {
     try {
       final database = ref.read(offlineDatabaseProvider);
       final deviceId = await database.ensureScope(scope);
+      if (!ref.mounted || _scope?.key != scope.key) return;
       final repository = ref.read(offlineSyncRepositoryProvider);
       await repository.registerDevice(
         deviceId: deviceId,
@@ -198,13 +240,16 @@ class OfflineController extends Notifier<OfflineState> {
         catalog: snapshot.items,
         customers: customers,
       );
+      if (!ref.mounted || _scope?.key != scope.key) return;
       await _loadLocal();
+      if (!ref.mounted) return;
       state = state.copyWith(
         busy: false,
         message:
             '${snapshot.items.length} variantes listas para trabajar sin conexión.',
       );
     } catch (error) {
+      if (!ref.mounted) return;
       state = state.copyWith(busy: false, error: error.toString());
     }
   }
@@ -219,6 +264,7 @@ class OfflineController extends Notifier<OfflineState> {
       database.customers(scope),
       database.operations(scope),
     ]);
+    if (!ref.mounted || _scope?.key != scope.key) return;
     state = state.copyWith(
       catalog: results[0] as List<OfflineCatalogItem>,
       customers: results[1] as List<OfflineCustomer>,
@@ -275,6 +321,7 @@ class OfflineController extends Notifier<OfflineState> {
   Future<void> queue() async {
     final scope = _scope;
     if (scope == null || state.cart.isEmpty) return;
+    final wasOnline = state.online;
     if (state.mode == OfflineOperationType.reservation &&
         state.customerId == null) {
       state = state.copyWith(error: 'Selecciona el cliente de la reserva.');
@@ -304,6 +351,7 @@ class OfflineController extends Notifier<OfflineState> {
     await ref
         .read(offlineDatabaseProvider)
         .queueOperation(scope: scope, type: state.mode, payload: payload);
+    if (!ref.mounted || _scope?.key != scope.key) return;
     state = state.copyWith(
       cart: const {},
       clearCustomer: true,
@@ -313,55 +361,82 @@ class OfflineController extends Notifier<OfflineState> {
       clearError: true,
     );
     await _loadLocal();
+    if (ref.mounted && !wasOnline && state.online) _scheduleAutoSync();
   }
 
-  Future<void> synchronize() async {
+  void _scheduleAutoSync([Duration delay = Duration.zero]) {
+    _retryTimer?.cancel();
+    if (!_foreground || !state.online || state.pending == 0) return;
+    _retryTimer = Timer(delay, () => unawaited(synchronize(automatic: true)));
+  }
+
+  Future<void> synchronize({bool automatic = false}) async {
     final scope = _scope;
-    if (scope == null || !state.online || state.busy) return;
-    final database = ref.read(offlineDatabaseProvider);
-    final pending = await database.pendingOperations(scope);
-    if (pending.isEmpty) {
-      state = state.copyWith(message: 'No hay operaciones pendientes.');
+    if (scope == null ||
+        !state.online ||
+        state.busy ||
+        (automatic && !_foreground)) {
       return;
     }
-    final batchId = const Uuid().v4();
+    if (!automatic) {
+      _retryTimer?.cancel();
+      _retryCount = 0;
+    }
     state = state.copyWith(busy: true, clearError: true, clearMessage: true);
-    await database.markSending(
-      batchId,
-      pending.map((item) => item.id).toList(),
-    );
+    Duration? nextAttempt;
+    String? success;
     try {
-      final deviceId = await database.ensureScope(scope);
+      final database = ref.read(offlineDatabaseProvider);
       final repository = ref.read(offlineSyncRepositoryProvider);
-      final submitted = await repository.submitBatch(
-        batchId: batchId,
+      final batch = await database.claimSyncBatch(scope);
+      if (!ref.mounted || _scope?.key != scope.key) return;
+      if (batch == null) {
+        state = state.copyWith(message: 'No hay operaciones pendientes.');
+        return;
+      }
+      final deviceId = await database.ensureScope(scope);
+      if (!ref.mounted || _scope?.key != scope.key) return;
+      await repository.submitBatch(
+        batchId: batch.id,
         deviceId: deviceId,
-        operations: pending,
+        operations: batch.operations,
       );
-      await database.applyResponses(
-        submitted['operaciones'] as List<dynamic>? ?? const [],
-      );
+      if (!ref.mounted || _scope?.key != scope.key) return;
       final confirmed = await repository.confirmBatch(
-        batchId: batchId,
+        batchId: batch.id,
         deviceId: deviceId,
       );
       await database.applyResponses(
         confirmed['operaciones'] as List<dynamic>? ?? const [],
       );
       await database.markSuccessfulSync(scope);
+      if (!ref.mounted || _scope?.key != scope.key) return;
       await _loadLocal();
-      state = state.copyWith(
-        busy: false,
-        message:
-            'Sincronización lista: ${confirmed['total_aplicadas'] ?? 0} aplicadas, '
-            '${confirmed['total_conflictos'] ?? 0} conflictos y '
-            '${confirmed['total_rechazadas'] ?? 0} rechazadas.',
-      );
-      await prepare();
+      if (!ref.mounted) return;
+      _retryCount = 0;
+      if (state.pending > 0) nextAttempt = Duration.zero;
+      success =
+          'Sincronización lista: ${confirmed['total_aplicadas'] ?? 0} aplicadas, '
+          '${confirmed['total_conflictos'] ?? 0} conflictos y '
+          '${confirmed['total_rechazadas'] ?? 0} rechazadas.';
     } catch (error) {
-      await database.releaseBatch(batchId, error.toString());
-      await _loadLocal();
-      state = state.copyWith(busy: false, error: error.toString());
+      if (!ref.mounted) return;
+      state = state.copyWith(error: error.toString());
+      if (error is ApiException && _retryCount < 5) {
+        final status = error.statusCode;
+        if (status == null || status == 408 || status == 429 || status >= 500) {
+          nextAttempt = Duration(seconds: 2 << _retryCount++);
+        }
+      }
+    } finally {
+      if (ref.mounted) state = state.copyWith(busy: false);
+    }
+    if (success != null && ref.mounted && _scope?.key == scope.key) {
+      if (state.online) await prepare();
+      if (ref.mounted) state = state.copyWith(message: success);
+    }
+    if (ref.mounted && nextAttempt != null) {
+      _scheduleAutoSync(nextAttempt);
     }
   }
 

@@ -58,19 +58,21 @@ export class OfflineDatabaseService {
     }
     this.scopeState.set(scope);
 
-    const current = await this.database.syncMeta.get('scope');
-    if (current) return current;
-
-    const meta: OfflineSyncMeta = {
-      key: 'scope',
-      ...scope,
-      deviceId: crypto.randomUUID(),
-      catalogVersion: null,
-      lastCatalogSyncAt: null,
-      lastSuccessfulSyncAt: null,
-    };
-    await this.database.syncMeta.put(meta);
-    return meta;
+    const db = this.database;
+    return db.transaction('rw', db.syncMeta, async () => {
+      const current = await db.syncMeta.get('scope');
+      if (current) return current;
+      const meta: OfflineSyncMeta = {
+        key: 'scope',
+        ...scope,
+        deviceId: crypto.randomUUID(),
+        catalogVersion: null,
+        lastCatalogSyncAt: null,
+        lastSuccessfulSyncAt: null,
+      };
+      await db.syncMeta.put(meta);
+      return meta;
+    });
   }
 
   async replaceCatalog(snapshot: CatalogSnapshot): Promise<void> {
@@ -113,7 +115,7 @@ export class OfflineDatabaseService {
     const operations = await this.requireDatabase().pendingOperations.toArray();
     return {
       pending: operations.filter((item) =>
-        item.estado === 'PENDIENTE' || item.estado === 'ENVIANDO',
+        ['PENDIENTE', 'ENVIANDO', 'APLICADA'].includes(item.estado),
       ).length,
       conflicts: operations.filter((item) => item.estado === 'CONFLICTO').length,
       rejected: operations.filter((item) => item.estado === 'RECHAZADA').length,
@@ -172,27 +174,32 @@ export class OfflineDatabaseService {
     return operation;
   }
 
-  async pendingOperations(limit = 100): Promise<PendingOfflineOperation[]> {
-    return this.requireDatabase()
-      .pendingOperations.where('estado')
-      .equals('PENDIENTE')
-      .limit(limit)
-      .sortBy('created_at');
-  }
-
-  async markBatchSending(idLote: string, operationIds: string[]): Promise<void> {
+  async claimSyncBatch(): Promise<{ id: string; operations: PendingOfflineOperation[] } | null> {
     const db = this.requireDatabase();
-    const now = new Date().toISOString();
-    await db.transaction('rw', db.pendingOperations, async () => {
+    const table = db.pendingOperations;
+    return db.transaction('rw', table, async () => {
+      const unfinished = await table.where('estado').anyOf('ENVIANDO', 'APLICADA').first();
+      if (unfinished?.id_lote) {
+        return {
+          id: unfinished.id_lote,
+          operations: await table.where('id_lote').equals(unfinished.id_lote).toArray(),
+        };
+      }
+      const operations = await table.where('estado').equals('PENDIENTE').limit(100).sortBy('created_at');
+      if (!operations.length) return null;
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
       await Promise.all(
-        operationIds.map((id) =>
-          db.pendingOperations.update(id, {
+        operations.map((operation) =>
+          table.update(operation.id_operacion, {
             estado: 'ENVIANDO',
-            id_lote: idLote,
+            id_lote: id,
+            intentos: operation.intentos + 1,
             updated_at: now,
           }),
         ),
       );
+      return { id, operations };
     });
   }
 
@@ -227,25 +234,6 @@ export class OfflineDatabaseService {
       if (response.confirmado_at) {
         await db.syncMeta.update('scope', { lastSuccessfulSyncAt: response.confirmado_at });
       }
-    });
-  }
-
-  async releaseBatch(idLote: string, message: string): Promise<void> {
-    const db = this.requireDatabase();
-    const now = new Date().toISOString();
-    const operations = await db.pendingOperations.where('id_lote').equals(idLote).toArray();
-    await db.transaction('rw', db.pendingOperations, async () => {
-      await Promise.all(
-        operations.map((operation) =>
-          db.pendingOperations.update(operation.id_operacion, {
-            estado: 'PENDIENTE',
-            id_lote: null,
-            intentos: operation.intentos + 1,
-            mensaje_error: message,
-            updated_at: now,
-          }),
-        ),
-      );
     });
   }
 

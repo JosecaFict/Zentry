@@ -27,12 +27,15 @@ class _RawDriftDatabase extends GeneratedDatabase {
 }
 
 class OfflineDatabase {
+  OfflineDatabase([this._directory]);
+
+  final Directory? _directory;
   Future<_RawDriftDatabase>? _database;
 
   Future<_RawDriftDatabase> get _db => _database ??= _open();
 
   Future<_RawDriftDatabase> _open() async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = _directory ?? await getApplicationDocumentsDirectory();
     final file = File(p.join(directory.path, 'zentry_offline.sqlite'));
     final db = _RawDriftDatabase(NativeDatabase.createInBackground(file));
     await db.customStatement('PRAGMA foreign_keys = ON');
@@ -259,35 +262,51 @@ class OfflineDatabase {
     return rows.map(_operationFromRow).toList(growable: false);
   }
 
-  Future<List<OfflineOperation>> pendingOperations(OfflineScope scope) async {
-    final rows = await (await _db)
-        .customSelect(
-          "SELECT * FROM offline_operation WHERE scope_key = ? AND status = 'PENDIENTE' "
-          'ORDER BY created_at LIMIT 100',
-          variables: [Variable.withString(scope.key)],
-        )
-        .get();
-    return rows.map(_operationFromRow).toList(growable: false);
-  }
-
-  Future<void> markSending(String batchId, List<String> ids) async {
+  Future<({String id, List<OfflineOperation> operations})?> claimSyncBatch(
+    OfflineScope scope,
+  ) async {
     final db = await _db;
-    final now = DateTime.now().toUtc().toIso8601String();
-    for (final id in ids) {
-      await db.customStatement(
-        "UPDATE offline_operation SET status = 'ENVIANDO', batch_id = ?, "
-        'attempts = attempts + 1, updated_at = ? WHERE id_operation = ?',
-        [batchId, now, id],
-      );
-    }
-  }
-
-  Future<void> releaseBatch(String batchId, String message) async {
-    await (await _db).customStatement(
-      "UPDATE offline_operation SET status = 'PENDIENTE', batch_id = NULL, "
-      'error_message = ?, updated_at = ? WHERE batch_id = ?',
-      [message, DateTime.now().toUtc().toIso8601String(), batchId],
-    );
+    return db.transaction(() async {
+      final unfinished = await db
+          .customSelect(
+            "SELECT batch_id FROM offline_operation WHERE scope_key = ? "
+            "AND status = 'ENVIANDO' AND batch_id IS NOT NULL ORDER BY created_at LIMIT 1",
+            variables: [Variable.withString(scope.key)],
+          )
+          .getSingleOrNull();
+      if (unfinished != null) {
+        final id = unfinished.read<String>('batch_id');
+        final rows = await db
+            .customSelect(
+              'SELECT * FROM offline_operation WHERE scope_key = ? AND batch_id = ?',
+              variables: [
+                Variable.withString(scope.key),
+                Variable.withString(id),
+              ],
+            )
+            .get();
+        return (id: id, operations: rows.map(_operationFromRow).toList());
+      }
+      final rows = await db
+          .customSelect(
+            "SELECT * FROM offline_operation WHERE scope_key = ? AND status = 'PENDIENTE' "
+            'ORDER BY created_at LIMIT 100',
+            variables: [Variable.withString(scope.key)],
+          )
+          .get();
+      if (rows.isEmpty) return null;
+      final operations = rows.map(_operationFromRow).toList();
+      final id = const Uuid().v4();
+      final now = DateTime.now().toUtc().toIso8601String();
+      for (final operation in operations) {
+        await db.customStatement(
+          "UPDATE offline_operation SET status = 'ENVIANDO', batch_id = ?, "
+          'attempts = attempts + 1, updated_at = ? WHERE id_operation = ?',
+          [id, now, operation.id],
+        );
+      }
+      return (id: id, operations: operations);
+    });
   }
 
   Future<void> applyResponses(List<dynamic> responses) async {

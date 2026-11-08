@@ -19,7 +19,7 @@
       <label class="field">
         <span>Sucursal</span>
         <select
-          [disabled]="loadingBranches() || !!assignedBranch()"
+          [disabled]="loadingBranches() || !!assignedBranch() || preparing() || synchronizing() || queuingSale()"
           [value]="selectedBranchId() ?? ''"
           (change)="selectBranch($any($event.target).value)"
         >
@@ -32,7 +32,7 @@
       <button
         class="button button--primary"
         type="button"
-        [disabled]="!selectedBranchId() || preparing()"
+        [disabled]="!selectedBranchId() || preparing() || synchronizing()"
         (click)="prepareDevice()"
       >
         {{ preparing() ? 'Preparando…' : catalog().length ? 'Actualizar catálogo' : 'Preparar dispositivo' }}
@@ -66,7 +66,7 @@
       <button
         class="button button--secondary"
         type="button"
-        [disabled]="!connectivity.online() || synchronizing()"
+        [disabled]="!connectivity.online() || synchronizing() || preparing()"
         (click)="synchronizeNow()"
       >
         {{ synchronizing() ? 'Sincronizando…' : 'Sincronizar ahora' }}

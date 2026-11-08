@@ -1,5 +1,5 @@
 import { inject, Injectable, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timeout } from 'rxjs';
 
 import { ConnectivityService } from './connectivity.service';
 import { OfflineDatabaseService } from './offline-database.service';
@@ -40,8 +40,10 @@ export class OfflineSyncService {
         }),
       );
       const catalog = await firstValueFrom(this.api.catalog(scope.branchId));
+      this.assertScope(scope);
       await this.database.replaceCatalog(catalog);
       const customers = await firstValueFrom(this.commerce.adminCustomers({ estado: 'ACTIVO' }));
+      this.assertScope(scope);
       await this.database.replaceCustomers(
         customers.filter((customer) => customer.estado === 'ACTIVO').map((customer) => ({
           id_cliente: customer.id_cliente,
@@ -57,38 +59,45 @@ export class OfflineSyncService {
     }
   }
 
-  async synchronizePending(): Promise<SyncBatchResponse | null> {
+  async synchronizePending(scope = this.database.scope()): Promise<SyncBatchResponse | null> {
     if (!this.connectivity.online()) {
       throw new Error('No hay conexión para sincronizar las operaciones pendientes.');
     }
-    const scope = this.database.scope();
     if (!scope) throw new Error('Primero debe seleccionarse una sucursal para sincronizar.');
+    this.assertScope(scope);
 
-    const meta = await this.database.openScope(scope);
-    const operations = await this.database.pendingOperations();
-    if (!operations.length) return null;
+    const meta = await this.database.currentMeta();
+    this.assertScope(scope);
+    if (!meta) throw new Error('Primero debes preparar este dispositivo.');
+    const batch = await this.database.claimSyncBatch();
+    if (!batch) return null;
+    this.assertScope(scope);
 
-    const batchId = crypto.randomUUID();
     this.stateSignal.set('SINCRONIZANDO');
     this.errorSignal.set(null);
-    await this.database.markBatchSending(
-      batchId,
-      operations.map((operation) => operation.id_operacion),
-    );
     try {
-      const submitted = await firstValueFrom(
-        this.api.submitBatch(batchId, meta.deviceId, operations),
+      await firstValueFrom(
+        this.api.submitBatch(batch.id, meta.deviceId, batch.operations).pipe(timeout(30000)),
       );
-      await this.database.applyBatchResponse(submitted);
-      const confirmed = await firstValueFrom(this.api.confirmBatch(batchId, meta.deviceId));
+      this.assertScope(scope);
+      const confirmed = await firstValueFrom(
+        this.api.confirmBatch(batch.id, meta.deviceId).pipe(timeout(30000)),
+      );
+      this.assertScope(scope);
       await this.database.applyBatchResponse(confirmed);
       this.stateSignal.set('LISTO');
       return confirmed;
     } catch (error) {
-      const message = this.messageFrom(error, 'No se pudo completar la sincronización.');
-      await this.database.releaseBatch(batchId, message);
-      this.fail(error, message);
+      this.fail(error, 'No se pudo completar la sincronización.');
       throw error;
+    }
+  }
+
+  private assertScope(scope: OfflineScope): void {
+    const current = this.database.scope();
+    if (current?.tenantId !== scope.tenantId || current.userId !== scope.userId ||
+        current.branchId !== scope.branchId) {
+      throw new Error('La sucursal o sesión cambió durante la sincronización.');
     }
   }
 

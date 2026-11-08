@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, OnInit, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, computed, DestroyRef, effect, inject, OnInit, signal, untracked } from '@angular/core';
+import { firstValueFrom, TimeoutError } from 'rxjs';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { Branch } from '../../core/models/catalog.model';
@@ -46,6 +47,9 @@ export class OfflineOperationsAdmin implements OnInit {
   private readonly database = inject(OfflineDatabaseService);
   private readonly synchronization = inject(OfflineSyncService);
   private readonly errors = inject(ApiErrorService);
+  private readonly destroyRef = inject(DestroyRef);
+  private retryTimer?: ReturnType<typeof setTimeout>;
+  private retryCount = 0;
 
   readonly connectivity = inject(ConnectivityService);
   readonly branches = signal<Branch[]>([]);
@@ -128,6 +132,28 @@ export class OfflineOperationsAdmin implements OnInit {
     this.customers().find((customer) => customer.id_cliente === this.selectedCustomerId()),
   );
 
+  constructor() {
+    effect(() => {
+      const online = this.connectivity.online();
+      untracked(() => {
+        this.resetAutoSync();
+        if (online) this.scheduleAutoSync();
+      });
+    });
+    this.destroyRef.onDestroy(() => this.resetAutoSync());
+  }
+
+  private resetAutoSync(): void {
+    clearTimeout(this.retryTimer);
+    this.retryCount = 0;
+  }
+
+  private scheduleAutoSync(delay = 0): void {
+    clearTimeout(this.retryTimer);
+    if (this.destroyRef.destroyed || !this.connectivity.online() || !this.operationSummary().pending) return;
+    this.retryTimer = setTimeout(() => void this.synchronizeNow(true), delay);
+  }
+
   async ngOnInit(): Promise<void> {
     try {
       const branches = await firstValueFrom(this.catalogService.branches());
@@ -145,9 +171,17 @@ export class OfflineOperationsAdmin implements OnInit {
   }
 
   async selectBranch(rawValue: string): Promise<void> {
+    if (this.synchronizing() || this.preparing() || this.queuingSale()) return;
+    this.resetAutoSync();
     this.selectedBranchId.set(rawValue ? Number(rawValue) : null);
     this.resetLocalView();
-    if (this.selectedBranchId()) await this.inspectLocalData();
+    if (!this.selectedBranchId()) return;
+    this.preparing.set(true);
+    try {
+      await this.inspectLocalData();
+    } finally {
+      this.preparing.set(false);
+    }
   }
 
   availableFor(item: OfflineCatalogItem): number {
@@ -187,6 +221,7 @@ export class OfflineOperationsAdmin implements OnInit {
     const scope = this.scope();
     const lines = this.cartLines();
     if (!scope || !lines.length) return;
+    const wasOnline = this.connectivity.online();
     this.queuingSale.set(true);
     this.error.set('');
     this.message.set('');
@@ -213,6 +248,7 @@ export class OfflineOperationsAdmin implements OnInit {
       this.error.set(this.errors.message(error, 'No se pudo guardar la venta offline.'));
     } finally {
       this.queuingSale.set(false);
+      if (!wasOnline && this.connectivity.online()) this.scheduleAutoSync();
     }
   }
 
@@ -225,6 +261,7 @@ export class OfflineOperationsAdmin implements OnInit {
       this.error.set('Selecciona el cliente para guardar la reserva.');
       return;
     }
+    const wasOnline = this.connectivity.online();
     this.queuingSale.set(true);
     this.error.set('');
     this.message.set('');
@@ -249,10 +286,12 @@ export class OfflineOperationsAdmin implements OnInit {
       this.error.set(this.errors.message(error, 'No se pudo guardar la reserva offline.'));
     } finally {
       this.queuingSale.set(false);
+      if (!wasOnline && this.connectivity.online()) this.scheduleAutoSync();
     }
   }
 
   async prepareDevice(): Promise<void> {
+    if (this.preparing() || this.synchronizing()) return;
     const scope = this.scope();
     if (!scope) return;
     this.preparing.set(true);
@@ -272,27 +311,50 @@ export class OfflineOperationsAdmin implements OnInit {
       this.error.set(this.errors.message(error, 'No se pudo preparar este dispositivo.'));
     } finally {
       this.preparing.set(false);
+      this.scheduleAutoSync();
     }
   }
 
-  async synchronizeNow(): Promise<void> {
-    if (!this.connectivity.online() || !this.selectedBranchId()) return;
+  async synchronizeNow(automatic = false): Promise<void> {
+    if (this.destroyRef.destroyed || !this.connectivity.online() || !this.selectedBranchId() ||
+        this.synchronizing() || this.preparing()) return;
+    if (!automatic) this.resetAutoSync();
+    const scope = this.scope();
+    if (!scope) return;
     this.synchronizing.set(true);
     this.error.set('');
     this.message.set('');
+    let delay: number | null = null;
     try {
-      const response = await this.synchronization.synchronizePending();
-      if (response) await this.synchronization.prepare(this.scope()!);
+      const response = await this.synchronization.synchronizePending(scope);
+      if (this.destroyRef.destroyed) return;
       await this.refreshLocalView();
+      if (this.destroyRef.destroyed) return;
+      this.retryCount = 0;
       this.message.set(
         response
           ? `Sincronización completada: ${response.total_aplicadas} operaciones aplicadas.`
           : 'No existen operaciones pendientes por sincronizar.',
       );
+      if (response) {
+        if (this.operationSummary().pending) delay = 0;
+        try {
+          await this.synchronization.prepare(scope);
+          await this.refreshLocalView();
+        } catch {
+          this.error.set('Se enviaron las operaciones, pero no se pudo actualizar el catálogo.');
+        }
+      }
     } catch (error) {
       this.error.set(this.errors.message(error, 'No se pudo completar la sincronización.'));
+      if ((error instanceof TimeoutError || (error instanceof HttpErrorResponse &&
+          (error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500))) &&
+          this.retryCount < 5) {
+        delay = 2000 * 2 ** this.retryCount++;
+      }
     } finally {
       this.synchronizing.set(false);
+      if (delay !== null) this.scheduleAutoSync(delay);
     }
   }
 
@@ -348,6 +410,7 @@ export class OfflineOperationsAdmin implements OnInit {
     try {
       await this.database.openScope(scope);
       await this.refreshLocalView();
+      this.scheduleAutoSync();
     } catch (error) {
       this.error.set(this.errors.message(error, 'No se pudo abrir el almacenamiento local.'));
     }
