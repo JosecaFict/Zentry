@@ -20,7 +20,7 @@ export class AdminAssistant {
   private readonly messageList = viewChild<ElementRef<HTMLElement>>('messageList');
 
   readonly visible = computed(() => this.auth.currentUser()?.roles.includes('ADMIN') === true);
-  readonly professional = computed(() => this.tenant.tenant()?.plan_codigo === 'PROFESIONAL');
+  readonly professional = computed(() => ['PROFESIONAL', 'EMPRESARIAL'].includes(this.tenant.tenant()?.plan_codigo ?? ''));
   readonly open = signal(false);
   readonly historyOpen = signal(false);
   readonly loading = signal(false);

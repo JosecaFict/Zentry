@@ -99,8 +99,7 @@ class AssistantService:
 
     def _can_report(self) -> bool:
         return (
-            self.principal.plan_codigo == "PROFESIONAL"
-            and self.principal.permite_reportes_ia
+            self.principal.permite_reportes_ia
             and {"ventas.ver", "inventario.ver"}.issubset(self.principal.permissions)
         )
 
@@ -108,13 +107,13 @@ class AssistantService:
     def _mask_report_messages(messages: list[Message]) -> None:
         for item in messages:
             if item.requiere_reportes_ia:
-                item.contenido = "Este reporte requiere el plan Profesional y permisos de reportes."
+                item.contenido = "Este reporte requiere el plan Profesional o Empresarial y permisos de reportes."
                 item.reporte_snapshot = None
 
     async def export_report(self, conversation_id: UUID, message_id: int, file_format: str) -> tuple[bytes, str, str]:
         conversation = await self.get(conversation_id)
         if conversation.modo != "EMPRESA" or not self._can_report():
-            raise HTTPException(403, "La descarga requiere el plan Profesional y permisos de reportes")
+            raise HTTPException(403, "La descarga requiere el plan Profesional o Empresarial y permisos de reportes")
         if file_format not in {"pdf", "xlsx"}:
             raise HTTPException(422, "Formato de reporte no compatible")
         message = await self.repo.report_message(conversation_id, message_id)
@@ -266,7 +265,7 @@ class AssistantService:
                 "\nEres un asistente para la administración de una tienda. Puedes conversar y "
                 "orientar sobre procesos generales. No tienes acceso a cifras ni reportes de "
                 "esta empresa. Si piden un reporte o datos concretos, explica que los reportes "
-                "con IA requieren el plan Profesional y permisos de reportes."
+                "con IA requieren el plan Profesional o Empresarial y permisos de reportes."
             )
         else:
             system += (
@@ -294,7 +293,7 @@ class AssistantService:
             ):
                 answer = (
                     "Puedo ayudarte con dudas generales de gestión. Para consultar datos y "
-                    "generar reportes de esta empresa necesitas el plan Profesional y permisos "
+                    "generar reportes de esta empresa necesitas el plan Profesional o Empresarial y permisos "
                     "de reportes."
                 )
                 selected: list[AssistantProduct] = []

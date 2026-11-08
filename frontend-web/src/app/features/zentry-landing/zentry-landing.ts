@@ -156,6 +156,18 @@ import { RouterLink } from '@angular/router';
               </ul>
               <a class="button light" href="mailto:contacto@zentrysaas.store?subject=Plan%20Profesional%20Zentry">Consultar plan</a>
             </article>
+            <article class="plan-card">
+              <div class="plan-top"><span>EMPRESARIAL</span><strong>Para cadenas</strong></div>
+              <div class="price"><b>Consultar tarifa</b></div>
+              <ul>
+                <li><b>25</b> sucursales activas</li>
+                <li><b>100</b> usuarios internos</li>
+                <li><b>50.000</b> productos activos</li>
+                <li>Reportes convencionales y con IA</li>
+                <li>Operación offline</li>
+              </ul>
+              <a class="button secondary" href="mailto:contacto@zentrysaas.store?subject=Plan%20Empresarial%20Zentry">Consultar plan</a>
+            </article>
           </div>
         </div>
       </section>
@@ -259,7 +271,7 @@ import { RouterLink } from '@angular/router';
     .plans-section .section-shell { max-width: 1320px; }
     .plans-heading { display: grid; grid-template-columns: 1fr .45fr; gap: 50px; align-items: end; padding-bottom: 44px; border-bottom: 1px solid #3a424f; }
     .plans-heading > p { color: #aab3c1; margin-bottom: 4px; }
-    .plans-grid { display: grid; grid-template-columns: repeat(2, 1fr); max-width: 980px; margin-top: 46px; }
+    .plans-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 46px; }
     .plan-card { background: #fff; color: #131720; padding: 40px; min-height: 610px; border: 1px solid #ccd0d7; display: flex; flex-direction: column; }
     .plan-card.featured { background: #151f2d; color: #fff; border-color: #445064; }
     .plan-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 46px; }

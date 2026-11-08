@@ -64,7 +64,7 @@ describe('AdminAssistant', () => {
     const { fixture } = setup('BASICO');
     (fixture.nativeElement.querySelector('.admin-advisor-launcher') as HTMLButtonElement).click();
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('plan Profesional');
+    expect(fixture.nativeElement.textContent).toContain('planes Profesional y Empresarial');
     expect(fixture.nativeElement.querySelector('.admin-advisor-report-link')).toBeNull();
   });
 

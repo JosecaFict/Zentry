@@ -69,6 +69,7 @@ async def test_export_checks_current_plan_and_permissions(monkeypatch, missing):
     service, conversation, _, audit, _ = setup_export(monkeypatch)
     if missing == 'plan':
         service.principal.plan_codigo = 'BASICO'
+        service.principal.permite_reportes_ia = False
     else:
         service.principal.permissions = frozenset({'ventas.ver'})
     with pytest.raises(HTTPException) as caught:

@@ -170,6 +170,7 @@ export class PlatformOverviewPage implements OnInit {
         <div><span>Activas</span><strong>{{ activeTenants() }}</strong></div>
         <div><span>Plan Básico</span><strong>{{ basicTenants() }}</strong></div>
         <div><span>Plan Profesional</span><strong>{{ professionalTenants() }}</strong></div>
+        <div><span>Plan Empresarial</span><strong>{{ enterpriseTenants() }}</strong></div>
       </section>
 
       <section class="platform-directory-tools" aria-label="Filtros de empresas">
@@ -186,6 +187,7 @@ export class PlatformOverviewPage implements OnInit {
           <option value="TODOS">Todos los planes</option>
           <option value="BASICO">Básico</option>
           <option value="PROFESIONAL">Profesional</option>
+          <option value="EMPRESARIAL">Empresarial</option>
         </select>
         <select aria-label="Filtrar por estado" (change)="statusFilter.set($any($event.target).value)">
           <option value="TODOS">Todos los estados</option>
@@ -281,6 +283,7 @@ export class PlatformTenantsPage implements OnInit {
   readonly activeTenants = computed(() => this.tenants().filter((tenant) => tenant.estado === 'ACTIVO').length);
   readonly basicTenants = computed(() => this.tenants().filter((tenant) => tenant.plan_codigo === 'BASICO').length);
   readonly professionalTenants = computed(() => this.tenants().filter((tenant) => tenant.plan_codigo === 'PROFESIONAL').length);
+  readonly enterpriseTenants = computed(() => this.tenants().filter((tenant) => tenant.plan_codigo === 'EMPRESARIAL').length);
 
   tenantUrl(slug: string): string {
     const protocol = this.tenantBaseDomain === 'localhost' ? 'http' : 'https';
@@ -907,13 +910,13 @@ export class PlatformTenantDetailPage implements OnInit {
       </section>
       <section class="platform-plan-grid">
         @for (plan of plans(); track plan.id_plan) {
-          <article [class.is-featured]="plan.codigo === 'PROFESIONAL'">
+          <article [class.is-featured]="plan.codigo === 'EMPRESARIAL'">
             <header>
               <div>
                 <span class="platform-plan-code">{{ plan.codigo }}</span>
                 <h2>{{ plan.nombre }}</h2>
               </div>
-              @if (plan.codigo === 'PROFESIONAL') { <span class="platform-plan-badge">Más completo</span> }
+              @if (plan.codigo === 'EMPRESARIAL') { <span class="platform-plan-badge">Mayor capacidad</span> }
             </header>
             <div class="platform-plan-price">
               <strong>Bs {{ priceFor(plan) | number: '1.0-0' }}</strong>
@@ -933,18 +936,20 @@ export class PlatformTenantDetailPage implements OnInit {
         }
       </section>
 
-      @if (basicPlan(); as basic) {
-        @if (professionalPlan(); as professional) {
-          <section class="platform-plan-comparison">
-            <header><h2>Comparación directa</h2><p>Diferencias principales entre capacidades.</p></header>
-            <div class="platform-comparison-row is-heading"><span>Característica</span><strong>{{ basic.nombre }}</strong><strong>{{ professional.nombre }}</strong></div>
-            <div class="platform-comparison-row"><span>Sucursales activas</span><strong>{{ basic.max_sucursales_activas }}</strong><strong>{{ professional.max_sucursales_activas }}</strong></div>
-            <div class="platform-comparison-row"><span>Usuarios internos</span><strong>{{ basic.max_usuarios_internos }}</strong><strong>{{ professional.max_usuarios_internos }}</strong></div>
-            <div class="platform-comparison-row"><span>Productos activos</span><strong>{{ basic.max_productos_activos | number }}</strong><strong>{{ professional.max_productos_activos | number }}</strong></div>
-            <div class="platform-comparison-row"><span>Reportes con IA</span><strong>{{ basic.permite_reportes_ia ? 'Sí' : 'No' }}</strong><strong>{{ professional.permite_reportes_ia ? 'Sí' : 'No' }}</strong></div>
-            <div class="platform-comparison-row"><span>Operación offline</span><strong>{{ basic.permite_offline ? 'Sí' : 'No' }}</strong><strong>{{ professional.permite_offline ? 'Sí' : 'No' }}</strong></div>
-          </section>
-        }
+      @if (plans().length) {
+        <section class="platform-plan-comparison">
+          <header><h2>Comparación de planes</h2></header>
+          <div class="platform-comparison-row is-heading" [style.--plan-count]="plans().length">
+            <span>Característica</span>
+            @for (plan of plans(); track plan.id_plan) { <strong>{{ plan.nombre }}</strong> }
+          </div>
+          @for (feature of comparisonFeatures; track feature.label) {
+            <div class="platform-comparison-row" [style.--plan-count]="plans().length">
+              <span>{{ feature.label }}</span>
+              @for (plan of plans(); track plan.id_plan) { <strong>{{ feature.value(plan) }}</strong> }
+            </div>
+          }
+        </section>
       }
     </div>
   `,
@@ -957,8 +962,14 @@ export class PlatformPlansPage implements OnInit {
   readonly error = signal('');
   readonly billingMode = signal<'MENSUAL' | 'ANUAL'>('MENSUAL');
   readonly activePlans = computed(() => this.plans().filter((plan) => plan.activo).length);
-  readonly basicPlan = computed(() => this.plans().find((plan) => plan.codigo === 'BASICO') ?? null);
-  readonly professionalPlan = computed(() => this.plans().find((plan) => plan.codigo === 'PROFESIONAL') ?? null);
+  readonly comparisonFeatures: { label: string; value: (plan: PlatformPlan) => string | number }[] = [
+    { label: 'Sucursales activas', value: (plan) => plan.max_sucursales_activas },
+    { label: 'Usuarios internos', value: (plan) => plan.max_usuarios_internos },
+    { label: 'Productos activos', value: (plan) => plan.max_productos_activos },
+    { label: 'Almacenamiento', value: (plan) => `${plan.almacenamiento_mb / 1024} GB` },
+    { label: 'Reportes con IA', value: (plan) => plan.permite_reportes_ia ? 'Sí' : 'No' },
+    { label: 'Operación offline', value: (plan) => plan.permite_offline ? 'Sí' : 'No' },
+  ];
   readonly mostUsedPlan = computed(() => {
     const counts = new Map<string, number>();
     this.tenants().forEach((tenant) => counts.set(tenant.plan_nombre || 'Sin plan', (counts.get(tenant.plan_nombre || 'Sin plan') || 0) + 1));
