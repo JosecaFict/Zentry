@@ -386,7 +386,10 @@ class PlatformRepository:
             .execution_options(include_all_tenants=True)
         )
         if lock:
-            statement = statement.with_for_update(of=Subscription)
+            await self.session.execute(
+                statement.with_only_columns(Subscription.id_subscription)
+                .with_for_update(of=Subscription)
+            )
         return (await self.session.execute(statement)).one_or_none()
 
     async def add_payment(self, payment: SubscriptionPayment) -> None:

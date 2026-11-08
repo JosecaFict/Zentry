@@ -2,6 +2,7 @@ import logging
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,17 @@ async def unhandled_exception_handler(
     )
 
 
+async def database_error_handler(request: Request, exc: DBAPIError) -> JSONResponse:
+    if getattr(exc.orig, "sqlstate", None) == "PZ001":
+        message = getattr(exc.orig.__cause__, "message", None)
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"detail": message or "Se alcanzó el límite de recursos del plan."},
+        )
+    return await unhandled_exception_handler(request, exc)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(DatabaseUnavailableError, database_unavailable_handler)
+    app.add_exception_handler(DBAPIError, database_error_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
