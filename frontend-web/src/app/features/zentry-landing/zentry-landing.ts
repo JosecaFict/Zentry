@@ -158,8 +158,8 @@ import { RouterLink } from '@angular/router';
             </article>
             <article class="plan-card">
               <div class="plan-top"><span>EMPRESARIAL</span><strong>Para cadenas</strong></div>
-              <div class="price"><b class="price-on-request">Tarifa a consultar</b></div>
-              <p class="annual">Consulta opciones de contratación</p>
+              <div class="price"><b>Bs 1.500</b><span>/ mes</span></div>
+              <p class="annual">Bs 18.000 al año</p>
               <ul>
                 <li><b>25</b> sucursales activas</li>
                 <li><b>100</b> usuarios internos</li>
@@ -283,7 +283,6 @@ import { RouterLink } from '@angular/router';
     .featured .plan-top strong { color: #a8b1bf; }
     .price { display: flex; align-items: baseline; gap: 9px; }
     .price b { font-size: 30px; line-height: 1.2; letter-spacing: -.03em; }
-    .price .price-on-request { font-size: 21px; min-height: 36px; display: flex; align-items: center; }
     .price span, .annual { color: #6e7580; }
     .featured .price span, .featured .annual { color: #a6afbc; }
     .annual { margin: 4px 0 0; font-size: 13px; }
