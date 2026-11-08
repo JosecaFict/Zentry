@@ -158,7 +158,8 @@ import { RouterLink } from '@angular/router';
             </article>
             <article class="plan-card">
               <div class="plan-top"><span>EMPRESARIAL</span><strong>Para cadenas</strong></div>
-              <div class="price"><b>Consultar tarifa</b></div>
+              <div class="price"><b class="price-on-request">Tarifa a consultar</b></div>
+              <p class="annual">Consulta opciones de contratación</p>
               <ul>
                 <li><b>25</b> sucursales activas</li>
                 <li><b>100</b> usuarios internos</li>
@@ -267,26 +268,28 @@ import { RouterLink } from '@angular/router';
     .feature-grid p { color: #5c6470; line-height: 1.65; min-height: 80px; }
     .feature-grid ul, .plan-card ul { margin: 24px 0 0; padding: 0; list-style: none; }
     .feature-grid li { padding: 9px 0; border-top: 1px solid #deded9; font-size: 14px; }
-    .plans-section { background: #111722; color: #fff; padding-block: 110px; }
+    .plans-section { background: #111722; color: #fff; padding-block: clamp(36px, 5vw, 64px); }
     .plans-section .section-shell { max-width: 1320px; }
-    .plans-heading { display: grid; grid-template-columns: 1fr .45fr; gap: 50px; align-items: end; padding-bottom: 44px; border-bottom: 1px solid #3a424f; }
+    .plans-heading { display: grid; grid-template-columns: 1fr .45fr; gap: 20px; align-items: end; padding-bottom: 20px; border-bottom: 1px solid #3a424f; }
+    .plans-heading h2 { font-size: clamp(26px, 3vw, 38px); }
     .plans-heading > p { color: #aab3c1; margin-bottom: 4px; }
-    .plans-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 46px; }
-    .plan-card { background: #fff; color: #131720; padding: 40px; min-height: 610px; border: 1px solid #ccd0d7; display: flex; flex-direction: column; }
+    .plans-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+    .plan-card { background: #fff; color: #131720; padding: 20px; border: 1px solid #ccd0d7; display: flex; flex-direction: column; }
     .plan-card.featured { background: #151f2d; color: #fff; border-color: #445064; }
-    .plan-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 46px; }
+    .plan-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 16px; }
     .plan-top span { color: #0d55ed; font-size: 11px; letter-spacing: .15em; font-weight: 900; }
     .featured .plan-top span { color: #72a0ff; }
     .plan-top strong { font-size: 13px; color: #68707d; }
     .featured .plan-top strong { color: #a8b1bf; }
     .price { display: flex; align-items: baseline; gap: 9px; }
-    .price b { font-size: 48px; letter-spacing: -.045em; }
+    .price b { font-size: 30px; line-height: 1.2; letter-spacing: -.03em; }
+    .price .price-on-request { font-size: 21px; min-height: 36px; display: flex; align-items: center; }
     .price span, .annual { color: #6e7580; }
     .featured .price span, .featured .annual { color: #a6afbc; }
-    .annual { margin: 4px 0 28px; font-size: 14px; }
-    .plan-card ul { border-top: 1px solid #d8dbe0; margin-bottom: 34px; }
+    .annual { margin: 4px 0 0; font-size: 13px; }
+    .plan-card ul { border-top: 1px solid #d8dbe0; margin: 14px 0 16px; }
     .featured ul { border-color: #394556; }
-    .plan-card li { display: flex; justify-content: space-between; padding: 13px 0; border-bottom: 1px solid #e1e2e5; font-size: 14px; }
+    .plan-card li { display: flex; justify-content: space-between; gap: 8px; padding: 7px 0; border-bottom: 1px solid #e1e2e5; font-size: 14px; }
     .featured li { border-color: #394556; }
     .plan-card .button { margin-top: auto; align-self: flex-start; }
     .secondary { border-color: #111722; }
@@ -333,7 +336,7 @@ import { RouterLink } from '@angular/router';
       .feature-grid h3 { margin-top: 28px; }
       .feature-grid p { min-height: 0; }
       .product-section, .plans-section { padding-block: 80px; }
-      .plan-card { min-height: 560px; padding: 30px 24px; }
+      .plan-card { padding: 18px; }
       .closing-cta { padding-block: 72px; }
       footer { grid-template-columns: 1fr; }
       footer > div:last-child { flex-wrap: wrap; }
