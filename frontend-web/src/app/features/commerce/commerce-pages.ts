@@ -1711,6 +1711,7 @@ export class AddressesPage {
     } @else if (tab() === 'compras') {
       <div class="record-list">
         @for (sale of sales(); track sale.id_venta) {
+          @let availableItems = returnableItems(sale);
           <article>
             <header>
               <div>
@@ -1738,33 +1739,44 @@ export class AddressesPage {
                   {{ downloadingSaleId() === sale.id_venta ? 'Generando PDF…' : '📄 Descargar Factura PDF' }}
                 </button>
               </div>
-              @if (sale.devolucion_habilitada) {
+              @if (sale.devolucion_habilitada && availableItems.length) {
                 <span class="status-chip" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; font-size: 0.75rem;">
                   Solicitudes hasta {{ sale.fecha_limite_devolucion | date: 'short' }}
                 </span>
                 <button class="button button--quiet" type="button" (click)="startReturn(sale)">
                   Solicitar cambio o devolución
                 </button>
-              } @else {
+              } @else if (availableItems.length) {
                 <span class="status-chip" style="background: #f1f5f9; color: #64748b; font-size: 0.75rem;">
                   {{ !sale.fecha_inicio_devolucion ? 'Disponible después de confirmar la entrega o retiro' : 'Compra fuera del plazo o estado habilitado' }}
                 </span>
               }
             </div>
+            @for (request of returnsBySale().get(sale.id_venta) ?? []; track request.id_devolucion) {
+              <div class="history-return-actions">
+                <p><strong>{{ returnKindLabel(request.tipo_solicitud) }}</strong> · {{ returnStateLabel(request.estado) }}</p>
+                @if (request.cierre) {
+                  <button class="button button--small button--secondary" type="button"
+                    (click)="downloadReturnReceipt(request.id_devolucion)">
+                    Descargar comprobante {{ request.cierre.comprobante }}
+                  </button>
+                }
+              </div>
+            }
             @if (returnSale()?.id_venta === sale.id_venta) {
               <form class="return-form" [formGroup]="returnForm" (ngSubmit)="submitReturn()">
                 <label class="field"
                   ><span>Artículo</span
                   ><select formControlName="id_detalle_venta">
-                    @for (item of sale.items; track item.id_detalle) {
+                    @for (item of availableItems; track item.id_detalle) {
                       <option [value]="item.id_detalle">
-                        {{ item.producto }} · Talla {{ item.talla }} · Color {{ item.color }}
+                        {{ item.producto }} · Talla {{ item.talla }} · Color {{ item.color }} · Disponibles: {{ item.available }}
                       </option>
                     }
                   </select></label
                 ><label class="field"
                   ><span>Cantidad</span
-                  ><input type="number" min="1" formControlName="cantidad" /></label
+                  ><input type="number" min="1" [max]="maxReturnQuantity()" formControlName="cantidad" /></label
                 ><label class="field"
                   ><span>¿Qué necesitas?</span><select formControlName="tipo_solicitud">
                     <option value="CAMBIO_TALLA">Cambiar talla</option>
@@ -1794,7 +1806,7 @@ export class AddressesPage {
                 ><button
                   class="button button--primary"
                   type="submit"
-                  [disabled]="saving() || returnForm.invalid"
+                  [disabled]="saving() || returnForm.invalid || !validReturnQuantity()"
                 >
                   Enviar solicitud
                 </button>
@@ -1913,6 +1925,16 @@ export class HistoryPage {
   readonly sales = signal<Sale[]>([]);
   readonly reservations = signal<Reservation[]>([]);
   readonly returns = signal<ReturnRequest[]>([]);
+  readonly returnsBySale = computed(() => {
+    const grouped = new Map<number, ReturnRequest[]>();
+    for (const request of this.returns()) {
+      if (!['PENDIENTE', 'APROBADA', 'COMPLETADA'].includes(request.estado)) continue;
+      const requests = grouped.get(request.id_venta) ?? [];
+      requests.push(request);
+      grouped.set(request.id_venta, requests);
+    }
+    return grouped;
+  });
   readonly returnSale = signal<Sale | null>(null);
   readonly loading = signal(true);
   readonly saving = signal(false);
@@ -1968,10 +1990,33 @@ export class HistoryPage {
           this.error.set(this.errors.message(error, 'No pudimos cargar el historial.')),
       });
   }
+  returnableItems(sale: Sale) {
+    const used = new Map<number, number>();
+    for (const request of this.returnsBySale().get(sale.id_venta) ?? []) {
+      for (const item of request.items) {
+        used.set(item.id_detalle_venta, (used.get(item.id_detalle_venta) ?? 0) + item.cantidad);
+      }
+    }
+    return sale.items
+      .map((item) => ({ ...item, available: item.cantidad - (used.get(item.id_detalle) ?? 0) }))
+      .filter((item) => item.available > 0);
+  }
+  maxReturnQuantity(): number {
+    const sale = this.returnSale();
+    if (!sale) return 0;
+    const detailId = Number(this.returnForm.controls.id_detalle_venta.value);
+    return this.returnableItems(sale).find((item) => item.id_detalle === detailId)?.available ?? 0;
+  }
+  validReturnQuantity(): boolean {
+    const quantity = this.returnForm.controls.cantidad.value;
+    return Number.isInteger(quantity) && quantity >= 1 && quantity <= this.maxReturnQuantity();
+  }
   startReturn(sale: Sale): void {
+    const firstItem = this.returnableItems(sale)[0];
+    if (!sale.devolucion_habilitada || !firstItem) return;
     this.returnSale.set(sale);
     this.returnForm.reset({
-      id_detalle_venta: String(sale.items[0]?.id_detalle ?? ''),
+      id_detalle_venta: String(firstItem.id_detalle),
       cantidad: 1,
       tipo_solicitud: 'CAMBIO_TALLA',
       id_variante_solicitada: '',
@@ -1981,7 +2026,7 @@ export class HistoryPage {
   }
   submitReturn(): void {
     const sale = this.returnSale();
-    if (!sale || this.returnForm.invalid) return;
+    if (!sale?.devolucion_habilitada || this.saving() || this.returnForm.invalid || !this.validReturnQuantity()) return;
     const value = this.returnForm.getRawValue();
     if (['CAMBIO_TALLA', 'CAMBIO_COLOR'].includes(value.tipo_solicitud) && !this.returnOptions().some((option) => option.id_variante === Number(value.id_variante_solicitada) && option.stock_disponible >= value.cantidad)) {
       this.error.set('Selecciona una talla o color disponible para la cantidad solicitada.');
