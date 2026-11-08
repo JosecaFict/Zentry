@@ -2,6 +2,7 @@ import 'package:capricho_store/app/navigation_memory.dart';
 import 'package:capricho_store/core/theme/app_theme.dart';
 import 'package:capricho_store/core/tenant/tenant_context.dart';
 import 'package:capricho_store/features/admin/domain/operational_access.dart';
+import 'package:capricho_store/features/assistant/assistant_api.dart';
 import 'package:capricho_store/features/auth/domain/app_user.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/features/commerce/presentation/commerce_controller.dart';
@@ -521,6 +522,16 @@ class ProfileScreen extends ConsumerWidget {
                 },
               ),
               const Divider(height: 1),
+              if (AssistantMode.customer.allows(user.roles)) ...[
+                ListTile(
+                  leading: const Icon(Icons.chat_bubble_outline_rounded),
+                  title: const Text('Asesor de compras'),
+                  subtitle: const Text('Consulta prendas, tallas y promociones'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => context.push('/asesor'),
+                ),
+                const Divider(height: 1),
+              ],
               ListTile(
                 leading: const Icon(Icons.swap_horiz_rounded),
                 title: const Text('Compras y devoluciones'),

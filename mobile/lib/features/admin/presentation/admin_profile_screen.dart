@@ -1,4 +1,5 @@
 import 'package:capricho_store/core/theme/app_theme.dart';
+import 'package:capricho_store/features/assistant/assistant_api.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -117,6 +118,15 @@ class AdminProfileScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 24),
+
+          if (AssistantMode.business.allows(user.roles))
+            ListTile(
+              leading: const Icon(Icons.chat_bubble_outline_rounded),
+              title: const Text('Asistente de administración'),
+              subtitle: const Text('Consulta sobre ventas e inventario'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => context.push('/admin/asistente'),
+            ),
 
           // Datos de la cuenta.
           Container(

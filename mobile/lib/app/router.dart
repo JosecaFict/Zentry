@@ -5,6 +5,8 @@ import 'package:capricho_store/features/admin/presentation/admin_operations_scre
 import 'package:capricho_store/features/admin/presentation/admin_profile_screen.dart';
 import 'package:capricho_store/features/admin/presentation/admin_shell.dart';
 import 'package:capricho_store/features/admin/presentation/operational_access_screen.dart';
+import 'package:capricho_store/features/assistant/assistant_api.dart';
+import 'package:capricho_store/features/assistant/assistant_screen.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/features/auth/presentation/login_screen.dart';
 import 'package:capricho_store/features/auth/presentation/password_recovery_screen.dart';
@@ -86,6 +88,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return tenant.selected == null ? null : '/inicio';
       }
       if (tenant.initialized && tenant.selected == null) return '/empresa';
+
+      if (location == '/asesor' || location == '/admin/asistente') {
+        final auth = ref.read(authControllerProvider);
+        if (!auth.initialized) return null;
+        if (!auth.isAuthenticated) {
+          return '/login?returnUrl=${Uri.encodeComponent(location)}';
+        }
+        final mode = location == '/asesor' ? AssistantMode.customer : AssistantMode.business;
+        return mode.allows(auth.user?.roles)
+            ? null
+            : (mode == AssistantMode.business ? '/admin/403' : '/cuenta');
+      }
 
       // [CU-18] Proteger acceso al vestidor virtual con IA: requiere sesión activa
       if (location == '/vestidor') {
@@ -187,6 +201,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ],
       ),
       GoRoute(path: '/admin', builder: (_, _) => const SizedBox.shrink()),
+      for (final (route, mode) in [
+        ('/asesor', AssistantMode.customer),
+        ('/admin/asistente', AssistantMode.business),
+      ])
+        GoRoute(
+          path: route,
+          pageBuilder: (context, state) => _adaptivePage(
+            key: state.pageKey,
+            child: Consumer(builder: (context, ref, _) {
+              final user = ref.watch(authControllerProvider).user;
+              final tenant = ref.watch(tenantControllerProvider).selected;
+              if (tenant == null || !mode.allows(user?.roles)) {
+                return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              }
+              return AssistantScreen(
+                key: ValueKey((tenant.slug, user!.id, mode)),
+                mode: mode,
+              );
+            }),
+          ),
+        ),
       ShellRoute(
         navigatorKey: _adminShellNavigatorKey,
         builder: (context, state, child) =>

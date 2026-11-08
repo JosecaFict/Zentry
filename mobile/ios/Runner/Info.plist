@@ -86,6 +86,8 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Zentry necesita acceso a la cámara para el vestidor virtual y la prueba de prendas en tiempo real.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Zentry usa el micrófono cuando eliges dictar una pregunta al asesor de compras.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Zentry necesita permiso para guardar fotos del vestidor virtual en tu galería.</string>
 	<key>UIBackgroundModes</key>
