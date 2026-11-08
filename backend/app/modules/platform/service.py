@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.security import hash_password
 from app.modules.auth.service import normalize_email
 from app.modules.platform.models import SubscriptionPayment
-from app.modules.platform.repository import PlatformRepository
+from app.modules.platform.repository import PlanCapacityError, PlatformRepository
 from app.modules.platform.schemas import (
     PlanResponse,
     PlatformOverview,
@@ -260,6 +260,9 @@ class PlatformService:
                     detail="Empresa no encontrada",
                 )
             await self.repository.commit()
+        except PlanCapacityError as exc:
+            await self.repository.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         except LookupError as exc:
             await self.repository.rollback()
             detail = (

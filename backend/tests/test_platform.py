@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
@@ -11,8 +12,11 @@ from app.modules.platform.dependencies import (
     get_platform_service,
     require_platform_database_scope,
 )
+from app.modules.platform.models import Plan, Subscription, Tenant
+from app.modules.platform.repository import PlatformRepository
 from app.modules.platform.router import search_public_tenants
-from app.modules.platform.schemas import PlatformOverview, TenantPublicResponse
+from app.modules.platform.schemas import PlatformOverview, TenantPublicResponse, TenantUpdate
+from app.modules.platform.service import PlatformService
 
 
 def principal(*, global_user: bool) -> CurrentPrincipal:
@@ -42,6 +46,44 @@ def principal(*, global_user: bool) -> CurrentPrincipal:
         session_id="test-session",
         id_tenant=user.id_tenant,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("branches", [10, 12])
+async def test_enterprise_downgrade_checks_branch_limit(branches: int) -> None:
+    session = AsyncMock()
+    tenant = Tenant(nombre="Línea Urbana")
+    current = Plan(
+        id_plan=3, nombre="Empresarial", max_sucursales_activas=25,
+        max_usuarios_internos=100, max_productos_activos=50000,
+    )
+    target = Plan(
+        id_plan=2, nombre="Profesional", max_sucursales_activas=10,
+        max_usuarios_internos=25, max_productos_activos=20000, precio_mensual=700,
+    )
+    subscription = Subscription(id_plan=3, precio_acordado=1500)
+    session.get.return_value = tenant
+    repository = PlatformRepository(session)
+    repository.get_active_plan = AsyncMock(return_value=target)
+    repository.get_subscription = AsyncMock(return_value=(subscription, current))
+    repository.tenant_nit_exists = AsyncMock(return_value=False)
+    session.scalar.side_effect = [branches, 25, 20000]
+    payload = TenantUpdate(nombre="Línea Urbana actualizada", id_plan=2)
+
+    if branches == 10:
+        assert await repository.update_tenant(1, payload)
+        assert subscription.id_plan == 2
+        assert subscription.precio_acordado == 700
+        session.flush.assert_awaited_once()
+    else:
+        with pytest.raises(HTTPException) as error:
+            await PlatformService(repository).update_tenant(1, payload)
+        assert error.value.status_code == 409
+        assert "12 sucursales activas (máximo 10)" in error.value.detail
+        assert subscription.id_plan == 3
+        assert tenant.nombre == "Línea Urbana"
+        session.flush.assert_not_awaited()
+        session.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio

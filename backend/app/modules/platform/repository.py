@@ -9,6 +9,10 @@ from app.modules.platform.models import Plan, Subscription, SubscriptionPayment,
 from app.modules.platform.schemas import TenantBrandUpdate, TenantCreate, TenantUpdate
 
 
+class PlanCapacityError(Exception):
+    pass
+
+
 class PlatformRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -202,10 +206,11 @@ class PlatformRepository:
         plan = await self.get_active_plan(payload.id_plan)
         if plan is None:
             raise LookupError("PLAN_NOT_FOUND")
-        subscription_row = await self.get_subscription(tenant_id)
+        subscription_row = await self.get_subscription(tenant_id, lock=True)
         if subscription_row is None:
             raise LookupError("SUBSCRIPTION_NOT_FOUND")
-        subscription, _ = subscription_row
+        subscription, current_plan = subscription_row
+        await self.check_plan_capacity(tenant_id, current_plan, plan)
         tenant.nombre = payload.nombre
         tenant.razon_social = payload.razon_social
         tenant.nit = payload.nit
@@ -222,6 +227,49 @@ class PlatformRepository:
         subscription.fecha_fin = payload.fecha_fin
         await self.session.flush()
         return True
+
+    async def check_plan_capacity(self, tenant_id: int, current: Plan, target: Plan) -> None:
+        limits = (
+            (
+                "sucursales activas",
+                Sucursal,
+                Sucursal.activo.is_(True),
+                current.max_sucursales_activas,
+                target.max_sucursales_activas,
+            ),
+            (
+                "usuarios internos activos",
+                Empleado,
+                Empleado.estado_laboral == "ACTIVO",
+                current.max_usuarios_internos,
+                target.max_usuarios_internos,
+            ),
+            (
+                "productos activos",
+                Producto,
+                Producto.activo.is_(True),
+                current.max_productos_activos,
+                target.max_productos_activos,
+            ),
+        )
+        exceeded = []
+        for label, model, active, current_limit, target_limit in limits:
+            if target_limit >= current_limit:
+                continue
+            usage = await self.session.scalar(
+                select(func.count()).select_from(model)
+                .where(model.id_tenant == tenant_id, active)
+                .execution_options(include_all_tenants=True)
+            )
+            if usage > target_limit:
+                exceeded.append(f"{usage} {label} (máximo {target_limit})")
+
+        if exceeded:
+            raise PlanCapacityError(
+                f"Para cambiar al plan {target.nombre}, reduce el uso de estos recursos. "
+                + ", ".join(exceeded)
+                + "."
+            )
 
     async def update_tenant_status(self, tenant_id: int, tenant_status: str) -> bool:
         tenant = await self.session.get(Tenant, tenant_id)
@@ -325,7 +373,9 @@ class PlatformRepository:
             int(products or 0),
         )
 
-    async def get_subscription(self, tenant_id: int) -> tuple[Subscription, Plan] | None:
+    async def get_subscription(
+        self, tenant_id: int, *, lock: bool = False
+    ) -> tuple[Subscription, Plan] | None:
         statement = (
             select(Subscription, Plan)
             .join(Plan, Plan.id_plan == Subscription.id_plan)
@@ -335,6 +385,8 @@ class PlatformRepository:
             )
             .execution_options(include_all_tenants=True)
         )
+        if lock:
+            statement = statement.with_for_update(of=Subscription)
         return (await self.session.execute(statement)).one_or_none()
 
     async def add_payment(self, payment: SubscriptionPayment) -> None:
