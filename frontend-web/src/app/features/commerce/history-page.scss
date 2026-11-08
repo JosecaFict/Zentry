@@ -21,6 +21,7 @@
 }
 
 .history-list:has(.history-purchase),
+.orders-list,
 .history-reservations,
 .history-returns {
   background: var(--surface);
@@ -43,10 +44,23 @@
 }
 
 .history-purchase,
+.order-history-row,
 .history-reservation {
   min-width: 0;
   border-top: 1px solid var(--line);
 }
+
+.customer-orders .history-heading { margin-bottom: 1.25rem; }
+.customer-orders .history-heading p { margin: 0; color: var(--ink-soft); }
+
+@media (min-width: 44.01rem) {
+  .orders-list .history-row {
+    grid-template-columns: minmax(7.5rem, 1fr) minmax(0, 1.7fr) minmax(5.5rem, .75fr) minmax(6.5rem, .9fr) minmax(8rem, 1.35fr);
+  }
+}
+
+.order-history-state .history-status { display: inline-block; }
+.order-history-delivery { overflow-wrap: anywhere; }
 
 .history-mobile-label { display: none; }
 
@@ -205,11 +219,14 @@
 
   .history-columns { display: none; }
   .history-purchase:first-of-type,
+  .order-history-row:first-of-type,
   .history-reservation:first-of-type { border-top: 0; }
   .history-total { grid-column: 2; grid-row: 1; }
   .history-products, .history-actions { grid-column: 1 / -1; }
   .history-reservation-state { grid-column: 2; grid-row: 1; }
   .history-reservation-appointment { grid-column: 1 / -1; }
+  .order-history-delivery { grid-column: 1; }
+  .order-history-state { grid-column: 2; grid-row: 2; justify-self: end; max-width: 8rem; }
   .history-mobile-label { display: inline; font-weight: 700; }
   .history-link { min-height: 2.75rem; }
 }

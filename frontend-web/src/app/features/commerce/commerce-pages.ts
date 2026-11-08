@@ -1,4 +1,4 @@
-import { DatePipe, DecimalPipe, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, DecimalPipe, NgTemplateOutlet, TitleCasePipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -1276,13 +1276,12 @@ export class ReservationsPage {
 
 @Component({
   selector: 'app-orders-page',
-  imports: [DatePipe, BolivianosPipe, StatusPanel],
-  template: `<section class="commerce-page page-shell">
-    <header class="commerce-heading">
-      <div>
-        <h1>Pedidos</h1>
-        <p>Sigue la preparación, el retiro o la entrega.</p>
-      </div>
+  imports: [DatePipe, BolivianosPipe, StatusPanel, TitleCasePipe],
+  styleUrl: './history-page.scss',
+  template: `<section class="commerce-page page-shell customer-history customer-orders">
+    <header class="history-heading">
+      <h1>Mis pedidos</h1>
+      <p>Sigue la preparación, el retiro o la entrega.</p>
     </header>
     @if (actionSuccess()) {
       <div class="notice notice--success" style="margin-bottom: 1rem;">
@@ -1309,33 +1308,29 @@ export class ReservationsPage {
         message="Tus compras online aparecerán aquí."
       />
     } @else {
-      <div class="record-list">
+      <div class="history-list orders-list">
+        <div class="history-row history-columns" aria-hidden="true">
+          <span>Pedido</span><span>Entrega</span><span>Total</span><span>Estado</span><span>Acciones</span>
+        </div>
         @for (order of orders(); track order.id_pedido) {
-          <article>
-            <header>
-              <div>
-                <h2>Pedido #{{ order.id_pedido }}</h2>
-                <p>{{ order.fecha_creacion | date: 'medium' }}</p>
-              </div>
-              <span class="status-chip">{{ order.estado }}</span>
-            </header>
-            <dl class="record-facts">
-              <div>
-                <dt>Modalidad</dt>
-                <dd>
-                  {{ order.modalidad_entrega === 'DELIVERY' ? 'Delivery' : 'Retiro en sucursal' }}
-                </dd>
-              </div>
-              <div>
-                <dt>Lugar</dt>
-                <dd>{{ order.direccion_entrega || order.sucursal }}</dd>
-              </div>
-              <div>
-                <dt>Total</dt>
-                <dd>{{ order.total | bolivianos }}</dd>
-              </div>
-            </dl>
-            <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--line-subtle, #f0ede8); display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+          <article class="history-row order-history-row">
+            <div>
+              <h2>Pedido #{{ order.id_pedido }}</h2>
+              <p>{{ order.fecha_creacion | date: 'dd/MM/yyyy HH:mm' }}</p>
+            </div>
+            <div class="order-history-delivery">
+              <strong>{{ order.modalidad_entrega === 'DELIVERY' ? 'Entrega a domicilio' : 'Retiro en sucursal' }}</strong>
+              <p>{{ order.direccion_entrega || order.sucursal }}</p>
+            </div>
+            <strong class="history-total">{{ order.total | bolivianos }}</strong>
+            <div class="order-history-state">
+              <span class="history-status" [class.order-badge--completed]="order.estado === 'ENTREGADO' || order.estado === 'RETIRADO'"
+                [class.order-badge--pending]="order.estado === 'PENDIENTE' || order.estado === 'PREPARANDO'"
+                [class.order-badge--cancelled]="order.estado === 'CANCELADO'">
+                {{ order.estado.replaceAll('_', ' ') | titlecase }}
+              </span>
+            </div>
+            <div class="history-actions">
               @if (order.modalidad_entrega === 'DELIVERY' && order.estado === 'EN_CAMINO') {
                 <button
                   class="button button--primary button--small btn-confirm-delivery"
@@ -1347,16 +1342,16 @@ export class ReservationsPage {
                 </button>
               }
               <button
-                class="button button--small"
+                class="history-link"
                 type="button"
                 [disabled]="downloadingId() === order.id_pedido"
                 (click)="downloadInvoice(order.id_pedido)"
               >
-                {{ downloadingId() === order.id_pedido ? 'Generando PDF…' : '📄 Descargar Factura PDF' }}
+                {{ downloadingId() === order.id_pedido ? 'Generando PDF…' : 'Factura PDF' }}
               </button>
               @if (order.receipt_url) {
                 <a
-                  class="button button--quiet button--small"
+                  class="history-link"
                   [href]="order.receipt_url"
                   target="_blank"
                   rel="noopener noreferrer"
