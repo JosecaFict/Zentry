@@ -1725,18 +1725,7 @@ export class AddressesPage {
                 <p>{{ sale.fecha_venta | date: 'dd/MM/yyyy' }}</p>
                 <p>{{ sale.sucursal }}</p>
               </div>
-              <ul class="history-products">
-                @for (item of sale.items; track item.id_detalle) {
-                  <li>
-                    @if (item.imagen_url) {
-                      <img [src]="item.imagen_url" alt="" width="42" height="46" loading="lazy" />
-                    }
-                    <div><strong>{{ item.producto }}</strong>
-                      <p>{{ item.color }} · {{ item.talla }} · {{ item.cantidad }} u.</p>
-                    </div>
-                  </li>
-                }
-              </ul>
+              <ng-container *ngTemplateOutlet="historyProducts; context: { $implicit: sale.items }" />
               <strong class="history-total">{{ sale.total | bolivianos }}</strong>
               <div class="history-actions">
                 <button class="history-link" type="button"
@@ -1831,21 +1820,43 @@ export class AddressesPage {
         }
       </div>
     } @else if (tab() === 'reservas') {
-      <div class="record-list">
-        @for (item of reservations(); track item.id_reserva) {
-          <article>
-            <header>
+      @if (reservations().length) {
+        <div class="history-list history-reservations">
+          <div class="history-row history-columns" aria-hidden="true">
+            <span>Reserva</span><span>Prendas</span><span>Cita</span><span>Estado</span>
+          </div>
+          @for (reservation of reservations(); track reservation.id_reserva) {
+            @let status = reservationStatus(reservation.estado);
+            <article class="history-row history-reservation">
               <div>
-                <h2>Reserva #{{ item.id_reserva }}</h2>
-                <p>{{ item.fecha_reserva | date: 'medium' }} / {{ item.sucursal }}</p>
+                <h2>#{{ reservation.id_reserva }}</h2>
+                <p>{{ reservation.fecha_reserva | date: 'dd/MM/yyyy' }}</p>
+                <p>{{ reservation.sucursal }}</p>
               </div>
-              <span class="status-chip">{{ item.estado }}</span>
-            </header>
-          </article>
-        } @empty {
-          <app-status-panel title="Sin reservas" message="Todavía no registraste reservas." />
-        }
-      </div>
+              @if (reservation.items.length) {
+                <ng-container *ngTemplateOutlet="historyProducts; context: { $implicit: reservation.items }" />
+              } @else {
+                <p class="history-products">Sin prendas registradas</p>
+              }
+              <p class="history-reservation-appointment">
+                @if (reservation.fecha_cita) {
+                  <span class="history-mobile-label">Cita</span>
+                  {{ reservation.fecha_cita | date: 'dd/MM/yyyy HH:mm' }}
+                } @else {
+                  Sin cita registrada
+                }
+              </p>
+              <div class="history-reservation-state">
+                <span class="history-status" [class]="status.badge">
+                  {{ status.label }}
+                </span>
+              </div>
+            </article>
+          }
+        </div>
+      } @else {
+        <app-status-panel title="Sin reservas" message="Todavía no registraste reservas." />
+      }
     } @else {
       @if (returns().length) {
         <div class="history-list history-returns">
@@ -1859,6 +1870,22 @@ export class AddressesPage {
         <app-status-panel title="Sin devoluciones" message="No tienes solicitudes de devolución." />
       }
     }
+
+    <ng-template #historyProducts let-items>
+      <ul class="history-products">
+        @for (item of items; track item.id_detalle) {
+          <li>
+            @if (item.imagen_url) {
+              <img [src]="item.imagen_url" alt="" width="42" height="46" loading="lazy" />
+            }
+            <div>
+              <strong>{{ item.producto }}</strong>
+              <p>{{ item.color }} · {{ item.talla }} · {{ item.cantidad }} u.</p>
+            </div>
+          </li>
+        }
+      </ul>
+    </ng-template>
 
     <ng-template #returnDetail let-request>
       <header class="history-detail-heading">
@@ -2172,6 +2199,19 @@ export class HistoryPage {
       default:
         return 'order-badge--default';
     }
+  }
+
+  reservationStatus(state: string): { label: string; badge: string } {
+    return ({
+      PENDIENTE: { label: 'Pendiente', badge: 'order-badge--pending' },
+      CONFIRMADA: { label: 'Confirmada', badge: 'order-badge--confirmed' },
+      PREPARANDO: { label: 'En preparación', badge: 'order-badge--pending' },
+      LISTA: { label: 'Lista', badge: 'order-badge--confirmed' },
+      CLIENTE_PRESENTE: { label: 'Cliente presente', badge: 'order-badge--confirmed' },
+      CONVERTIDA: { label: 'Convertida en compra', badge: 'order-badge--completed' },
+      CANCELADA: { label: 'Cancelada', badge: 'order-badge--cancelled' },
+      EXPIRADA: { label: 'Vencida', badge: 'order-badge--cancelled' },
+    } as Record<string, { label: string; badge: string }>)[state] ?? { label: state, badge: '' };
   }
 
   returnStateLabel(state: string): string {

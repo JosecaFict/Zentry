@@ -3,12 +3,36 @@ import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
-import { ReturnRequest, Sale } from '../../core/models/commerce.model';
+import { Reservation, ReturnRequest, Sale } from '../../core/models/commerce.model';
 import { CommerceService } from '../../core/services/commerce.service';
 import { ApiErrorService } from '../../core/services/api-error.service';
 import { HistoryPage } from './commerce-pages';
 
 describe('Customer returns navigation', () => {
+  it('shows the items, appointment, and status in the reservation history', async () => {
+    const reservation = {
+      id_reserva: 1,
+      sucursal: 'Capricho Store Central',
+      fecha_reserva: '2026-09-13T10:00:00',
+      fecha_cita: '2026-09-14T15:30:00',
+      estado: 'CONVERTIDA',
+      items: [{ id_detalle: 5, producto: 'Polo clásico', talla: 'S', color: 'Azul marino', cantidad: 1 }],
+    } as Reservation;
+    TestBed.configureTestingModule({ providers: [
+      provideRouter([{ path: 'historial', component: HistoryPage }]),
+      { provide: CommerceService, useValue: {
+        purchaseHistory: () => of([]), reservations: () => of([reservation]), returns: () => of([]),
+      } },
+    ] });
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/historial?seccion=reservas', HistoryPage);
+    const row = harness.routeNativeElement?.querySelector('.history-reservation');
+    expect(row?.textContent).toContain('Capricho Store Central');
+    expect(row?.textContent).toContain('Azul marino · S · 1 u.');
+    expect(row?.textContent).toContain('14/09/2026 15:30');
+    expect(row?.querySelector('.history-status')?.textContent).toContain('Convertida en compra');
+  });
+
   it('saves the exact requested variant and displays the original color and size', async () => {
     const original = { id_detalle: 5, id_variante: 101, producto: 'Polo clásico', talla: 'S', color: 'Azul marino', cantidad: 1 };
     const sale = { id_venta: 10, id_sucursal: 1, devolucion_habilitada: true, items: [original] } as Sale;

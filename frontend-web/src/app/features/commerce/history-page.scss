@@ -21,6 +21,7 @@
 }
 
 .history-list:has(.history-purchase),
+.history-reservations,
 .history-returns {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -41,10 +42,13 @@
   background: var(--surface-muted);
 }
 
-.history-purchase {
+.history-purchase,
+.history-reservation {
   min-width: 0;
   border-top: 1px solid var(--line);
 }
+
+.history-mobile-label { display: none; }
 
 .history-purchase.is-selected .history-row {
   background: color-mix(in srgb, var(--accent) 9%, var(--surface));
@@ -200,8 +204,12 @@
   }
 
   .history-columns { display: none; }
-  .history-purchase:first-of-type { border-top: 0; }
+  .history-purchase:first-of-type,
+  .history-reservation:first-of-type { border-top: 0; }
   .history-total { grid-column: 2; grid-row: 1; }
   .history-products, .history-actions { grid-column: 1 / -1; }
+  .history-reservation-state { grid-column: 2; grid-row: 1; }
+  .history-reservation-appointment { grid-column: 1 / -1; }
+  .history-mobile-label { display: inline; font-weight: 700; }
   .history-link { min-height: 2.75rem; }
 }
