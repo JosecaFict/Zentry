@@ -421,7 +421,7 @@ async def run(slugs, phase: str, apply: bool) -> None:
             tenants = {
                 tenant.slug: tenant
                 for tenant in await session.scalars(
-                    select(Tenant).where(Tenant.slug.in_(slugs), Tenant.activo.is_(True))
+                    select(Tenant).where(Tenant.slug.in_(slugs), Tenant.estado == "ACTIVO")
                 )
             }
     missing = set(slugs) - tenants.keys()
