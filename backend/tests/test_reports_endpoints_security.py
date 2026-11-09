@@ -1,4 +1,6 @@
+from io import BytesIO
 from unittest.mock import AsyncMock
+from zipfile import ZipFile
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -7,6 +9,7 @@ from app.main import app
 from app.modules.auth.dependencies import CurrentPrincipal, get_current_principal
 from app.modules.auth.models import Usuario
 from app.modules.reports.ai import AIReportInterpreterError
+from app.modules.reports.branding import ReportBrand
 from app.modules.reports.dependencies import (
     get_ai_report_interpreter,
     get_reports_service,
@@ -156,6 +159,7 @@ async def test_ai_query_audits_sanitized_metadata_without_question() -> None:
 @pytest.mark.asyncio
 async def test_branch_employee_cannot_export_another_branch() -> None:
     service = AsyncMock()
+    service.report_brand.return_value = ReportBrand("Empresa demo")
     service.inventory.return_value = InventoryReport(
         unidades_disponibles=0,
         valor_total="0.00",
@@ -190,6 +194,11 @@ async def test_branch_employee_cannot_export_another_branch() -> None:
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     service.inventory.assert_awaited_once_with(7, 4, True, None, None)
+    service.report_brand.assert_awaited_once_with(7, "tenant-demo")
+    with ZipFile(BytesIO(response.content)) as workbook:
+        summary = workbook.read("xl/sharedStrings.xml")
+        assert b"Sucursal Norte" in summary
+        assert b"Sucursal #99" not in summary
     audit_call = service.audit_access.await_args.kwargs
     assert audit_call["metadata"]["id_sucursal"] == 4
     assert audit_call["metadata"]["formato"] == "xlsx"

@@ -129,14 +129,15 @@ class AssistantService:
         from app.modules.reports.router import _summary
 
         title, _ = _summary(plan.tipo_reporte, data)
-        tenant_name = self.principal.tenant_slug or "Zentry"
+        reports = ReportsService(self.session)
+        brand = await reports.report_brand(self.principal.id_tenant, self.principal.tenant_slug or "Zentry")
         if file_format == "xlsx":
-            content = generate_ai_excel(title, tenant_name, plan, data)
+            content = generate_ai_excel(title, brand, plan, data)
             media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         else:
-            content = generate_ai_pdf(title, tenant_name, plan, data)
+            content = generate_ai_pdf(title, brand, plan, data)
             media = "application/pdf"
-        await ReportsService(self.session).audit_access(
+        await reports.audit_access(
             tenant_id=self.principal.id_tenant, user_id=self.principal.user.id_usuario,
             session_id=self.principal.session_id, action="EXPORTAR", entity="REPORTE_IA",
             record_id=str(message_id), metadata={

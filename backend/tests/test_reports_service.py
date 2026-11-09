@@ -1,10 +1,15 @@
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from zipfile import ZipFile
 
 import pytest
+from PIL import Image
 
+from app.modules.platform.models import Tenant
+from app.modules.reports.branding import load_report_brand
 from app.modules.reports.export import (
     generate_ai_excel,
     generate_ai_pdf,
@@ -141,13 +146,15 @@ def test_generated_category_report_exports_the_same_dynamic_rows() -> None:
     data = {
         "total_unidades": 18,
         "ingresos": "5062.00",
-        "categorias": [{
-            "id_categoria": 1,
-            "categoria": "Camisas",
-            "unidades": 18,
-            "ingresos": "5062.00",
-            "participacion": "100.00",
-        }],
+        "categorias": [
+            {
+                "id_categoria": 1,
+                "categoria": "Camisas",
+                "unidades": 18,
+                "ingresos": "5062.00",
+                "participacion": "100.00",
+            }
+        ],
     }
 
     excel = generate_ai_excel("Ingresos por categoría", "altura-comercial", plan, data)
@@ -155,7 +162,8 @@ def test_generated_category_report_exports_the_same_dynamic_rows() -> None:
 
     assert excel.startswith(b"PK")
     with ZipFile(BytesIO(excel)) as workbook:
-        assert b"Camisas" in workbook.read("xl/worksheets/sheet1.xml")
+        assert b"Camisas" in workbook.read("xl/sharedStrings.xml")
+        assert b'autoFilter ref="A1:D2"' in workbook.read("xl/worksheets/sheet2.xml")
     assert pdf.startswith(b"%PDF-")
     assert len(pdf) > 1000
 
@@ -167,6 +175,41 @@ def test_ai_summary_formats_bolivianos_for_spanish_reading() -> None:
     )
 
     assert "Bs 16.099,00" in summary
+
+
+async def test_exports_use_the_authenticated_company_logo_and_color(monkeypatch) -> None:
+    def png(color: str) -> bytes:
+        output = BytesIO()
+        Image.new("RGB", (90, 40), color).save(output, format="PNG")
+        return output.getvalue()
+
+    logos = {
+        "https://res.cloudinary.com/demo/image/upload/linea.png": png("#0F766E"),
+        "https://res.cloudinary.com/demo/image/upload/horizonte.png": png("#4338CA"),
+    }
+    tenants = {
+        21: SimpleNamespace(
+            nombre="Línea Urbana", color_primario="#0F766E", logo_url=next(iter(logos))
+        ),
+        22: SimpleNamespace(
+            nombre="Horizonte Textil", color_primario="#4338CA", logo_url=list(logos)[1]
+        ),
+    }
+    session = SimpleNamespace(get=AsyncMock(side_effect=lambda _, tenant_id: tenants[tenant_id]))
+    monkeypatch.setattr(
+        "app.modules.reports.branding._logo", AsyncMock(side_effect=logos.__getitem__)
+    )
+    plan = AIReportPlan(tipo_reporte="PRODUCTOS")
+    for tenant_id, tenant in tenants.items():
+        brand = await load_report_brand(session, tenant_id)
+        session.get.assert_awaited_with(Tenant, tenant_id)
+        pdf = generate_ai_pdf("Productos destacados", brand, plan, {"productos": []})
+        assert b"/Subtype /Image" in pdf
+        assert b"/ca .065" in pdf
+        with ZipFile(BytesIO(generate_ai_excel("Productos destacados", brand, plan, {}))) as xlsx:
+            assert xlsx.read("xl/media/image1.png") == logos[tenant.logo_url]
+            assert tenant.nombre.encode() in xlsx.read("xl/sharedStrings.xml")
+            assert tenant.color_primario[1:].encode() in xlsx.read("xl/worksheets/sheet1.xml")
 
 
 @pytest.mark.asyncio

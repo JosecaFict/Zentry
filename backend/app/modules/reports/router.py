@@ -60,6 +60,14 @@ def _branch(principal: CurrentPrincipal, requested: int | None) -> int | None:
     return principal.id_sucursal
 
 
+def _branch_label(principal: CurrentPrincipal, branch_id: int | None) -> str:
+    if branch_id is None:
+        return "Todas las sucursales"
+    if branch_id == principal.id_sucursal and principal.sucursal:
+        return principal.sucursal
+    return f"Sucursal #{branch_id}"
+
+
 def _tenant(principal: CurrentPrincipal) -> int:
     if principal.id_tenant is None:
         raise PermissionDeniedError
@@ -120,6 +128,8 @@ async def _execute_ai_plan(
     principal: CurrentPrincipal,
     service: ReportsService,
     requested_branch: int | None,
+    *,
+    export_scope: dict[str, str] | None = None,
 ) -> dict:
     today = date.today()
     end = min(plan.fecha_hasta or today, today)
@@ -129,6 +139,7 @@ async def _execute_ai_plan(
         raise HTTPException(status_code=422, detail="El período solicitado todavía no ha comenzado")
     tenant_id = _tenant(principal)
     branch_id = _branch(principal, requested_branch)
+    resolved_branch = None
     if plan.sucursal:
         resolved_branch = await service.resolve_branch_id(tenant_id, plan.sucursal)
         if resolved_branch is None:
@@ -137,6 +148,12 @@ async def _execute_ai_plan(
                 detail=f"No encontré la sucursal ‘{plan.sucursal}’ en esta empresa",
             )
         branch_id = _branch(principal, resolved_branch)
+    if export_scope is not None:
+        export_scope["branch"] = (
+            plan.sucursal
+            if branch_id is not None and branch_id == resolved_branch and plan.sucursal
+            else _branch_label(principal, branch_id)
+        )
 
     if plan.tipo_reporte == "VENTAS":
         report = (
@@ -348,15 +365,18 @@ async def export_ai_report(
     plan = payload.interpretacion.model_copy(deep=True)
     if plan.necesita_aclaracion:
         raise HTTPException(status_code=422, detail="Completa la consulta antes de exportarla")
-    data = await _execute_ai_plan(plan, principal, service, payload.id_sucursal)
+    export_scope: dict[str, str] = {}
+    data = await _execute_ai_plan(
+        plan, principal, service, payload.id_sucursal, export_scope=export_scope
+    )
     title, _ = _summary(plan.tipo_reporte, data)
-    tenant_name = principal.tenant_slug or "Zentry"
+    brand = await service.report_brand(_tenant(principal), principal.tenant_slug or "Zentry")
     filename = f"reporte-generado-{plan.tipo_reporte.lower().replace('_', '-')}.{file_format}"
     if file_format == "xlsx":
-        content = generate_ai_excel(title, tenant_name, plan, data)
+        content = generate_ai_excel(title, brand, plan, data, branch=export_scope["branch"])
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
-        content = generate_ai_pdf(title, tenant_name, plan, data)
+        content = generate_ai_pdf(title, brand, plan, data, branch=export_scope["branch"])
         media_type = "application/pdf"
     await _audit(
         service,
@@ -495,14 +515,14 @@ async def export_report(
     products = await service.products(tenant_id, start, end, branch_id, 100)
     inventory = await service.inventory(tenant_id, branch_id, False)
     customers = await service.customers(tenant_id, start, end, branch_id, 100)
+    brand = await service.report_brand(tenant_id, principal.tenant_slug or "Zentry")
+    branch = _branch_label(principal, branch_id)
     filename = f"reporte-comercial-{start:%Y%m%d}-{end:%Y%m%d}.{file_format}"
     if file_format == "xlsx":
-        content = generate_excel(sales, products, inventory, customers)
+        content = generate_excel(sales, products, inventory, customers, brand, branch=branch)
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
-        content = generate_pdf(
-            sales, products, inventory, customers, principal.tenant_slug or "Zentry"
-        )
+        content = generate_pdf(sales, products, inventory, customers, brand, branch=branch)
         media_type = "application/pdf"
     await _audit(
         service,

@@ -10,6 +10,7 @@ from xml.etree import ElementTree
 
 from app.modules.assistant.schemas import Conversation, Message
 from app.modules.assistant.service import AssistantService
+from app.modules.reports.branding import ReportBrand
 from app.modules.reports.service import ReportsService
 
 
@@ -38,6 +39,7 @@ def setup_export(monkeypatch):
     service.repo.report_message = AsyncMock(return_value=message)
     audit = AsyncMock()
     monkeypatch.setattr(ReportsService, 'audit_access', audit)
+    monkeypatch.setattr(ReportsService, 'report_brand', AsyncMock(return_value=ReportBrand('Capricho Store')))
     # Exporting must never rerun the interpreter or query current business figures.
     query = AsyncMock(side_effect=AssertionError('No volver a consultar el reporte'))
     monkeypatch.setattr('app.modules.reports.router._execute_ai_plan', query)
@@ -52,11 +54,15 @@ async def test_export_uses_the_saved_report_and_audits_download(monkeypatch, fil
     assert content.startswith(b'%PDF' if file_format == 'pdf' else b'PK')
     if file_format == 'xlsx':
         with ZipFile(BytesIO(content)) as workbook:
-            root = ElementTree.fromstring(workbook.read('xl/worksheets/sheet1.xml'))
-        values = [node.text for node in root.iter() if node.tag.rsplit('}', 1)[-1] in {'t', 'v'}]
+            strings = ElementTree.fromstring(workbook.read('xl/sharedStrings.xml'))
+            detail = ElementTree.fromstring(workbook.read('xl/worksheets/sheet2.xml'))
+        values = [node.text for node in strings.findall('.//{*}t')]
+        assert 'Capricho Store' in values
+        assert 'Reporte comercial con IA' in values
         assert 'Polo clásico' in values
-        assert '21' in values
-        assert any(value and value.startswith('4200') for value in values)
+        assert detail.find(".//{*}c[@r='D2']/{*}v").text == '21'
+        assert detail.find(".//{*}c[@r='E2']/{*}v").text == '4200'
+    ReportsService.report_brand.assert_awaited_once_with(7, 'capricho-store')
     audit.assert_awaited_once()
     assert audit.await_args.kwargs['metadata']['fecha_desde'].isoformat() == '2026-09-01'
     assert audit.await_args.kwargs['metadata']['fecha_consulta'] == '2026-11-07T12:00:00Z'
