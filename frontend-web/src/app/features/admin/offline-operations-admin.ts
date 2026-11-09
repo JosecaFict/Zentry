@@ -70,6 +70,7 @@ export class OfflineOperationsAdmin implements OnInit {
   readonly cartQuantities = signal<Record<number, number>>({});
   readonly queuedQuantities = signal<Record<number, number>>({});
   readonly recentOperations = signal<PendingOfflineOperation[]>([]);
+  readonly latestOperation = computed(() => this.recentOperations()[0]);
   readonly queuingSale = signal(false);
   readonly customers = signal<OfflineCustomerItem[]>([]);
   readonly operationMode = signal<'VENTA' | 'RESERVA'>('VENTA');
@@ -227,9 +228,9 @@ export class OfflineOperationsAdmin implements OnInit {
     this.error.set('');
     this.message.set('');
     try {
-      await this.database.queueOperation('VENTA', {
+      const operation = await this.database.queueOperation('VENTA', {
         id_sucursal: scope.branchId,
-        id_cliente: null,
+        id_cliente: this.selectedCustomer()?.id_cliente ?? null,
         id_reserva: null,
         modalidad_entrega: 'ENTREGA_DIRECTA',
         items: lines.map((line) => ({
@@ -241,6 +242,8 @@ export class OfflineOperationsAdmin implements OnInit {
         referencia_pago: null,
       });
       this.clearCart();
+      this.selectedCustomerId.set(null);
+      this.recentOperations.update((operations) => [operation, ...operations]);
       await this.refreshLocalView();
       this.message.set(
         'Venta guardada en este dispositivo. Puedes sincronizarla cuando exista conexión.',
@@ -398,6 +401,13 @@ export class OfflineOperationsAdmin implements OnInit {
       PENDIENTE: 'Pendiente', ENVIANDO: 'Enviando', CONFIRMADA: 'Confirmada',
       CONFLICTO: 'Conflicto', RECHAZADA: 'Rechazada', APLICADA: 'Aplicada',
     } as Record<string, string>)[operation.estado] ?? operation.estado;
+  }
+
+  operationCustomerLabel(operation: PendingOfflineOperation): string {
+    const id = operation.payload['id_cliente'];
+    if (typeof id !== 'number') return 'Sin cliente registrado';
+    return this.customers().find((customer) => customer.id_cliente === id)?.nombre_completo ??
+      `Cliente #${id}`;
   }
 
   operationUnits(operation: PendingOfflineOperation): number {

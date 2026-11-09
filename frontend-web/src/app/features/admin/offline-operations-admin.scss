@@ -56,6 +56,8 @@
 .reservation-customer select { width: 100%; min-height: 42px; border: 1px solid var(--line); background: var(--surface); padding: 0 10px; color: var(--ink); font: inherit; }
 .customer-warning { margin: 8px 18px 0; color: var(--danger); font-size: .78rem; line-height: 1.4; }
 .cart-empty { padding: 28px 18px; }
+.cart-last-operation { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.cart-last-operation p { flex-basis: 100%; margin: 0; }
 .cart-empty p, .cart-help { margin: 6px 0 0; color: var(--ink-soft); font-size: .8rem; line-height: 1.45; }
 .cart-lines { max-height: 340px; overflow-y: auto; }
 .cart-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }

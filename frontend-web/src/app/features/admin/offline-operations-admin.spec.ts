@@ -5,14 +5,22 @@ import { expect, it, vi } from 'vitest';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConnectivityService } from '../../core/offline/connectivity.service';
 import { OfflineDatabaseService } from '../../core/offline/offline-database.service';
+import { PendingOfflineOperation } from '../../core/offline/offline.models';
 import { OfflineSyncService } from '../../core/offline/offline-sync.service';
 import { CatalogService } from '../../core/services/catalog.service';
 import { TenantContextService } from '../../core/tenant/tenant-context.service';
 import { OfflineOperationsAdmin } from './offline-operations-admin';
 
-it('starts sending on reconnection and ignores a second request while sending', async () => {
+function setup() {
   const online = signal(false);
   const synchronize = vi.fn().mockResolvedValue(null);
+  const saved: PendingOfflineOperation[] = [];
+  const customers = [{ id_cliente: 8, nombre_completo: 'Cliente de prueba', correo: '', telefono: null }];
+  const queueOperation = vi.fn(async (_type: string, payload: Record<string, unknown>) => {
+    const operation = { id_operacion: 'venta-1', tipo: 'VENTA', estado: 'PENDIENTE', payload } as PendingOfflineOperation;
+    saved.push(operation);
+    return operation;
+  });
   TestBed.configureTestingModule({
     imports: [OfflineOperationsAdmin],
     providers: [
@@ -26,8 +34,9 @@ it('starts sending on reconnection and ignores a second request while sending', 
         currentMeta: async () => null,
         operationSummary: async () => ({ pending: 0, conflicts: 0, rejected: 0 }),
         queuedQuantities: async () => ({}),
-        recentOperations: async () => [],
-        listCustomers: async () => [],
+        recentOperations: async () => saved,
+        listCustomers: async () => customers,
+        queueOperation,
       } },
     ],
   }).overrideComponent(OfflineOperationsAdmin, { set: { template: '' } });
@@ -36,6 +45,11 @@ it('starts sending on reconnection and ignores a second request while sending', 
   const component = fixture.componentInstance;
   fixture.detectChanges();
   component.selectedBranchId.set(3);
+  return { fixture, component, online, synchronize, queueOperation, customers };
+}
+
+it('starts sending on reconnection and ignores a second request while sending', async () => {
+  const { fixture, component, online, synchronize } = setup();
   component.operationSummary.set({ pending: 2, conflicts: 0, rejected: 0 });
   expect(synchronize).not.toHaveBeenCalled();
 
@@ -48,4 +62,25 @@ it('starts sending on reconnection and ignores a second request while sending', 
   expect(synchronize).toHaveBeenCalledExactlyOnceWith({ tenantId: 1, userId: 2, branchId: 3 });
   finish(null);
   await vi.waitFor(() => expect(component.synchronizing()).toBe(false));
+});
+
+it.each([8, null])('keeps the cash sale visible after saving with customer %s', async (customerId) => {
+  const { component, queueOperation, customers } = setup();
+  component.customers.set(customers);
+  component.catalog.set([{
+    id_variante: 4, sku: 'DEMO', producto: 'Polo', talla: 'M', color: 'Azul',
+    precio: '100.00', stock_fisico: 2, stock_reservado: 0, stock_disponible: 2, updated_at: null,
+  }]);
+  component.cartQuantities.set({ 4: 1 });
+  component.selectedCustomerId.set(customerId);
+
+  await component.queueOfflineSale();
+
+  expect(queueOperation).toHaveBeenCalledExactlyOnceWith('VENTA', expect.objectContaining({
+    id_cliente: customerId, registrar_efectivo: true, metodo_pago: 'EFECTIVO',
+  }));
+  expect(component.cartLines()).toHaveLength(0);
+  const sale = component.latestOperation();
+  expect(sale.estado).toBe('PENDIENTE');
+  expect(component.operationCustomerLabel(sale)).toBe(customerId ? 'Cliente de prueba' : 'Sin cliente registrado');
 });

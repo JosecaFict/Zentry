@@ -169,14 +169,15 @@
             >Reserva</button>
           </div>
 
-          @if (operationMode() === 'RESERVA') {
+          @if (operationMode() === 'RESERVA' || cartLines().length) {
             <label class="reservation-customer">
               <span>Cliente</span>
               <select
                 [value]="selectedCustomerId() ?? ''"
+                [disabled]="queuingSale()"
                 (change)="selectedCustomerId.set($any($event.target).value ? +$any($event.target).value : null)"
               >
-                <option value="">Selecciona un cliente</option>
+                <option value="">{{ operationMode() === 'VENTA' ? 'Sin cliente registrado' : 'Selecciona un cliente' }}</option>
                 @for (customer of customers(); track customer.id_cliente) {
                   <option [value]="customer.id_cliente">{{ customer.nombre_completo }}</option>
                 }
@@ -189,8 +190,17 @@
 
           @if (!cartLines().length) {
             <div class="cart-empty">
-              <strong>La operación está vacía.</strong>
-              <p>Abre un producto y agrega la talla y el color elegidos.</p>
+              @if (latestOperation(); as operation) {
+                <div class="cart-last-operation" aria-live="polite">
+                  <strong>{{ operation.tipo === 'VENTA' ? 'Última venta en efectivo' : 'Última reserva' }}</strong>
+                  <span class="operation-status" [attr.data-status]="operation.estado">{{ operationStatusLabel(operation) }}</span>
+                  <p>{{ operationCustomerLabel(operation) }} · {{ operationUnits(operation) }} u.</p>
+                </div>
+                <p>Para iniciar otra operación, agrega una variante del catálogo local.</p>
+              } @else {
+                <strong>La operación está vacía.</strong>
+                <p>Abre un producto y agrega la talla y el color elegidos.</p>
+              }
             </div>
           } @else {
             <div class="cart-lines">
@@ -224,6 +234,7 @@
             <dl class="cart-summary">
               @if (operationMode() === 'VENTA') {
                 <div><dt>Forma de pago</dt><dd>Efectivo</dd></div>
+                <div><dt>Cliente</dt><dd>{{ selectedCustomer()?.nombre_completo ?? 'Sin cliente registrado' }}</dd></div>
                 <div><dt>Entrega</dt><dd>Directa</dd></div>
               } @else {
                 <div><dt>Cliente</dt><dd>{{ selectedCustomer()?.nombre_completo ?? 'Pendiente' }}</dd></div>
@@ -254,7 +265,11 @@
         <div class="operation-list">
           @for (operation of recentOperations(); track operation.id_operacion) {
             <article>
-              <div><strong>{{ operation.tipo === 'VENTA' ? 'Venta en efectivo' : 'Reserva' }}</strong><span>{{ operationUnits(operation) }} {{ operationUnits(operation) === 1 ? 'unidad' : 'unidades' }} · {{ operation.created_at | date: 'dd/MM/yyyy, HH:mm' }}</span></div>
+              <div>
+                <strong>{{ operation.tipo === 'VENTA' ? 'Venta en efectivo' : 'Reserva' }}</strong>
+                <span>{{ operationCustomerLabel(operation) }}</span>
+                <span>{{ operationUnits(operation) }} {{ operationUnits(operation) === 1 ? 'unidad' : 'unidades' }} · {{ operation.created_at | date: 'dd/MM/yyyy, HH:mm' }}</span>
+              </div>
               <span class="operation-status" [attr.data-status]="operation.estado">{{ operationStatusLabel(operation) }}</span>
               @if (operation.mensaje_error) { <p>{{ operation.mensaje_error }}</p> }
               @if (operation.estado === 'CONFLICTO' || operation.estado === 'RECHAZADA') {
