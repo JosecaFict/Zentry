@@ -1,5 +1,6 @@
 import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { forkJoin } from 'rxjs';
@@ -58,9 +59,9 @@ import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
               type="button"
               class="voice-button"
               [class.voice-button--recording]="voiceRecording()"
-              [disabled]="aiLoading() || voiceTranscribing()"
+              [disabled]="aiLoading() || voiceStarting() || voiceTranscribing()"
               [attr.aria-pressed]="voiceRecording()"
-              [attr.aria-label]="voiceRecording() ? 'Detener grabación' : 'Dictar consulta'"
+              [attr.aria-label]="voiceRecording() ? 'Detener y consultar' : 'Dictar consulta'"
               (click)="toggleVoiceRecording()">
               @if (voiceTranscribing()) {
                 <span class="voice-spinner" aria-hidden="true"></span>
@@ -70,9 +71,9 @@ import { BolivianosPipe } from '../../shared/pipes/bolivianos.pipe';
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M8 22h8"/></svg>
               }
             </button>
-            <button class="ai-submit" type="submit" [disabled]="aiLoading() || voiceRecording() || voiceTranscribing() || !aiQuestion.trim()">{{ aiLoading() ? 'Analizando…' : 'Consultar' }}</button>
+            <button class="ai-submit" type="submit" [disabled]="aiLoading() || voiceStarting() || voiceRecording() || voiceTranscribing() || !aiQuestion.trim()">{{ aiLoading() ? 'Analizando…' : 'Consultar' }}</button>
           </div>
-          <small>La IA interpreta filtros; nunca escribe ni ejecuta consultas SQL. Puedes dictar y revisar el texto antes de consultar.</small>
+          <small>Al detener el dictado, Zentry transcribe y envía tu consulta automáticamente.</small>
           <p class="voice-status" aria-live="polite">
             @if (voiceRecording()) { <span class="recording-dot"></span> Grabando · {{ voiceSeconds() }} s de 60 s }
             @else if (voiceTranscribing()) { Transcribiendo tu consulta… }
@@ -286,6 +287,7 @@ export class ReportsAdmin implements OnInit, OnDestroy {
   private readonly reportsService = inject(ReportsService);
   private readonly route = inject(ActivatedRoute);
   private readonly catalogService = inject(CatalogService);
+  private readonly destroyRef = inject(DestroyRef);
   readonly branches = signal<Branch[]>([]);
   readonly sales = signal<SalesReport | null>(null);
   readonly products = signal<ProductReport | null>(null);
@@ -298,6 +300,7 @@ export class ReportsAdmin implements OnInit, OnDestroy {
   readonly aiExporting = signal<'' | 'xlsx' | 'pdf'>('');
   readonly aiError = signal('');
   readonly aiResult = signal<AIReportResponse | null>(null);
+  readonly voiceStarting = signal(false);
   readonly voiceRecording = signal(false);
   readonly voiceTranscribing = signal(false);
   readonly voiceSeconds = signal(0);
@@ -327,22 +330,33 @@ export class ReportsAdmin implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    if (this.mediaRecorder) {
+      this.mediaRecorder.onstop = null;
+      this.mediaRecorder.ondataavailable = null;
+    }
     this.stopVoiceTracks();
   }
 
   async toggleVoiceRecording() {
     if (this.voiceRecording()) {
-      this.mediaRecorder?.stop();
+      if (this.mediaRecorder?.state === 'recording') this.mediaRecorder.stop();
       return;
     }
+    if (this.voiceStarting() || this.voiceTranscribing() || this.aiLoading()) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       this.voiceMessage.set('Este navegador no permite grabar audio. Puedes escribir tu consulta.');
       return;
     }
     this.voiceMessage.set('');
     this.aiError.set('');
+    this.voiceStarting.set(true);
     try {
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (this.destroyRef.destroyed) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      this.mediaStream = stream;
       const mimeType = this.voiceMimeType();
       this.mediaRecorder = mimeType
         ? new MediaRecorder(this.mediaStream, { mimeType })
@@ -366,12 +380,17 @@ export class ReportsAdmin implements OnInit, OnDestroy {
         ? 'Permite el acceso al micrófono para dictar tu consulta.'
         : 'No pudimos iniciar el micrófono. Puedes escribir tu consulta.');
       this.stopVoiceTracks();
+    } finally {
+      this.voiceStarting.set(false);
     }
   }
 
   private finishVoiceRecording() {
-    const type = this.mediaRecorder?.mimeType || 'audio/webm';
+    if (!this.mediaRecorder || this.destroyRef.destroyed) return;
+    const type = this.mediaRecorder.mimeType || 'audio/webm';
     const audio = new Blob(this.voiceChunks, { type });
+    this.mediaRecorder = null;
+    this.voiceChunks = [];
     this.voiceRecording.set(false);
     this.stopVoiceTracks();
     if (!audio.size) {
@@ -381,11 +400,17 @@ export class ReportsAdmin implements OnInit, OnDestroy {
     this.voiceTranscribing.set(true);
     this.voiceMessage.set('');
     this.reportsService.transcribeVoice(audio)
-      .pipe(finalize(() => this.voiceTranscribing.set(false)))
+      .pipe(takeUntilDestroyed(this.destroyRef), finalize(() => this.voiceTranscribing.set(false)))
       .subscribe({
         next: ({ texto }) => {
-          this.aiQuestion = texto;
-          this.voiceMessage.set('Texto listo. Revísalo y presiona Consultar.');
+          this.voiceTranscribing.set(false);
+          const question = texto.trim();
+          if (!question) {
+            this.voiceMessage.set('No se detectó una consulta. Intenta grabar nuevamente.');
+            return;
+          }
+          this.aiQuestion = question;
+          this.askAssistant();
         },
         error: (error) => this.voiceMessage.set(
           error?.error?.detail ?? 'No pudimos transcribir la grabación. Intenta nuevamente.',
@@ -437,10 +462,14 @@ export class ReportsAdmin implements OnInit, OnDestroy {
 
   askAssistant() {
     const question = this.aiQuestion.trim();
-    if (!question) return;
+    if (!question || this.aiLoading() || this.voiceStarting() || this.voiceRecording() || this.voiceTranscribing()) return;
+    if (question.length > 500) {
+      this.aiError.set('La consulta supera los 500 caracteres. Acórtala y presiona Consultar.');
+      return;
+    }
     this.aiLoading.set(true); this.aiError.set(''); this.aiResult.set(null);
     this.reportsService.askAssistant(question, this.branchId)
-      .pipe(finalize(() => this.aiLoading.set(false)))
+      .pipe(takeUntilDestroyed(this.destroyRef), finalize(() => this.aiLoading.set(false)))
       .subscribe({
         next: (result) => this.aiResult.set(result),
         error: (error) => this.aiError.set(error?.error?.detail ?? 'No pudimos consultar al asistente.'),
