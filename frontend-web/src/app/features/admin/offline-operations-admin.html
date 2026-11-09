@@ -20,12 +20,11 @@
         <span>Sucursal</span>
         <select
           [disabled]="loadingBranches() || !!assignedBranch() || preparing() || synchronizing() || queuingSale()"
-          [value]="selectedBranchId() ?? ''"
           (change)="selectBranch($any($event.target).value)"
         >
-          <option value="">Selecciona una sucursal</option>
+          <option value="" [selected]="selectedBranchId() === null">Selecciona una sucursal</option>
           @for (branch of branches(); track branch.id_sucursal) {
-            <option [value]="branch.id_sucursal">{{ branch.nombre }}</option>
+            <option [value]="branch.id_sucursal" [selected]="selectedBranchId() === branch.id_sucursal">{{ branch.nombre }}</option>
           }
         </select>
       </label>
@@ -53,6 +52,13 @@
         <strong>{{ meta()?.lastCatalogSyncAt ? (meta()?.lastCatalogSyncAt | date: 'dd/MM/yyyy, HH:mm') : 'Pendiente' }}</strong>
       </div>
     </section>
+
+    @if (meta()?.lastCatalogSyncAt) {
+      <p class="notice notice--warning" role="status">
+        Estás viendo el catálogo guardado en este dispositivo. Los precios y las existencias pueden
+        haber cambiado desde la última descarga. El servidor valida el stock al sincronizar.
+      </p>
+    }
 
     <section class="sync-queue" aria-labelledby="sync-title">
       <div>
@@ -287,8 +293,8 @@
     }
   } @else if (!loadingBranches()) {
     <div class="offline-empty offline-empty--initial">
-      <strong>Selecciona Sucursal Principal o Sucursal Norte.</strong>
-      <p>No se descargará información hasta que confirmes dónde operará este dispositivo.</p>
+      <strong>Selecciona una sucursal para operar.</strong>
+      <p>Con internet puedes preparar un catálogo. Sin conexión puedes elegir una sucursal ya guardada en este dispositivo.</p>
     </div>
   }
 </div>

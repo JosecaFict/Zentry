@@ -11,10 +11,12 @@ import { CatalogService } from '../../core/services/catalog.service';
 import { TenantContextService } from '../../core/tenant/tenant-context.service';
 import { OfflineOperationsAdmin } from './offline-operations-admin';
 
-function setup() {
+function setup(restoredBranchIds?: number[]) {
   const online = signal(false);
   const synchronize = vi.fn().mockResolvedValue(null);
   const saved: PendingOfflineOperation[] = [];
+  const branches = vi.fn(() => of([]));
+  const openScope = vi.fn();
   const customers = [{ id_cliente: 8, nombre_completo: 'Cliente de prueba', correo: '', telefono: null }];
   const queueOperation = vi.fn(async (_type: string, payload: Record<string, unknown>) => {
     const operation = { id_operacion: 'venta-1', tipo: 'VENTA', estado: 'PENDIENTE', payload } as PendingOfflineOperation;
@@ -26,7 +28,7 @@ function setup() {
     providers: [
       { provide: AuthService, useValue: { currentUser: () => ({ id_usuario: 2 }) } },
       { provide: TenantContextService, useValue: { tenant: () => ({ id_tenant: 1 }) } },
-      { provide: CatalogService, useValue: { branches: () => of([]) } },
+      { provide: CatalogService, useValue: { branches } },
       { provide: ConnectivityService, useValue: { online } },
       { provide: OfflineSyncService, useValue: { synchronizePending: synchronize } },
       { provide: OfflineDatabaseService, useValue: {
@@ -37,6 +39,8 @@ function setup() {
         recentOperations: async () => saved,
         listCustomers: async () => customers,
         queueOperation,
+        openScope,
+        savedBranchIds: vi.fn().mockResolvedValue(restoredBranchIds ?? []),
       } },
     ],
   }).overrideComponent(OfflineOperationsAdmin, { set: { template: '' } });
@@ -44,9 +48,34 @@ function setup() {
   const fixture = TestBed.createComponent(OfflineOperationsAdmin);
   const component = fixture.componentInstance;
   fixture.detectChanges();
-  component.selectedBranchId.set(3);
-  return { fixture, component, online, synchronize, queueOperation, customers };
+  if (!restoredBranchIds) component.selectedBranchId.set(3);
+  return { fixture, component, online, synchronize, queueOperation, customers, branches, openScope };
 }
+
+it('recovers the last saved branch without requesting the network', async () => {
+  const key = 'zentry_offline_branches_1_2';
+  localStorage.setItem(key, JSON.stringify({
+    selected: 4,
+    branches: [{ id_sucursal: 4, nombre: 'Central', direccion: '' }],
+  }));
+  try {
+    const { component, branches, openScope } = setup([3, 4]);
+    await vi.waitFor(() => expect(component.loadingBranches()).toBe(false));
+    expect(branches).not.toHaveBeenCalled();
+    expect(openScope).toHaveBeenCalledExactlyOnceWith({ tenantId: 1, userId: 2, branchId: 4 });
+    expect(component.selectedBranch()?.nombre).toBe('Central');
+  } finally {
+    localStorage.removeItem(key);
+  }
+});
+
+it('opens a previously downloaded branch without a saved display name', async () => {
+  const { component, branches, openScope } = setup([3]);
+  await vi.waitFor(() => expect(component.loadingBranches()).toBe(false));
+  expect(branches).not.toHaveBeenCalled();
+  expect(openScope).toHaveBeenCalledExactlyOnceWith({ tenantId: 1, userId: 2, branchId: 3 });
+  expect(component.selectedBranch()?.nombre).toBe('Sucursal #3');
+});
 
 it('starts sending on reconnection and ignores a second request while sending', async () => {
   const { fixture, component, online, synchronize } = setup();

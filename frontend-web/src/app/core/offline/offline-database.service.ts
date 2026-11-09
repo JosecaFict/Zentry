@@ -48,6 +48,16 @@ export class OfflineDatabaseService {
 
   readonly scope = this.scopeState.asReadonly();
 
+  async savedBranchIds(tenantId: number, userId: number): Promise<number[]> {
+    const prefix = `zentry_offline_${tenantId}_${userId}_`;
+    return (await Dexie.getDatabaseNames())
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => name.slice(prefix.length))
+      .filter((id) => /^[1-9][0-9]*$/.test(id))
+      .map(Number)
+      .filter(Number.isSafeInteger);
+  }
+
   async openScope(scope: OfflineScope): Promise<OfflineSyncMeta> {
     this.assertPositiveScope(scope);
     const name = this.databaseName(scope);

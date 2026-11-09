@@ -13,6 +13,7 @@ import { catchError, firstValueFrom, of } from 'rxjs';
 import { routes } from './app.routes';
 import { AuthService } from './core/auth/auth.service';
 import { authInterceptor } from './core/interceptors/auth.interceptor';
+import { ConnectivityService } from './core/offline/connectivity.service';
 import { TenantContextService } from './core/tenant/tenant-context.service';
 
 export const appConfig: ApplicationConfig = {
@@ -28,7 +29,10 @@ export const appConfig: ApplicationConfig = {
       const auth = inject(AuthService);
       const tenant = inject(TenantContextService);
       const router = inject(Router);
-      await firstValueFrom(tenant.load().pipe(catchError(() => of(null))));
+      const connectivity = inject(ConnectivityService);
+      if (connectivity.online() || !tenant.tenant()) {
+        await firstValueFrom(tenant.load().pipe(catchError(() => of(null))));
+      }
       if (tenant.unavailable()) {
         await router.navigateByUrl('/servicio-no-disponible');
         return;

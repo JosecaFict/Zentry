@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, OnInit, signal, untracked } from '@angular/core';
-import { firstValueFrom, TimeoutError } from 'rxjs';
+import { firstValueFrom, timeout, TimeoutError } from 'rxjs';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { Branch } from '../../core/models/catalog.model';
@@ -157,17 +157,87 @@ export class OfflineOperationsAdmin implements OnInit {
 
   async ngOnInit(): Promise<void> {
     try {
-      const branches = await firstValueFrom(this.catalogService.branches());
+      if (!this.connectivity.online()) {
+        await this.restoreLocalBranches();
+        return;
+      }
+      const branches = await firstValueFrom(this.catalogService.branches().pipe(timeout(8000)));
       this.branches.set(branches);
-      const assigned = this.assignedBranch();
-      if (assigned && branches.some((branch) => branch.id_sucursal === assigned)) {
-        this.selectedBranchId.set(assigned);
+      const preferred = this.assignedBranch() ?? this.readBranchCache()?.selected;
+      if (preferred && branches.some((branch) => branch.id_sucursal === preferred)) {
+        this.selectedBranchId.set(preferred);
         await this.inspectLocalData();
       }
+      this.writeBranchCache();
     } catch (error) {
-      this.error.set(this.errors.message(error, 'No se pudieron cargar las sucursales.'));
+      if (error instanceof TimeoutError || (error instanceof HttpErrorResponse && error.status === 0)) {
+        try {
+          await this.restoreLocalBranches();
+        } catch {
+          this.error.set('No se pudo recuperar el catálogo local.');
+        }
+      } else {
+        this.error.set(this.errors.message(error, 'No se pudieron cargar las sucursales.'));
+      }
     } finally {
       this.loadingBranches.set(false);
+    }
+  }
+
+  private async restoreLocalBranches(): Promise<void> {
+    const tenantId = this.tenant.tenant()?.id_tenant;
+    const userId = this.auth.currentUser()?.id_usuario;
+    if (!tenantId || !userId) return;
+    const ids = await this.database.savedBranchIds(tenantId, userId);
+    if (this.destroyRef.destroyed || this.tenant.tenant()?.id_tenant !== tenantId ||
+        this.auth.currentUser()?.id_usuario !== userId) return;
+    const assigned = this.assignedBranch();
+    const cached = this.readBranchCache();
+    const branches = ids.filter((id) => assigned === null || id === assigned).map((id) =>
+      cached?.branches.find((branch) => branch.id_sucursal === id) ??
+        { id_sucursal: id, nombre: `Sucursal #${id}`, direccion: '' },
+    );
+    this.branches.set(branches);
+    const preferred = assigned ?? cached?.selected;
+    const selected = branches.find((branch) => branch.id_sucursal === preferred) ??
+      (branches.length === 1 ? branches[0] : undefined);
+    if (selected) {
+      this.selectedBranchId.set(selected.id_sucursal);
+      await this.inspectLocalData();
+    } else if (!branches.length) {
+      this.message.set('Conéctate una vez y prepara el dispositivo para usar una sucursal sin internet.');
+    }
+  }
+
+  private branchCacheKey(): string | null {
+    const tenantId = this.tenant.tenant()?.id_tenant;
+    const userId = this.auth.currentUser()?.id_usuario;
+    return tenantId && userId ? `zentry_offline_branches_${tenantId}_${userId}` : null;
+  }
+
+  private readBranchCache(): { branches: Branch[]; selected: number | null } | null {
+    try {
+      const key = this.branchCacheKey();
+      const value = key ? JSON.parse(localStorage.getItem(key) ?? 'null') : null;
+      return Array.isArray(value?.branches) ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeBranchCache(): void {
+    try {
+      const key = this.branchCacheKey();
+      if (!key) return;
+      const branches = this.readBranchCache()?.branches ?? [];
+      const known = new Map(branches.map((branch) => [branch.id_sucursal, branch]));
+      for (const branch of this.branches()) known.set(branch.id_sucursal, branch);
+      localStorage.setItem(key, JSON.stringify({
+        branches: [...known.values()],
+        selected: this.selectedBranchId(),
+      }));
+    } catch {
+      // IndexedDB can still recover saved branches if localStorage is unavailable.
     }
   }
 
@@ -180,6 +250,7 @@ export class OfflineOperationsAdmin implements OnInit {
     this.preparing.set(true);
     try {
       await this.inspectLocalData();
+      this.writeBranchCache();
     } finally {
       this.preparing.set(false);
     }
