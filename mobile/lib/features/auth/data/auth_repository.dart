@@ -2,6 +2,8 @@ import 'package:capricho_store/core/auth/token_storage.dart';
 import 'package:capricho_store/core/network/api_client.dart';
 import 'package:capricho_store/core/network/api_exception.dart';
 import 'package:capricho_store/features/auth/domain/app_user.dart';
+import 'package:capricho_store/features/admin/domain/operational_access.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -17,7 +19,8 @@ class AuthRepository {
   final Dio _dio;
   final TokenStorage _storage;
 
-  Future<AppUser> register({  // [CU-01] Registro de cliente
+  Future<AppUser> register({
+    // [CU-01] Registro de cliente
     required String names,
     required String surnames,
     required String email,
@@ -43,7 +46,8 @@ class AuthRepository {
     }
   }
 
-  Future<AppUser> login(String email, String password) async {  // [CU-01] Inicio de sesión (Login)
+  Future<AppUser> login(String email, String password) async {
+    // [CU-01] Inicio de sesión (Login)
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         '/auth/login',
@@ -56,16 +60,39 @@ class AuthRepository {
     }
   }
 
-  Future<AppUser> me() async {  // [CU-01] Consultar perfil y sesión activa
+  Future<AppUser> me() async {
+    // [CU-01] Consultar perfil y sesión activa
     try {
+      final token = await _storage.read();
       final response = await _dio.get<Map<String, dynamic>>('/auth/me');
-      return AppUser.fromJson(response.data!);
+      final user = AppUser.fromJson(response.data!);
+      if (token != null && await _storage.read() == token) {
+        await _storage.cacheProfile(token, response.data!);
+      }
+      return user;
     } on DioException catch (error) {
       throw ApiException.fromDio(error);
     }
   }
 
-  Future<AppUser> updateProfile({  // [CU-01] Actualizar datos del perfil
+  Future<AppUser?> restoreUser() async {
+    final connectivity = await Connectivity().checkConnectivity();
+    if (!connectivity.contains(ConnectivityResult.none)) {
+      try {
+        return await me();
+      } on ApiException catch (error) {
+        final status = error.statusCode;
+        if (status != null && status < 500) rethrow;
+      }
+    }
+    final profile = await _storage.readOfflineProfile();
+    if (profile == null) return null;
+    final user = AppUser.fromJson(profile);
+    return user.canAccessOperationalPanel && user.canOpenOffline ? user : null;
+  }
+
+  Future<AppUser> updateProfile({
+    // [CU-01] Actualizar datos del perfil
     required String names,
     required String surnames,
     String? phone,
@@ -87,14 +114,12 @@ class AuthRepository {
     }
   }
 
-  Future<AppUser> uploadAvatar(String filePath) async {  // [CU-01] Subir foto de perfil a Cloudinary
+  Future<AppUser> uploadAvatar(String filePath) async {
+    // [CU-01] Subir foto de perfil a Cloudinary
     try {
       final fileName = filePath.split('/').last.split(r'\').last;
       final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(
-          filePath,
-          filename: fileName,
-        ),
+        'file': await MultipartFile.fromFile(filePath, filename: fileName),
       });
 
       final response = await _dio.post<Map<String, dynamic>>(
@@ -107,9 +132,12 @@ class AuthRepository {
     }
   }
 
-  Future<AppUser> deleteAvatar() async {  // [CU-01] Eliminar foto de perfil
+  Future<AppUser> deleteAvatar() async {
+    // [CU-01] Eliminar foto de perfil
     try {
-      final response = await _dio.delete<Map<String, dynamic>>('/auth/me/avatar');
+      final response = await _dio.delete<Map<String, dynamic>>(
+        '/auth/me/avatar',
+      );
       return AppUser.fromJson(response.data!);
     } on DioException catch (error) {
       throw ApiException.fromDio(error);
@@ -119,7 +147,8 @@ class AuthRepository {
   Future<bool> hasSession() async => (await _storage.read()) != null;
   Future<void> logout() => _storage.clear();
 
-  Future<String> requestPasswordRecovery(String email) async {  // [CU-08] Solicitar código OTP
+  Future<String> requestPasswordRecovery(String email) async {
+    // [CU-08] Solicitar código OTP
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         '/auth/password-recovery/request',
@@ -132,7 +161,8 @@ class AuthRepository {
     }
   }
 
-  Future<String> verifyPasswordRecoveryCode({  // [CU-08] Verificar código OTP
+  Future<String> verifyPasswordRecoveryCode({
+    // [CU-08] Verificar código OTP
     required String email,
     required String code,
   }) async {
@@ -147,7 +177,8 @@ class AuthRepository {
     }
   }
 
-  Future<String> resetPassword({  // [CU-08] Restablecer contraseña con token OTP
+  Future<String> resetPassword({
+    // [CU-08] Restablecer contraseña con token OTP
     required String resetToken,
     required String newPassword,
   }) async {

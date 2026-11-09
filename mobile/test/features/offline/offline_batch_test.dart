@@ -1,12 +1,16 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:capricho_store/core/auth/token_storage.dart';
 import 'package:capricho_store/core/tenant/tenant_context.dart';
+import 'package:capricho_store/core/tenant/tenant_storage.dart';
 import 'package:capricho_store/features/auth/domain/app_user.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/features/offline/data/offline_database.dart';
 import 'package:capricho_store/features/offline/domain/offline_models.dart';
 import 'package:capricho_store/features/offline/presentation/offline_controller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _TestOffline extends OfflineController {
@@ -16,6 +20,19 @@ class _TestOffline extends OfflineController {
     online: false,
     branchId: 2,
     cart: {7: 1},
+    catalog: [
+      OfflineCatalogItem(
+        variantId: 7,
+        sku: 'POLO-M',
+        product: 'Polo',
+        size: 'M',
+        color: 'Azul',
+        price: 125.50,
+        physicalStock: 3,
+        reservedStock: 0,
+        availableStock: 3,
+      ),
+    ],
   );
 }
 
@@ -43,6 +60,40 @@ class _TestTenant extends TenantController {
 }
 
 void main() {
+  test(
+    'reabre el contexto local solo para la empresa y sesión guardadas',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      String tokenAt(DateTime expiry) {
+        final claims = jsonEncode({
+          'exp': expiry.millisecondsSinceEpoch ~/ 1000,
+        });
+        return 'header.${base64Url.encode(utf8.encode(claims))}.signature';
+      }
+
+      final now = DateTime.now();
+      final token = tokenAt(now.add(const Duration(hours: 1)));
+      final session = TokenStorage();
+      await session.write(token);
+      await session.cacheProfile(token, {'id_usuario': 1});
+      final tenant = TenantStorage();
+      await tenant.write('demo');
+      await tenant.cacheContext({'slug': 'demo', 'nombre': 'Demo'});
+
+      expect(await TokenStorage().readOfflineProfile(), {'id_usuario': 1});
+      expect((await TenantStorage().readContext('demo'))?['nombre'], 'Demo');
+      expect(await TenantStorage().readContext('otra-empresa'), isNull);
+
+      final expired = tokenAt(now.subtract(const Duration(hours: 1)));
+      await session.write(expired);
+      expect(await TokenStorage().readOfflineProfile(), isNull);
+      await session.cacheProfile(expired, {'id_usuario': 1});
+      expect(await TokenStorage().readOfflineProfile(), isNull);
+      await session.clear();
+      expect(await session.read(), isNull);
+    },
+  );
+
   test('veinte intentos simultáneos de guardar crean una sola venta', () async {
     final directory = await Directory.systemTemp.createTemp('zentry-offline-');
     final database = OfflineDatabase(directory);
@@ -68,7 +119,10 @@ void main() {
     );
     const scope = OfflineScope(tenantSlug: 'demo', userId: 1, branchId: 2);
     expect(saved.where((success) => success), hasLength(1));
-    expect(await database.operations(scope), hasLength(1));
+    final operations = await database.operations(scope);
+    expect(operations, hasLength(1));
+    expect(operations.single.payload['precios_cobrados'], {'7': 12550});
+    expect(operations.single.payload['total_cobrado_centavos'], 12550);
   });
 
   test(
@@ -97,6 +151,9 @@ void main() {
       database = OfflineDatabase(directory);
       await queue(OfflineOperationType.sale);
       final recovered = (await database.claimSyncBatch(scope))!;
+      expect((await database.preparedBranches('demo', 1)).single.id, 2);
+      expect(await database.preparedBranches('other', 1), isEmpty);
+      expect(await database.preparedBranches('demo', 2), isEmpty);
       expect(recovered.id, first.id);
       expect(
         recovered.operations.map((operation) => operation.id),

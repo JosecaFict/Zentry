@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -7,7 +8,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.modules.auth.dependencies import CurrentPrincipal
+from app.modules.commerce.exceptions import CommerceConflictError
 from app.modules.commerce.schemas import SaleCreate
+from app.modules.commerce.service import CommerceService
 from app.modules.sync.exceptions import SyncForbiddenError
 from app.modules.sync.models import SyncOperation
 from app.modules.sync.schemas import (
@@ -62,6 +65,39 @@ def test_batch_rejects_duplicate_operation_uuids() -> None:
 def test_offline_sale_only_accepts_cash() -> None:
     with pytest.raises(ValueError, match="efectivo"):
         parse_offline_payload(operation(method="TARJETA"))
+
+
+def test_offline_sale_retains_and_validates_the_amount_collected() -> None:
+    request = operation()
+    request.payload.update(precios_cobrados={"2": 12550}, total_cobrado_centavos=12550)
+    sale = parse_offline_payload(request)
+    assert sale.precios_cobrados == {2: 12550}
+    request.payload["total_cobrado_centavos"] = 12551
+    with pytest.raises(ValidationError, match="total cobrado"):
+        parse_offline_payload(request)
+
+
+@pytest.mark.asyncio
+async def test_offline_sale_with_changed_price_conflicts_before_writing() -> None:
+    repository = SimpleNamespace(
+        variant_row=AsyncMock(return_value={"activo": True, "precio": Decimal("130.00")}),
+        inventory_for_update=AsyncMock(
+            return_value=SimpleNamespace(stock_fisico=5, stock_reservado=0)
+        ),
+        add=AsyncMock(),
+    )
+    service = CommerceService(AsyncMock(), repository)
+    with pytest.raises(CommerceConflictError, match="precio vigente"):
+        await service._create_sale(
+            customer_id=None,
+            employee_id=1,
+            branch_id=1,
+            channel="PRESENCIAL",
+            mode="ENTREGA_DIRECTA",
+            lines=SaleCreate.model_validate(operation().payload).items,
+            collected_prices={2: 12550},
+        )
+    repository.add.assert_not_awaited()
 
 
 def test_payload_hash_is_stable_and_changes_with_payload() -> None:

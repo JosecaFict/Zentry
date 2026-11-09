@@ -82,9 +82,9 @@ class AuthController extends Notifier<AuthState> {
       return;
     }
     try {
-      final user = await ref.read(authRepositoryProvider).me();
+      final user = await ref.read(authRepositoryProvider).restoreUser();
       state = AuthState(user: user, initialized: true);
-      _syncFcmToken();
+      if (user != null) _syncFcmToken();
     } catch (_) {
       await ref.read(authRepositoryProvider).logout();
       state = const AuthState(initialized: true);
@@ -162,10 +162,7 @@ class AuthController extends Notifier<AuthState> {
     String? ci,
   }) async {
     if (state.loading) return false;
-    state = state.copyWith(
-      loading: true,
-      clearError: true,
-    );
+    state = state.copyWith(loading: true, clearError: true);
     try {
       final updatedUser = await ref
           .read(authRepositoryProvider)
@@ -175,16 +172,10 @@ class AuthController extends Notifier<AuthState> {
             phone: phone,
             ci: ci,
           );
-      state = state.copyWith(
-        user: updatedUser,
-        loading: false,
-      );
+      state = state.copyWith(user: updatedUser, loading: false);
       return true;
     } catch (error) {
-      state = state.copyWith(
-        loading: false,
-        error: error.toString(),
-      );
+      state = state.copyWith(loading: false, error: error.toString());
       return false;
     }
   }
@@ -193,7 +184,9 @@ class AuthController extends Notifier<AuthState> {
     if (state.loading) return false;
     state = state.copyWith(loading: true, clearError: true);
     try {
-      final updatedUser = await ref.read(authRepositoryProvider).uploadAvatar(filePath);
+      final updatedUser = await ref
+          .read(authRepositoryProvider)
+          .uploadAvatar(filePath);
       state = state.copyWith(user: updatedUser, loading: false);
       return true;
     } catch (error) {

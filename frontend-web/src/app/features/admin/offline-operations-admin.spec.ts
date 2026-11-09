@@ -107,6 +107,7 @@ it.each([8, null])('keeps the cash sale visible after saving with customer %s', 
 
   expect(queueOperation).toHaveBeenCalledExactlyOnceWith('VENTA', expect.objectContaining({
     id_cliente: customerId, registrar_efectivo: true, metodo_pago: 'EFECTIVO',
+    precios_cobrados: { 4: 10000 }, total_cobrado_centavos: 10000,
   }));
   expect(component.cartLines()).toHaveLength(0);
   const sale = component.latestOperation();

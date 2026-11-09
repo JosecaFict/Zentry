@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -10,6 +10,23 @@ from app.modules.commerce.schemas import ReservationCreate, SaleCreate
 
 class OfflineReservationCreate(ReservationCreate):
     id_cliente: int = Field(gt=0)
+
+
+class OfflineSaleCreate(SaleCreate):
+    precios_cobrados: dict[int, Annotated[int, Field(strict=True, gt=0)]] | None = None
+    total_cobrado_centavos: int | None = Field(default=None, strict=True, gt=0)
+
+    @model_validator(mode="after")
+    def validate_collected_amount(self) -> "OfflineSaleCreate":
+        prices = self.precios_cobrados
+        total = self.total_cobrado_centavos
+        if prices is None and total is None:
+            return self  # Operations queued by earlier clients.
+        if prices is None or total is None or prices.keys() != {line.id_variante for line in self.items}:
+            raise ValueError("El importe cobrado debe incluir el precio de cada variante")
+        if sum(prices[line.id_variante] * line.cantidad for line in self.items) != total:
+            raise ValueError("El total cobrado no coincide con los detalles de la venta")
+        return self
 
 
 class SyncDeviceRegister(BaseModel):
@@ -103,9 +120,9 @@ class CatalogSnapshotResponse(BaseModel):
 
 def parse_offline_payload(
     operation: SyncOperationRequest,
-) -> SaleCreate | OfflineReservationCreate:
+) -> OfflineSaleCreate | OfflineReservationCreate:
     if operation.tipo == "VENTA":
-        sale = SaleCreate.model_validate(operation.payload)
+        sale = OfflineSaleCreate.model_validate(operation.payload)
         if not sale.registrar_efectivo or sale.metodo_pago != "EFECTIVO":
             raise ValueError("Las ventas offline solo admiten pago en efectivo")
         if sale.referencia_pago:

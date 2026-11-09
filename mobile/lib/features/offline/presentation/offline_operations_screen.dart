@@ -476,25 +476,30 @@ class _CatalogGrid extends StatelessWidget {
                     selected: {current.mode},
                     onSelectionChanged: (value) => ctrl.setMode(value.first),
                   ),
-                  if (current.mode == OfflineOperationType.reservation) ...[
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<int>(
-                      initialValue: current.customerId,
-                      decoration: const InputDecoration(labelText: 'Cliente'),
-                      items: current.customers
-                          .map(
-                            (customer) => DropdownMenuItem(
-                              value: customer.id,
-                              child: Text(
-                                customer.name,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: ctrl.setCustomer,
-                    ),
-                  ],
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<int>(
+                    key: ValueKey(current.mode),
+                    initialValue:
+                        current.customerId ??
+                        (current.mode == OfflineOperationType.sale ? 0 : null),
+                    decoration: const InputDecoration(labelText: 'Cliente'),
+                    items: [
+                      if (current.mode == OfflineOperationType.sale)
+                        const DropdownMenuItem(
+                          value: 0,
+                          child: Text('Consumidor final'),
+                        ),
+                      for (final customer in current.customers)
+                        DropdownMenuItem(
+                          value: customer.id,
+                          child: Text(
+                            customer.name,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (id) => ctrl.setCustomer(id == 0 ? null : id),
+                  ),
                   const SizedBox(height: 16),
                   ...selectedItems.map(
                     (item) => ListTile(

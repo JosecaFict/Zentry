@@ -234,6 +234,7 @@ class SyncService:
                             all_branches="ventas.sucursales_todas" in principal.permissions
                             or "ADMIN" in principal.roles,
                             commit=False,
+                            collected_prices=parsed.precios_cobrados,
                         )
                     else:
                         result = await self.commerce.create_reservation(

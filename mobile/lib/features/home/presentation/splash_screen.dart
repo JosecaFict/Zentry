@@ -4,6 +4,8 @@ import 'package:capricho_store/core/network/api_client.dart';
 import 'package:capricho_store/core/theme/app_theme.dart';
 import 'package:capricho_store/core/tenant/tenant_context.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
+import 'package:capricho_store/features/admin/domain/operational_access.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -68,7 +70,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       return;
     }
 
-    unawaited(ref.read(dioProvider).get('/health').then((_) => null).catchError((_) => null));
+    unawaited(
+      ref
+          .read(dioProvider)
+          .get('/health')
+          .then((_) => null)
+          .catchError((_) => null),
+    );
 
     final authNotifier = ref.read(authControllerProvider.notifier);
     final authState = ref.read(authControllerProvider);
@@ -93,10 +101,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       ),
     ]);
 
+    final connectivity = await Connectivity().checkConnectivity();
     if (!mounted) return;
-
-    // Navegación limpia al inicio (reemplazando el splash del historial)
-    context.go('/inicio');
+    final user = ref.read(authControllerProvider).user;
+    final openOffline =
+        connectivity.contains(ConnectivityResult.none) &&
+        user != null &&
+        user.canAccessOperationalPanel &&
+        user.canOpenOffline;
+    context.go(openOffline ? '/admin/offline' : '/inicio');
   }
 
   @override
@@ -116,10 +129,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
             final currentOpacity = _fadeIn.value * _fadeOut.value;
             return Opacity(
               opacity: currentOpacity.clamp(0.0, 1.0),
-              child: Transform.scale(
-                scale: _scale.value,
-                child: child,
-              ),
+              child: Transform.scale(scale: _scale.value, child: child),
             );
           },
           child: Semantics(

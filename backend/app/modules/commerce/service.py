@@ -716,6 +716,7 @@ class CommerceService:
         state: str | None = None,
         payment_method_code: str = "EFECTIVO",
         payment_reference: str | None = None,
+        collected_prices: dict[int, int] | None = None,
     ) -> Venta:
         self._validate_unique_lines(lines)
         priced: list[tuple[CommerceLineRequest, Decimal, InventarioSucursal]] = []
@@ -736,7 +737,12 @@ class CommerceService:
             )
             if available < line.cantidad:
                 raise CommerceConflictError("Stock insuficiente para completar la venta")
-            priced.append((line, Decimal(row["precio"]), inventory))
+            price = Decimal(row["precio"])
+            if collected_prices is not None and price * 100 != collected_prices[line.id_variante]:
+                raise CommerceConflictError(
+                    "El precio vigente cambió desde el cobro offline. Revisa la venta antes de registrarla."
+                )
+            priced.append((line, price, inventory))
         subtotal = sum((price * line.cantidad for line, price, _ in priced), Decimal(0))
         sale = await self.repository.add(
             Venta(
@@ -839,6 +845,7 @@ class CommerceService:
         *,
         all_branches: bool = False,
         commit: bool = True,
+        collected_prices: dict[int, int] | None = None,
     ) -> SaleResponse:
         employee = await self._employee(user_id)
         if not all_branches and employee.id_sucursal != payload.id_sucursal:
@@ -875,6 +882,7 @@ class CommerceService:
                 cash=payload.registrar_efectivo,
                 payment_method_code=payload.metodo_pago or "EFECTIVO",
                 payment_reference=payload.referencia_pago,
+                collected_prices=collected_prices,
             )
             if reservation:
                 reservation.estado = "CONVERTIDA"

@@ -52,6 +52,14 @@ class OfflineDatabase {
       )
     ''');
     await db.customStatement('''
+      CREATE TABLE IF NOT EXISTS offline_branch (
+        scope_key TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        address TEXT NOT NULL,
+        FOREIGN KEY (scope_key) REFERENCES offline_scope(scope_key) ON DELETE CASCADE
+      )
+    ''');
+    await db.customStatement('''
       CREATE TABLE IF NOT EXISTS offline_catalog (
         scope_key TEXT NOT NULL,
         variant_id INTEGER NOT NULL,
@@ -102,6 +110,46 @@ class OfflineDatabase {
       'ON offline_operation(scope_key, status)',
     );
     return db;
+  }
+
+  Future<List<({int id, String name, String address})>> preparedBranches(
+    String tenantSlug,
+    int userId,
+  ) async {
+    final rows = await (await _db)
+        .customSelect(
+          'SELECT s.branch_id, b.name, b.address FROM offline_scope s '
+          'LEFT JOIN offline_branch b ON b.scope_key = s.scope_key '
+          'WHERE s.tenant_slug = ? AND s.user_id = ? '
+          'AND (s.last_catalog_sync_at IS NOT NULL OR EXISTS '
+          '(SELECT 1 FROM offline_operation o WHERE o.scope_key = s.scope_key)) '
+          'ORDER BY s.last_catalog_sync_at DESC NULLS LAST, s.branch_id',
+          variables: [
+            Variable.withString(tenantSlug),
+            Variable.withInt(userId),
+          ],
+        )
+        .get();
+    return rows.map((row) {
+      final id = row.read<int>('branch_id');
+      return (
+        id: id,
+        name: row.readNullable<String>('name') ?? 'Sucursal #$id',
+        address: row.readNullable<String>('address') ?? '',
+      );
+    }).toList();
+  }
+
+  Future<void> saveBranch(
+    OfflineScope scope,
+    String name,
+    String address,
+  ) async {
+    await (await _db).customStatement(
+      'INSERT INTO offline_branch (scope_key, name, address) VALUES (?, ?, ?) '
+      'ON CONFLICT (scope_key) DO UPDATE SET name = excluded.name, address = excluded.address',
+      [scope.key, name, address],
+    );
   }
 
   Future<String> ensureScope(OfflineScope scope) async {

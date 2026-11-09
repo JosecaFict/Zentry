@@ -148,10 +148,40 @@ class OfflineController extends Notifier<OfflineState> {
         if (online) _scheduleAutoSync();
       });
       final user = ref.read(authControllerProvider).user;
-      final branches = await ref.read(adminRepositoryProvider).branches();
+      final tenant = ref.read(tenantControllerProvider).selected;
+      if (user == null || tenant == null) {
+        state = state.copyWith(loading: false);
+        return;
+      }
+      final saved = await ref
+          .read(offlineDatabaseProvider)
+          .preparedBranches(tenant.slug, user.id);
+      if (!ref.mounted) return;
+      var branches = [
+        for (final branch in saved)
+          if (user.idSucursal == null || user.idSucursal == branch.id)
+            BranchItem(
+              id: branch.id,
+              name: branch.name,
+              address: branch.address,
+            ),
+      ];
+      if (state.online) {
+        try {
+          branches = await ref.read(adminRepositoryProvider).branches();
+        } on ApiException catch (error) {
+          final status = error.statusCode;
+          if (status != null && status < 500) rethrow;
+        }
+      }
       if (!ref.mounted) return;
       final branchId =
-          user?.idSucursal ?? (branches.length == 1 ? branches.first.id : null);
+          user.idSucursal ??
+          saved
+              .where((scope) => branches.any((branch) => branch.id == scope.id))
+              .firstOrNull
+              ?.id ??
+          (branches.length == 1 ? branches.first.id : null);
       state = state.copyWith(
         loading: false,
         branches: branches,
@@ -218,6 +248,9 @@ class OfflineController extends Notifier<OfflineState> {
       return;
     }
     state = state.copyWith(busy: true, clearError: true, clearMessage: true);
+    final branch = state.branches
+        .where((item) => item.id == scope.branchId)
+        .firstOrNull;
     try {
       final database = ref.read(offlineDatabaseProvider);
       final deviceId = await database.ensureScope(scope);
@@ -233,6 +266,9 @@ class OfflineController extends Notifier<OfflineState> {
       ]);
       final snapshot = results[0] as OfflineSnapshot;
       final customers = results[1] as List<OfflineCustomer>;
+      if (branch != null) {
+        await database.saveBranch(scope, branch.name, branch.address);
+      }
       await database.replaceSnapshot(
         scope: scope,
         version: snapshot.version,
@@ -330,16 +366,36 @@ class OfflineController extends Notifier<OfflineState> {
     final items = state.cart.entries
         .map((entry) => {'id_variante': entry.key, 'cantidad': entry.value})
         .toList(growable: false);
+    final prices = <String, int>{};
+    var total = 0;
+    if (type == OfflineOperationType.sale) {
+      for (final item in state.catalog) {
+        final quantity = state.cart[item.variantId];
+        if (quantity == null || !item.price.isFinite) continue;
+        final price = (item.price * 100).round();
+        if (price <= 0) continue;
+        prices[item.variantId.toString()] = price;
+        total += price * quantity;
+      }
+      if (prices.length != state.cart.length) {
+        state = state.copyWith(
+          error: 'Falta un precio válido en el catálogo local.',
+        );
+        return false;
+      }
+    }
     final payload = type == OfflineOperationType.sale
         ? <String, dynamic>{
             'id_sucursal': scope.branchId,
-            'id_cliente': null,
+            'id_cliente': state.customerId,
             'id_reserva': null,
             'modalidad_entrega': 'ENTREGA_DIRECTA',
             'items': items,
             'registrar_efectivo': true,
             'metodo_pago': 'EFECTIVO',
             'referencia_pago': null,
+            'precios_cobrados': prices,
+            'total_cobrado_centavos': total,
           }
         : <String, dynamic>{
             'id_sucursal': scope.branchId,

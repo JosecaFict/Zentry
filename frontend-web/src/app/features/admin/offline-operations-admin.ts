@@ -311,6 +311,12 @@ export class OfflineOperationsAdmin implements OnInit {
         registrar_efectivo: true,
         metodo_pago: 'EFECTIVO',
         referencia_pago: null,
+        precios_cobrados: Object.fromEntries(lines.map((line) => [
+          line.item.id_variante, Math.round(Number(line.item.precio) * 100),
+        ])),
+        total_cobrado_centavos: lines.reduce(
+          (total, line) => total + Math.round(Number(line.item.precio) * 100) * line.quantity, 0,
+        ),
       });
       this.clearCart();
       this.selectedCustomerId.set(null);
