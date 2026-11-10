@@ -45,6 +45,19 @@ def requested_color(question: str) -> str | None:
     return next((color for color in COLORS if re.search(rf"\b{color}\b", words)), None)
 
 
+def requested_audience(question: str) -> str | None:
+    words = normalized_words(question)
+    audiences = [
+        audience
+        for audience, pattern in (
+            ("HOMBRE", r"\b(?:hombres?|varones?|masculin[oa]s?)\b"),
+            ("MUJER", r"\b(?:mujer(?:es)?|damas?|femenin[oa]s?)\b"),
+        )
+        if re.search(pattern, words)
+    ]
+    return audiences[0] if len(audiences) == 1 else None
+
+
 def matches_color(product: AssistantProduct, color: str) -> bool:
     return any(re.search(rf"\b{color}\b", normalized_words(name)) for name in product.colores)
 
@@ -95,7 +108,8 @@ class ShoppingCatalog:
         self.tenant_id = tenant_id
 
     async def available(
-        self, *, category: str | None = None, ids: list[int] | None = None
+        self, *, category: str | None = None, ids: list[int] | None = None,
+        audience: str | None = None,
     ) -> list[AssistantProduct]:
         rows = (
             (
@@ -126,13 +140,17 @@ class ShoppingCatalog:
               ) img ON true
              WHERE p.id_tenant = :tenant AND p.activo
                AND (CAST(:category AS TEXT) IS NULL OR upper(c.nombre) = :category)
+               AND (CAST(:audience AS TEXT) IS NULL OR p.publico_objetivo = :audience)
                AND (CAST(:ids AS BIGINT[]) IS NULL OR p.id_producto = ANY(CAST(:ids AS BIGINT[])))
              GROUP BY p.id_producto, p.nombre, c.nombre, m.nombre,
                       hp.precio, p.permite_vestidor, img.secure_url
             HAVING SUM(GREATEST(i.stock_fisico - i.stock_reservado, 0)) > 0
              ORDER BY p.id_producto LIMIT 300
         """),
-                    {"tenant": self.tenant_id, "category": category, "ids": ids},
+                    {
+                        "tenant": self.tenant_id, "category": category, "ids": ids,
+                        "audience": audience,
+                    },
                 )
             )
             .mappings()
@@ -176,11 +194,13 @@ class ShoppingCatalog:
     ) -> list[AssistantProduct]:
         category, minimum, maximum, size = shopping_filters(question)
         color = requested_color(question)
+        audience = requested_audience(question)
         products = await self.available(
             category=category,
             ids=prioritize_ids if restrict_to_prior and prioritize_ids else None,
+            audience=audience,
         )
-        if prioritize_ids and not restrict_to_prior:
+        if prioritize_ids and not restrict_to_prior and audience is None:
             previous = await self.for_ids(prioritize_ids)
             known = {item.id_producto for item in previous}
             products = previous + [item for item in products if item.id_producto not in known]

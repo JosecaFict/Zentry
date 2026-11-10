@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.modules.assistant.catalog import ShoppingCatalog, requested_color, shopping_filters
+from app.modules.assistant.catalog import (
+    ShoppingCatalog, requested_audience, requested_color, shopping_filters,
+)
 from app.modules.assistant.business_answer import business_answer
 from app.modules.assistant.providers import ProviderUnavailable, answer_with_provider
 from app.modules.assistant.repository import AssistantRepository
@@ -347,7 +349,9 @@ class AssistantService:
                 else:
                     answer, selected = raw, []
         except ProviderUnavailable as exc:
-            raise HTTPException(503, "El asistente no pudo responder en este momento") from exc
+            if conversation.modo != "CLIENTE" or not self._shopping_intent(question):
+                raise HTTPException(503, "El asistente no pudo responder en este momento") from exc
+            answer, selected = self._shopping_catalog_answer(products, question)
         if conversation.modo == "EMPRESA":
             report_snapshot = json.loads(context).get("snapshot") if report_restricted else None
             user_message, assistant_message = await self.repo.append_exchange(
@@ -394,9 +398,10 @@ class AssistantService:
         return bool(
             any(value is not None for value in filters)
             or requested_color(question) is not None
+            or requested_audience(question) is not None
             or any(
                 word in normalized
-                for word in ("busco", "recomienda", "recomendación", "prenda", "ropa", "comprar")
+                for word in ("busco", "recomiend", "recomend", "prenda", "ropa", "comprar")
             )
         )
 
@@ -411,10 +416,31 @@ class AssistantService:
             filters.append(f"hasta Bs {maximum:.2f}")
         if size:
             filters.append(f"en talla {size}")
+        if audience := requested_audience(question):
+            filters.append("para hombre" if audience == "HOMBRE" else "para mujer")
         detail = " " + " ".join(filters) if filters else ""
         return (
             f"No encontré {category_text} disponibles{detail} ahora mismo. "
             "¿Quieres que busquemos otra talla o ampliemos el presupuesto?"
+        )
+
+    @staticmethod
+    def _shopping_catalog_answer(
+        candidates: list[AssistantProduct], question: str
+    ) -> tuple[str, list[AssistantProduct]]:
+        if not candidates:
+            return AssistantService._no_results_message(question), []
+        has_filters = any(value is not None for value in shopping_filters(question))
+        if has_filters or requested_audience(question):
+            return (
+                "Encontré estas opciones disponibles en el catálogo. "
+                "¿Quieres que busquemos una talla o color en particular?",
+                candidates[:3],
+            )
+        return (
+            "Puedo buscar prendas en el catálogo. "
+            "¿Qué tipo de prenda, talla o precio tienes en mente?",
+            [],
         )
 
     @staticmethod

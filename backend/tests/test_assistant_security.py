@@ -311,7 +311,65 @@ async def test_color_followup_filters_only_previous_products():
     )
 
     assert result == [green]
-    catalog.available.assert_awaited_once_with(category=None, ids=[1, 2])
+    catalog.available.assert_awaited_once_with(category=None, ids=[1, 2], audience=None)
+
+
+@pytest.mark.asyncio
+async def test_mens_poleras_are_filtered_before_asking_the_provider():
+    catalog = ShoppingCatalog(AsyncMock(), 7)
+    catalog.available = AsyncMock(return_value=[])
+    catalog.for_ids = AsyncMock()
+
+    await catalog.for_question("¿Podría recomendar poleras para hombres?", prioritize_ids=[1, 2])
+
+    catalog.available.assert_awaited_once_with(category="POLERA", ids=None, audience="HOMBRE")
+    catalog.for_ids.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("question", "expected_ids", "expected_text"),
+    [
+        ("¿Podría recomendar poleras para hombres?", [7], "opciones disponibles"),
+        ("¿Me podría recomendar ropa deportiva?", [], "Qué tipo de prenda"),
+    ],
+)
+async def test_shopping_continues_with_catalog_when_provider_fails(
+    monkeypatch, question, expected_ids, expected_text,
+):
+    service = AssistantService(
+        AsyncMock(), principal(roles=frozenset({"CLIENTE"}), permissions=frozenset())
+    )
+    service.settings = SimpleNamespace(
+        gemini_api_key="test-key", gemini_chat_model="gemini-3.5-flash",
+    )
+    conversation = Conversation(
+        id_conversacion=uuid4(), modo="CLIENTE", proveedor="GEMINI",
+        modelo="gemini-3.5-flash", estado="ACTIVA",
+        created_at="2026-01-01T00:00:00Z", updated_at="2026-01-01T00:00:00Z",
+    )
+    product = AssistantProduct(
+        id_producto=7, nombre="Polera azul", categoria="POLERA", marca="Marca",
+        precio="250.00", imagen_url=None, tallas=["M"], colores=["Azul"],
+        permite_vestidor=True,
+    )
+    service.get = AsyncMock(return_value=conversation)
+    service.repo.messages = AsyncMock(return_value=[])
+    service.repo.append_exchange = AsyncMock(return_value=(
+        Message(id_mensaje=1, rol="USUARIO", contenido=question, created_at="2026-01-01T00:00:00Z"),
+        Message(id_mensaje=2, rol="ASISTENTE", contenido="", created_at="2026-01-01T00:00:00Z"),
+    ))
+    monkeypatch.setattr(ShoppingCatalog, "for_question", AsyncMock(return_value=[product]))
+    monkeypatch.setattr(
+        "app.modules.assistant.service.answer_with_provider",
+        AsyncMock(side_effect=ProviderUnavailable),
+    )
+
+    exchange = await service.send(conversation.id_conversacion, question)
+
+    assert [product.id_producto for product in exchange.asistente.productos] == expected_ids
+    assert service.repo.append_exchange.await_args.args[-1] == expected_ids
+    assert expected_text in service.repo.append_exchange.await_args.args[2]
 
 
 @pytest.mark.asyncio
