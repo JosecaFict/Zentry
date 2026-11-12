@@ -102,6 +102,11 @@ class OfflineOperationsScreen extends ConsumerWidget {
                         wide: wide,
                       ),
                     const SizedBox(height: 28),
+                    _TodaySalesPanel(
+                      state: state,
+                      onRefresh: controller.refreshTodaySales,
+                    ),
+                    const SizedBox(height: 28),
                     _QueuePanel(
                       state: state,
                       onReload: controller.reloadIntoCart,
@@ -867,6 +872,24 @@ class _SaleReceipt extends StatelessWidget {
               '${sale.seller == null ? '' : ' · ${sale.seller}'}',
             ),
             Text('Cliente: ${sale.customer ?? 'Consumidor final'}'),
+            const SizedBox(height: 4),
+            const Row(
+              children: [
+                Icon(
+                  Icons.cloud_done_outlined,
+                  size: 16,
+                  color: AppColors.success,
+                ),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Registrada en el sistema de la tienda. También se ve en '
+                    'la web, en Historial de ventas.',
+                    style: TextStyle(fontSize: 12.5),
+                  ),
+                ),
+              ],
+            ),
             const Divider(),
             for (final line in sale.lines)
               Padding(
@@ -995,6 +1018,134 @@ class _NewCustomerDialogState extends ConsumerState<_NewCustomerDialog> {
           onPressed: state.busy || _names.text.trim().isEmpty ? null : _save,
           child: Text(state.busy ? 'Guardando…' : 'Registrar cliente'),
         ),
+      ],
+    );
+  }
+}
+
+/// Ventas de hoy y dónde quedó registrada cada una: en el sistema de la
+/// tienda (también visibles en la web, Historial de ventas) o guardadas solo
+/// en este teléfono hasta que vuelva la conexión.
+class _TodaySalesPanel extends StatelessWidget {
+  const _TodaySalesPanel({required this.state, required this.onRefresh});
+
+  final OfflineState state;
+  final Future<void> Function() onRefresh;
+
+  /// Ventas de hoy guardadas en el teléfono que todavía no llegan al sistema.
+  List<OfflineOperation> get _pending {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return state.operations
+        .where(
+          (op) =>
+              op.type == OfflineOperationType.sale &&
+              (op.status == OfflineOperationStatus.pending ||
+                  op.status == OfflineOperationStatus.sending) &&
+              !op.createdAt.toLocal().isBefore(today),
+        )
+        .toList(growable: false);
+  }
+
+  static double _pendingTotal(OfflineOperation op) =>
+      ((op.payload['total_cobrado_centavos'] as num?) ?? 0) / 100;
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat.currency(locale: 'es_BO', symbol: 'Bs ');
+    final time = DateFormat('HH:mm');
+    final pending = _pending;
+    final count = state.todaySales.length + pending.length;
+    final total =
+        state.todaySales.fold<double>(0, (sum, sale) => sum + sale.total) +
+        pending.fold<double>(0, (sum, op) => sum + _pendingTotal(op));
+    final savedAt = state.todaySalesAt;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          eyebrow: 'HOY · ${count == 1 ? '1 VENTA' : '$count VENTAS'}',
+          title: 'Ventas de hoy · ${money.format(total)}',
+          trailing: IconButton(
+            tooltip: 'Actualizar ventas de hoy',
+            onPressed: state.online ? onRefresh : null,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          state.todaySalesFromCache && savedAt != null
+              ? 'Sin conexión: lista guardada a las ${time.format(savedAt.toLocal())}.'
+              : 'Las ventas “En el sistema” ya están registradas en la tienda y '
+                    'se ven también en la web, en Historial de ventas.',
+          style: const TextStyle(color: AppColors.inkSoft, fontSize: 13),
+        ),
+        const SizedBox(height: 10),
+        if (count == 0)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: Text('Todavía no hay ventas hoy en esta sucursal.'),
+            ),
+          )
+        else ...[
+          for (final op in pending)
+            Card(
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFFFF1E7),
+                  child: Icon(
+                    Icons.phone_android_rounded,
+                    color: AppColors.warning,
+                  ),
+                ),
+                title: Text(
+                  'Venta pendiente · ${money.format(_pendingTotal(op))}',
+                ),
+                subtitle: Text(
+                  '${time.format(op.createdAt.toLocal())} · Guardada en este '
+                  'teléfono\nSe registrará en el sistema al volver la conexión.',
+                ),
+                isThreeLine: true,
+              ),
+            ),
+          for (final sale in state.todaySales)
+            Card(
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFE8F7EF),
+                  child: Icon(
+                    Icons.cloud_done_outlined,
+                    color: AppColors.success,
+                  ),
+                ),
+                title: Text('Venta #${sale.id} · ${money.format(sale.total)}'),
+                subtitle: Text(
+                  '${time.format(sale.date)} · '
+                  '${sale.customer ?? 'Consumidor final'}\n'
+                  'En el sistema · ${sale.branch}'
+                  '${sale.seller == null ? '' : ' · ${sale.seller}'}',
+                ),
+                isThreeLine: true,
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  showDragHandle: true,
+                  builder: (sheetContext) => SafeArea(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: _SaleReceipt(
+                        sale: sale,
+                        onClose: () => Navigator.pop(sheetContext),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ],
     );
   }

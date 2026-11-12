@@ -26,6 +26,10 @@ class _Backend implements HttpClientAdapter {
   /// Ventas presenciales recibidas (`POST /sales/pos`).
   final List<Map<String, dynamic>> sales = [];
 
+  /// Ventas que devuelve `GET /sales` y las consultas recibidas.
+  List<Map<String, dynamic>> serverSales = [];
+  final List<Map<String, dynamic>> salesQueries = [];
+
   /// Cómo responde la venta: 'ok', 'sin_stock' o 'sin_red'.
   String saleMode = 'ok';
 
@@ -43,6 +47,10 @@ class _Backend implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    if (options.path == '/sales') {
+      salesQueries.add(Map<String, dynamic>.from(options.queryParameters));
+      return _json(serverSales);
+    }
     if (options.path == '/sales/pos') {
       if (saleMode == 'sin_red') {
         throw DioException.connectionError(
@@ -317,7 +325,8 @@ void main() {
       expect(state.lastSale?.total, 199.80);
       expect(state.lastSale?.lines.single.description, 'Polo básico M Negro');
       expect(state.cart, isEmpty);
-      expect(state.message, 'Venta #501 registrada.');
+      expect(state.message, 'Venta #501 registrada en el sistema.');
+      expect(state.todaySales.first.id, 501, reason: 'aparece al instante en Ventas de hoy');
       // No queda nada pendiente en el teléfono.
       const scope = OfflineScope(tenantSlug: 'demo', userId: 1, branchId: 2);
       expect(await database.operations(scope), isEmpty);
@@ -378,6 +387,64 @@ void main() {
         container.read(offlineControllerProvider).lastSale?.customer,
         'Rosa Pérez',
       );
+    });
+  });
+
+  group('ventas de hoy', () {
+    Map<String, dynamic> serverSale(int id, {String? customer}) => {
+      'id_venta': id,
+      'cliente_nombre': customer,
+      'sucursal': 'Centro',
+      'empleado_nombre': 'Ana Vendedora',
+      'canal_venta': 'PRESENCIAL',
+      'total': '99.90',
+      'fecha_venta': DateTime.now().toUtc().toIso8601String(),
+      'items': [
+        {
+          'producto': 'Polo básico',
+          'talla': 'M',
+          'color': 'Negro',
+          'cantidad': 1,
+          'subtotal': '99.90',
+        },
+      ],
+    };
+
+    test('muestra las ventas del día registradas en el sistema', () async {
+      backend.serverSales = [serverSale(10), serverSale(11, customer: 'Rosa')];
+      final container = await open();
+      final state = await settled(
+        container,
+        (state) => state.todaySales.length == 2,
+      );
+
+      final now = DateTime.now();
+      final today =
+          '${now.year.toString().padLeft(4, '0')}-'
+          '${now.month.toString().padLeft(2, '0')}-'
+          '${now.day.toString().padLeft(2, '0')}';
+      expect(backend.salesQueries.last['fecha_desde'], today);
+      expect(backend.salesQueries.last['sucursal'], 2);
+      expect(state.todaySales.map((sale) => sale.branch), everyElement('Centro'));
+      expect(state.todaySalesFromCache, isFalse);
+    });
+
+    test('sin conexión muestra la última lista guardada', () async {
+      backend.serverSales = [serverSale(10)];
+      final first = await open();
+      await settled(first, (state) => state.todaySales.length == 1);
+      first.dispose();
+
+      probe = FakeProbe()..backend = false;
+      backend.serverSales = [];
+      final container = await open();
+      final state = await settled(
+        container,
+        (state) => state.todaySalesFromCache,
+      );
+
+      expect(state.online, isFalse);
+      expect(state.todaySales.single.id, 10);
     });
   });
 }

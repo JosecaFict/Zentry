@@ -438,6 +438,7 @@ class RegisteredSale {
     this.customer,
     this.seller,
     this.paymentMethod,
+    this.channel,
   });
 
   factory RegisteredSale.fromJson(Map<String, dynamic> json) => RegisteredSale(
@@ -454,6 +455,7 @@ class RegisteredSale {
     customer: json['cliente_nombre'] as String?,
     seller: json['empleado_nombre'] as String?,
     paymentMethod: json['metodo_pago'] as String?,
+    channel: json['canal_venta'] as String?,
   );
 
   final int id;
@@ -464,4 +466,7 @@ class RegisteredSale {
   final String? customer;
   final String? seller;
   final String? paymentMethod;
+
+  /// PRESENCIAL (en tienda) u ONLINE (pedido web).
+  final String? channel;
 }

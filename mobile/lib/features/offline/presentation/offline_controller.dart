@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:capricho_store/core/connectivity/connectivity_controller.dart';
@@ -36,6 +37,9 @@ class OfflineState {
     this.query = '',
     this.message,
     this.lastSale,
+    this.todaySales = const [],
+    this.todaySalesAt,
+    this.todaySalesFromCache = false,
     this.error,
   });
 
@@ -58,6 +62,15 @@ class OfflineState {
 
   /// Última venta registrada en línea (comprobante que ve el cajero).
   final RegisteredSale? lastSale;
+
+  /// Ventas de hoy registradas en el sistema (sucursal del cajero).
+  final List<RegisteredSale> todaySales;
+
+  /// Cuándo se consultó la lista al servidor.
+  final DateTime? todaySalesAt;
+
+  /// true si la lista viene de la copia guardada (sin conexión).
+  final bool todaySalesFromCache;
   final String? error;
 
   bool get prepared => catalog.isNotEmpty;
@@ -92,6 +105,9 @@ class OfflineState {
     String? query,
     String? message,
     RegisteredSale? lastSale,
+    List<RegisteredSale>? todaySales,
+    DateTime? todaySalesAt,
+    bool? todaySalesFromCache,
     String? error,
     bool clearBranch = false,
     bool clearCustomer = false,
@@ -114,6 +130,9 @@ class OfflineState {
     query: query ?? this.query,
     message: clearMessage ? null : (message ?? this.message),
     lastSale: clearLastSale ? null : (lastSale ?? this.lastSale),
+    todaySales: todaySales ?? this.todaySales,
+    todaySalesAt: todaySalesAt ?? this.todaySalesAt,
+    todaySalesFromCache: todaySalesFromCache ?? this.todaySalesFromCache,
     error: clearError ? null : (error ?? this.error),
   );
 }
@@ -136,8 +155,12 @@ class OfflineController extends Notifier<OfflineState> {
       online,
     ) {
       state = state.copyWith(online: online);
-      // Volvió la señal: descarga el catálogo si falta o está viejo.
-      if (online) unawaited(_autoPrepare());
+      // Volvió la señal: descarga el catálogo si falta o está viejo y
+      // actualiza las ventas de hoy.
+      if (online) {
+        unawaited(_autoPrepare());
+        unawaited(refreshTodaySales());
+      }
     });
     ref.listen(offlineSyncControllerProvider.select((s) => s.revision), (
       _,
@@ -148,6 +171,8 @@ class OfflineController extends Notifier<OfflineState> {
       final outcome = ref.read(offlineSyncControllerProvider).lastOutcome;
       if (ref.mounted && (outcome?.batches ?? 0) > 0) {
         _preparedAt = null;
+        // Las ventas enviadas ya figuran en el sistema.
+        unawaited(refreshTodaySales());
         await _autoPrepare();
       }
     });
@@ -226,7 +251,78 @@ class OfflineController extends Notifier<OfflineState> {
       return;
     }
     // Sin pasos manuales: con internet, el catálogo se descarga solo.
+    unawaited(refreshTodaySales());
     await _autoPrepare();
+  }
+
+  /// Ventas de hoy de la sucursal registradas en el sistema (`GET /sales`),
+  /// para que el cajero vea dónde quedó cada una. Sin conexión muestra la
+  /// última lista guardada en el teléfono.
+  Future<void> refreshTodaySales() async {
+    // La pantalla pudo cerrarse mientras arrancaba.
+    if (!ref.mounted) return;
+    final scope = _scope;
+    if (scope == null) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final key =
+        'sales_today:${scope.userId}:${scope.branchId}:'
+        '${today.toIso8601String().substring(0, 10)}';
+    final database = ref.read(offlineDatabaseProvider);
+
+    List<RegisteredSale> parse(List<dynamic> raw) {
+      final sales = [
+        for (final item in raw)
+          RegisteredSale.fromJson(Map<String, dynamic>.from(item as Map)),
+      ];
+      // El servidor filtra por día UTC: se dejan solo las de hoy en la hora
+      // local del teléfono.
+      return sales
+          .where(
+            (sale) =>
+                !sale.date.isBefore(today) &&
+                sale.date.isBefore(today.add(const Duration(days: 1))),
+          )
+          .toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+    }
+
+    if (state.online) {
+      try {
+        final raw = await ref
+            .read(offlineSyncRepositoryProvider)
+            .sales(
+              from: today,
+              to: today.add(const Duration(days: 1)),
+              branchId: scope.branchId,
+            );
+        if (!ref.mounted || _scope?.key != scope.key) return;
+        state = state.copyWith(
+          todaySales: parse(raw),
+          todaySalesAt: DateTime.now(),
+          todaySalesFromCache: false,
+        );
+        try {
+          await database.putCatalogCache(scope.tenantSlug, key, jsonEncode(raw));
+        } catch (_) {
+          // La copia es una ayuda; no debe romper la lista.
+        }
+        return;
+      } catch (error) {
+        developer.log('No se pudieron leer las ventas de hoy: $error', name: 'Offline');
+      }
+    }
+    try {
+      final cached = await database.catalogCache(scope.tenantSlug, key);
+      if (cached == null || !ref.mounted || _scope?.key != scope.key) return;
+      state = state.copyWith(
+        todaySales: parse(jsonDecode(cached.json) as List<dynamic>),
+        todaySalesAt: cached.updatedAt,
+        todaySalesFromCache: true,
+      );
+    } catch (_) {
+      // Sin copia guardada: la sección muestra solo lo pendiente del teléfono.
+    }
   }
 
   /// Descarga el catálogo si hay conexión y falta, o tiene más de
@@ -269,6 +365,7 @@ class OfflineController extends Notifier<OfflineState> {
       customers: const [],
       operations: const [],
       cart: const {},
+      todaySales: const [],
       clearCustomer: true,
       clearMessage: true,
       clearError: true,
@@ -276,6 +373,7 @@ class OfflineController extends Notifier<OfflineState> {
     _preparedAt = null;
     if (branchId == null) return;
     await _loadLocal();
+    unawaited(refreshTodaySales());
     await _autoPrepare();
   }
 
@@ -513,7 +611,13 @@ class OfflineController extends Notifier<OfflineState> {
           cart: const {},
           clearCustomer: true,
           lastSale: sale,
-          message: 'Venta #${sale.id} registrada.',
+          // Aparece al instante en "Ventas de hoy"; luego se confirma con
+          // la lista del servidor.
+          todaySales: [
+            sale,
+            ...state.todaySales.where((item) => item.id != sale.id),
+          ],
+          message: 'Venta #${sale.id} registrada en el sistema.',
         );
         // El stock del servidor cambió: se refresca en segundo plano.
         _preparedAt = null;

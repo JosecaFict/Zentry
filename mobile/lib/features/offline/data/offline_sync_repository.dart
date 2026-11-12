@@ -187,6 +187,32 @@ class OfflineSyncRepository {
     }
   }
 
+  /// Ventas registradas en el sistema entre dos fechas (`GET /sales`). Para
+  /// un cajero o encargado el backend limita la lista a su sucursal.
+  Future<List<dynamic>> sales({
+    required DateTime from,
+    required DateTime to,
+    int? branchId,
+  }) async {
+    String day(DateTime value) =>
+        '${value.year.toString().padLeft(4, '0')}-'
+        '${value.month.toString().padLeft(2, '0')}-'
+        '${value.day.toString().padLeft(2, '0')}';
+    try {
+      final response = await _dio.get(
+        '/sales',
+        queryParameters: {
+          'fecha_desde': day(from),
+          'fecha_hasta': day(to),
+          'sucursal': ?branchId,
+        },
+      );
+      return response.data as List<dynamic>? ?? const [];
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
+
   /// Alta rápida de cliente desde la caja (`POST /customers/quick`).
   Future<OfflineCustomer> createCustomer({
     required String names,
