@@ -247,17 +247,47 @@ export class OfflineDatabaseService {
     });
   }
 
-  async retryOperation(idOperacion: string): Promise<void> {
+  /**
+   * Marca como revisada una operación no registrada. No la reenvía: el
+   * servidor ya la procesó con ese id y repetirla rechazaría el lote entero.
+   */
+  async markReviewed(idOperacion: string): Promise<void> {
     const db = this.requireDatabase();
     const operation = await db.pendingOperations.get(idOperacion);
     if (!operation || !['CONFLICTO', 'RECHAZADA'].includes(operation.estado)) {
       throw new Error('La operación ya no requiere intervención.');
     }
-    await db.pendingOperations.update(idOperacion, {
-      estado: 'PENDIENTE',
-      id_lote: null,
-      codigo_error: null,
-      mensaje_error: null,
+    const now = new Date().toISOString();
+    await db.pendingOperations.update(idOperacion, { revisada_at: now, updated_at: now });
+  }
+
+  /** Operaciones no registradas que todavía nadie revisó ni resolvió (alertas). */
+  async unreviewedFailures(): Promise<PendingOfflineOperation[]> {
+    const operations = await this.requireDatabase()
+      .pendingOperations.where('estado').anyOf('CONFLICTO', 'RECHAZADA').toArray();
+    return operations
+      .filter((operation) => !operation.revisada_at && !operation.resolucion_servidor)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+
+  /** Ids de operaciones no registradas cuya decisión del encargado falta conocer. */
+  async unresolvedFailedIds(): Promise<string[]> {
+    const operations = await this.requireDatabase()
+      .pendingOperations.where('estado').anyOf('CONFLICTO', 'RECHAZADA').toArray();
+    return operations
+      .filter((operation) => !operation.resolucion_servidor)
+      .map((operation) => operation.id_operacion);
+  }
+
+  /** Guarda lo que decidió el encargado. Reaplicada = venta registrada. */
+  async applyServerResolution(
+    idOperacion: string,
+    accion: 'REAPLICADA' | 'ANULADA',
+    nota: string | null,
+  ): Promise<void> {
+    await this.requireDatabase().pendingOperations.update(idOperacion, {
+      ...(accion === 'REAPLICADA' ? { estado: 'CONFIRMADA' as const } : {}),
+      resolucion_servidor: { accion, nota },
       updated_at: new Date().toISOString(),
     });
   }

@@ -7,7 +7,10 @@ import {
   CatalogSnapshot,
   PendingOfflineOperation,
   SyncBatchResponse,
+  SyncConflict,
+  SyncConflictState,
   SyncDeviceResponse,
+  SyncOperationStatus,
 } from './offline.models';
 
 @Injectable({ providedIn: 'root' })
@@ -56,5 +59,32 @@ export class SyncApiService {
       `${API_BASE_URL}/sync/batches/${idLote}/confirm`,
       { id_dispositivo: deviceId },
     );
+  }
+
+  /** Estado en el servidor de operaciones propias (¿ya las resolvió el encargado?). */
+  operationStatus(ids: string[]): Observable<SyncOperationStatus[]> {
+    let params = new HttpParams();
+    for (const id of ids) params = params.append('ids', id);
+    return this.http.get<SyncOperationStatus[]>(`${API_BASE_URL}/sync/operations/status`, {
+      params,
+    });
+  }
+
+  /** Operaciones offline no registradas (encargados y administradores). */
+  conflicts(estado: SyncConflictState | 'TODOS' = 'PENDIENTE'): Observable<SyncConflict[]> {
+    const params = new HttpParams().set('estado', estado);
+    return this.http.get<SyncConflict[]>(`${API_BASE_URL}/sync/conflicts`, { params });
+  }
+
+  /** REAPLICAR la registra ahora; ANULAR la cierra sin registrar (exige nota). */
+  resolveConflict(
+    id: number,
+    accion: 'REAPLICAR' | 'ANULAR',
+    nota: string | null = null,
+  ): Observable<SyncConflict> {
+    return this.http.post<SyncConflict>(`${API_BASE_URL}/sync/conflicts/${id}/resolve`, {
+      accion,
+      nota,
+    });
   }
 }

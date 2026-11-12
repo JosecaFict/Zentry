@@ -80,7 +80,7 @@ class OfflineOperationsScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 12),
                     if (!state.prepared)
-                      const _EmptyCatalog()
+                      _EmptyCatalog(state: state)
                     else if (catalog.isEmpty)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 32),
@@ -226,19 +226,19 @@ class _BranchPanel extends StatelessWidget {
                 .toList(),
             onChanged: locked || state.busy ? null : onBranch,
           );
-          final action = FilledButton.icon(
-            onPressed: state.branchId == null || state.busy ? null : onPrepare,
-            icon: state.busy
+          final downloading = state.busy || state.refreshing;
+          // El catálogo se descarga solo con internet; el botón solo fuerza
+          // una actualización.
+          final action = FilledButton.tonalIcon(
+            onPressed: state.branchId == null || downloading ? null : onPrepare,
+            icon: downloading
                 ? const SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.download_for_offline_outlined),
+                : const Icon(Icons.refresh_rounded),
             label: Text(
-              state.prepared ? 'Actualizar catálogo' : 'Preparar dispositivo',
+              downloading ? 'Actualizando catálogo…' : 'Actualizar catálogo',
             ),
           );
           return Column(
@@ -249,8 +249,13 @@ class _BranchPanel extends StatelessWidget {
                 style: Theme.of(context).textTheme.labelSmall,
               ),
               const SizedBox(height: 8),
-              const Text(
-                'El catálogo local queda separado por empresa, usuario y sucursal.',
+              Text(
+                state.prepared
+                    ? 'Catálogo de la sucursal guardado en este teléfono: '
+                          'puedes vender con o sin conexión. Con internet se '
+                          'actualiza solo.'
+                    : 'Con internet, el catálogo de la sucursal se descarga '
+                          'solo al elegirla.',
               ),
               const SizedBox(height: 16),
               if (wide)
@@ -742,20 +747,36 @@ class _Notice extends StatelessWidget {
 }
 
 class _EmptyCatalog extends StatelessWidget {
-  const _EmptyCatalog();
+  const _EmptyCatalog({required this.state});
+  final OfflineState state;
+
+  String get _text {
+    if (state.branchId == null) {
+      return 'Selecciona la sucursal donde vas a vender.';
+    }
+    if (state.busy) return 'Descargando el catálogo de la sucursal…';
+    if (!state.online) {
+      return 'Sin conexión y sin catálogo guardado de esta sucursal. '
+          'Conéctate una vez a internet y se descargará solo.';
+    }
+    return 'No se pudo descargar el catálogo. Pulsa “Actualizar catálogo”.';
+  }
+
   @override
-  Widget build(BuildContext context) => const Card(
+  Widget build(BuildContext context) => Card(
     child: Padding(
-      padding: EdgeInsets.all(24),
+      padding: const EdgeInsets.all(24),
       child: Row(
         children: [
-          Icon(Icons.download_for_offline_outlined, size: 32),
-          SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              'Selecciona una sucursal y pulsa “Preparar dispositivo”.',
-            ),
-          ),
+          if (state.busy)
+            const SizedBox.square(
+              dimension: 28,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            )
+          else
+            const Icon(Icons.download_for_offline_outlined, size: 32),
+          const SizedBox(width: 14),
+          Expanded(child: Text(_text)),
         ],
       ),
     ),

@@ -14,6 +14,7 @@ import { routes } from './app.routes';
 import { AuthService } from './core/auth/auth.service';
 import { authInterceptor } from './core/interceptors/auth.interceptor';
 import { ConnectivityService } from './core/offline/connectivity.service';
+import { OfflineAutoSyncService } from './core/offline/offline-auto-sync.service';
 import { TenantContextService } from './core/tenant/tenant-context.service';
 
 export const appConfig: ApplicationConfig = {
@@ -30,6 +31,7 @@ export const appConfig: ApplicationConfig = {
       const tenant = inject(TenantContextService);
       const router = inject(Router);
       const connectivity = inject(ConnectivityService);
+      const offlineSync = inject(OfflineAutoSyncService);
       if (connectivity.online() || !tenant.tenant()) {
         await firstValueFrom(tenant.load().pipe(catchError(() => of(null))));
       }
@@ -40,6 +42,9 @@ export const appConfig: ApplicationConfig = {
       if (auth.token() && !auth.currentUser()) {
         await firstValueFrom(auth.loadCurrentUser().pipe(catchError(() => of(null))));
       }
+      // Verificación de conexión cada 30 s y envío automático de ventas
+      // offline en toda la app.
+      offlineSync.start();
     }),
   ],
 };

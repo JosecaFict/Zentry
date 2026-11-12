@@ -1,13 +1,20 @@
-import { signal } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import { of } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthService } from '../../core/auth/auth.service';
+import { ConnectivityService } from '../../core/offline/connectivity.service';
+import { OfflineAutoSyncService } from '../../core/offline/offline-auto-sync.service';
+import { PendingOfflineOperation } from '../../core/offline/offline.models';
 import { CommerceService } from '../../core/services/commerce.service';
 import { AssistantService } from '../../core/services/assistant.service';
 import { AdminLayout } from './admin-layout';
+
+/** Destino vacío para las rutas del test (cerrar sesión navega a /login). */
+@Component({ template: '' })
+class Blank {}
 
 describe('AdminLayout', () => {
   function setup(userOverride = {}) {
@@ -40,12 +47,14 @@ describe('AdminLayout', () => {
       imports: [AdminLayout],
       providers: [
         provideRouter([
-          { path: 'login', component: class {} },
-          { path: 'cuenta', component: class {} },
+          { path: 'login', component: Blank },
+          { path: 'cuenta', component: Blank },
         ]),
         { provide: AuthService, useValue: authServiceMock },
         { provide: CommerceService, useValue: commerceServiceMock },
         { provide: AssistantService, useValue: { list: vi.fn(() => of([])) } },
+        { provide: ConnectivityService, useValue: { online, offlineSince: signal(null) } },
+        { provide: OfflineAutoSyncService, useValue: { failures, pendingConflicts } },
       ],
     });
 
@@ -53,8 +62,35 @@ describe('AdminLayout', () => {
     fixture.detectChanges();
     const router = TestBed.inject(Router);
 
-    return { fixture, authServiceMock, router, component: fixture.componentInstance };
+    return {
+      fixture, authServiceMock, router, component: fixture.componentInstance,
+      online, failures, pendingConflicts,
+    };
   }
+
+  const online = signal(true);
+  const failures = signal<PendingOfflineOperation[]>([]);
+  const pendingConflicts = signal(0);
+  afterEach(() => {
+    online.set(true);
+    failures.set([]);
+    pendingConflicts.set(0);
+  });
+
+  it('warns when offline and when offline sales were not registered', () => {
+    const { fixture } = setup({ permisos: ['inventario.ver'], id_sucursal: 1, roles: ['ENCARGADO_SUCURSAL'] });
+    online.set(false);
+    failures.set([{ id_operacion: 'a' }, { id_operacion: 'b' }] as PendingOfflineOperation[]);
+    pendingConflicts.set(3);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const text = element.textContent ?? '';
+
+    expect(text).toContain('Sin conexión');
+    expect(text).toContain('2 ventas offline no se registraron');
+    const badges = [...element.querySelectorAll('.admin-nav-badge')].map((badge) => badge.textContent?.trim());
+    expect(badges).toEqual(['2', '3']);
+  });
 
   it('renders only given name (without surnames) in the header user profile', () => {
     const { fixture } = setup();

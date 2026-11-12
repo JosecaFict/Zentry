@@ -6,6 +6,7 @@ import { AuthService } from '../../core/auth/auth.service';
 import { ConnectivityService } from '../../core/offline/connectivity.service';
 import { OfflineDatabaseService } from '../../core/offline/offline-database.service';
 import { PendingOfflineOperation } from '../../core/offline/offline.models';
+import { OfflineAutoSyncService } from '../../core/offline/offline-auto-sync.service';
 import { OfflineSyncService } from '../../core/offline/offline-sync.service';
 import { CatalogService } from '../../core/services/catalog.service';
 import { TenantContextService } from '../../core/tenant/tenant-context.service';
@@ -17,6 +18,7 @@ function setup(restoredBranchIds?: number[]) {
   const saved: PendingOfflineOperation[] = [];
   const branches = vi.fn(() => of([]));
   const openScope = vi.fn();
+  const autoSync = { revision: signal(0), syncNow: vi.fn().mockResolvedValue(undefined), refreshAlerts: vi.fn() };
   const customers = [{ id_cliente: 8, nombre_completo: 'Cliente de prueba', correo: '', telefono: null }];
   const queueOperation = vi.fn(async (_type: string, payload: Record<string, unknown>) => {
     const operation = { id_operacion: 'venta-1', tipo: 'VENTA', estado: 'PENDIENTE', payload } as PendingOfflineOperation;
@@ -27,6 +29,7 @@ function setup(restoredBranchIds?: number[]) {
     imports: [OfflineOperationsAdmin],
     providers: [
       { provide: AuthService, useValue: { currentUser: () => ({ id_usuario: 2 }) } },
+      { provide: OfflineAutoSyncService, useValue: autoSync },
       { provide: TenantContextService, useValue: { tenant: () => ({ id_tenant: 1 }) } },
       { provide: CatalogService, useValue: { branches } },
       { provide: ConnectivityService, useValue: { online } },
@@ -49,7 +52,7 @@ function setup(restoredBranchIds?: number[]) {
   const component = fixture.componentInstance;
   fixture.detectChanges();
   if (!restoredBranchIds) component.selectedBranchId.set(3);
-  return { fixture, component, online, synchronize, queueOperation, customers, branches, openScope };
+  return { fixture, component, online, synchronize, queueOperation, customers, branches, openScope, autoSync };
 }
 
 it('recovers the last saved branch without requesting the network', async () => {
@@ -77,20 +80,28 @@ it('opens a previously downloaded branch without a saved display name', async ()
   expect(component.selectedBranch()?.nombre).toBe('Sucursal #3');
 });
 
-it('starts sending on reconnection and ignores a second request while sending', async () => {
-  const { fixture, component, online, synchronize } = setup();
+it('asks the global auto-sync to send the queue on reconnection', async () => {
+  const { fixture, component, online, autoSync } = setup();
   component.operationSummary.set({ pending: 2, conflicts: 0, rejected: 0 });
-  expect(synchronize).not.toHaveBeenCalled();
+  expect(autoSync.syncNow).not.toHaveBeenCalled();
 
-  let finish!: (value: null) => void;
-  synchronize.mockReturnValueOnce(new Promise<null>((resolve) => { finish = resolve; }));
   online.set(true);
   fixture.detectChanges();
-  await vi.waitFor(() => expect(synchronize).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(autoSync.syncNow).toHaveBeenCalledOnce());
+});
+
+it('ignores a second manual sync while one is sending', async () => {
+  const { component, online, synchronize } = setup();
+  online.set(true);
+  let finish!: (value: null) => void;
+  synchronize.mockReturnValueOnce(new Promise<null>((resolve) => { finish = resolve; }));
+
+  const first = component.synchronizeNow();
   await component.synchronizeNow();
   expect(synchronize).toHaveBeenCalledExactlyOnceWith({ tenantId: 1, userId: 2, branchId: 3 });
   finish(null);
-  await vi.waitFor(() => expect(component.synchronizing()).toBe(false));
+  await first;
+  expect(component.synchronizing()).toBe(false);
 });
 
 it.each([8, null])('keeps the cash sale visible after saving with customer %s', async (customerId) => {
@@ -113,4 +124,45 @@ it.each([8, null])('keeps the cash sale visible after saving with customer %s', 
   const sale = component.latestOperation();
   expect(sale.estado).toBe('PENDIENTE');
   expect(component.operationCustomerLabel(sale)).toBe(customerId ? 'Cliente de prueba' : 'Sin cliente registrado');
+});
+
+function rejected(code: string): PendingOfflineOperation {
+  return {
+    id_operacion: 'venta-rechazada', tipo: 'VENTA', estado: 'RECHAZADA', codigo_error: code,
+    mensaje_error: 'Precio inválido', payload: { id_cliente: 8, items: [
+      { id_variante: 4, cantidad: 3 }, { id_variante: 99, cantidad: 1 },
+    ] },
+  } as unknown as PendingOfflineOperation;
+}
+
+it('reloads a sale rejected for invalid data into the cart as a new operation', async () => {
+  const { component } = setup();
+  const markReviewed = vi.fn().mockResolvedValue(undefined);
+  Object.assign(TestBed.inject(OfflineDatabaseService), { markReviewed });
+  component.catalog.set([{
+    id_variante: 4, sku: 'DEMO', producto: 'Polo', talla: 'M', color: 'Azul',
+    precio: '100.00', stock_fisico: 2, stock_reservado: 0, stock_disponible: 2, updated_at: null,
+  }]);
+
+  await component.reloadIntoCart(rejected('DATOS_INVALIDOS'));
+
+  expect(markReviewed).toHaveBeenCalledExactlyOnceWith('venta-rechazada');
+  // Se limita al stock disponible y la variante que ya no existe se omite.
+  expect(component.cartQuantities()).toEqual({ 4: 2 });
+  expect(component.selectedCustomerId()).toBe(8);
+  expect(component.message()).toContain('1 ya no están disponibles');
+});
+
+it('does not reload operations that a manager must resolve', async () => {
+  const { component } = setup();
+  const markReviewed = vi.fn();
+  Object.assign(TestBed.inject(OfflineDatabaseService), { markReviewed });
+  const conflict = rejected('STOCK_INSUFICIENTE');
+
+  expect(component.canReload(conflict)).toBe(false);
+  await component.reloadIntoCart(conflict);
+
+  expect(markReviewed).not.toHaveBeenCalled();
+  expect(component.cartQuantities()).toEqual({});
+  expect(component.failureReason(conflict)).toContain('No había stock');
 });

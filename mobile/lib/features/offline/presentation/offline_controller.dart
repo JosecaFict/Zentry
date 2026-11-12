@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:capricho_store/core/connectivity/connectivity_controller.dart';
 import 'package:capricho_store/core/network/api_exception.dart';
@@ -21,6 +22,7 @@ class OfflineState {
   const OfflineState({
     this.loading = true,
     this.busy = false,
+    this.refreshing = false,
     this.online = true,
     this.branches = const [],
     this.branchId,
@@ -37,6 +39,9 @@ class OfflineState {
 
   final bool loading;
   final bool busy;
+
+  /// Actualización del catálogo en segundo plano: no bloquea la venta.
+  final bool refreshing;
   final bool online;
   final List<BranchItem> branches;
   final int? branchId;
@@ -69,6 +74,7 @@ class OfflineState {
   OfflineState copyWith({
     bool? loading,
     bool? busy,
+    bool? refreshing,
     bool? online,
     List<BranchItem>? branches,
     int? branchId,
@@ -88,6 +94,7 @@ class OfflineState {
   }) => OfflineState(
     loading: loading ?? this.loading,
     busy: busy ?? this.busy,
+    refreshing: refreshing ?? this.refreshing,
     online: online ?? this.online,
     branches: branches ?? this.branches,
     branchId: clearBranch ? null : (branchId ?? this.branchId),
@@ -104,6 +111,13 @@ class OfflineState {
 }
 
 class OfflineController extends Notifier<OfflineState> {
+  /// Con conexión, el catálogo local se vuelve a descargar si tiene más de
+  /// este tiempo (y siempre al abrir la pantalla o cambiar de sucursal).
+  static const catalogRefreshAfter = Duration(minutes: 5);
+
+  Future<void>? _preparing;
+  DateTime? _preparedAt;
+
   @override
   OfflineState build() {
     // La conexión y la sincronización automática son globales
@@ -114,9 +128,20 @@ class OfflineController extends Notifier<OfflineState> {
       online,
     ) {
       state = state.copyWith(online: online);
+      // Volvió la señal: descarga el catálogo si falta o está viejo.
+      if (online) unawaited(_autoPrepare());
     });
-    ref.listen(offlineSyncControllerProvider.select((s) => s.revision), (_, _) {
-      unawaited(_loadLocal());
+    ref.listen(offlineSyncControllerProvider.select((s) => s.revision), (
+      _,
+      _,
+    ) async {
+      await _loadLocal();
+      // Se enviaron ventas: el stock del servidor cambió, se refresca.
+      final outcome = ref.read(offlineSyncControllerProvider).lastOutcome;
+      if (ref.mounted && (outcome?.batches ?? 0) > 0) {
+        _preparedAt = null;
+        await _autoPrepare();
+      }
     });
     Future.microtask(initialize);
     return OfflineState(
@@ -173,7 +198,29 @@ class OfflineController extends Notifier<OfflineState> {
         loading: false,
         error: 'No se pudo iniciar el modo offline: $error',
       );
+      return;
     }
+    // Sin pasos manuales: con internet, el catálogo se descarga solo.
+    await _autoPrepare();
+  }
+
+  /// Descarga el catálogo si hay conexión y falta, o tiene más de
+  /// [catalogRefreshAfter].
+  Future<void> _autoPrepare() async {
+    if (!ref.mounted ||
+        !state.online ||
+        state.branchId == null ||
+        state.busy ||
+        state.loading) {
+      return;
+    }
+    final preparedAt = _preparedAt;
+    final fresh =
+        state.prepared &&
+        preparedAt != null &&
+        DateTime.now().difference(preparedAt) < catalogRefreshAfter;
+    if (fresh) return;
+    await prepare(automatic: true);
   }
 
   OfflineScope? get _scope {
@@ -201,25 +248,44 @@ class OfflineController extends Notifier<OfflineState> {
       clearMessage: true,
       clearError: true,
     );
-    if (branchId != null) await _loadLocal();
+    _preparedAt = null;
+    if (branchId == null) return;
+    await _loadLocal();
+    await _autoPrepare();
   }
 
-  Future<void> prepare() async {
-    if (state.busy) return;
+  /// Descarga el catálogo y los clientes de la sucursal. Con [automatic] no
+  /// muestra errores si ya hay un catálogo guardado, y si lo hay, actualiza
+  /// en segundo plano sin bloquear la venta.
+  Future<void> prepare({bool automatic = false}) {
+    if (!automatic && state.busy) return Future.value();
+    return _preparing ??= _prepare(
+      automatic: automatic,
+    ).whenComplete(() => _preparing = null);
+  }
+
+  Future<void> _prepare({required bool automatic}) async {
     final scope = _scope;
     if (scope == null) {
-      state = state.copyWith(error: 'Selecciona una sucursal primero.');
+      if (!automatic) {
+        state = state.copyWith(error: 'Selecciona una sucursal primero.');
+      }
       return;
     }
     if (!state.online) {
-      state = state.copyWith(
-        error: state.prepared
-            ? 'Sin conexión. Se mantiene el catálogo guardado.'
-            : 'Conéctate una vez para descargar el catálogo.',
-      );
+      if (!automatic) {
+        state = state.copyWith(
+          error: state.prepared
+              ? 'Sin conexión. Se mantiene el catálogo guardado.'
+              : 'Conéctate una vez para descargar el catálogo.',
+        );
+      }
       return;
     }
-    state = state.copyWith(busy: true, clearError: true, clearMessage: true);
+    final background = automatic && state.prepared;
+    state = background
+        ? state.copyWith(refreshing: true)
+        : state.copyWith(busy: true, clearError: true, clearMessage: true);
     final branch = state.branches
         .where((item) => item.id == scope.branchId)
         .firstOrNull;
@@ -249,16 +315,29 @@ class OfflineController extends Notifier<OfflineState> {
         customers: customers,
       );
       if (!ref.mounted || _scope?.key != scope.key) return;
+      _preparedAt = DateTime.now();
       await _loadLocal();
-      if (!ref.mounted) return;
+      if (!ref.mounted || background) return;
       state = state.copyWith(
-        busy: false,
         message:
-            '${snapshot.items.length} variantes listas para trabajar sin conexión.',
+            '${snapshot.items.length} variantes listas para vender, con o sin '
+            'conexión.',
       );
     } catch (error) {
       if (!ref.mounted) return;
-      state = state.copyWith(busy: false, error: error.toString());
+      if (background) {
+        // Ya hay catálogo guardado: se sigue vendiendo con él.
+        developer.log('No se pudo actualizar el catálogo: $error', name: 'Offline');
+      } else {
+        state = state.copyWith(
+          error: 'No se pudo descargar el catálogo de la sucursal: $error',
+        );
+      }
+    } finally {
+      // También si se cambió de sucursal a mitad de la descarga.
+      if (ref.mounted) {
+        state = state.copyWith(busy: false, refreshing: false);
+      }
     }
   }
 

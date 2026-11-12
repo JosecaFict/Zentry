@@ -391,6 +391,25 @@
     background: #fff0ed;
     border-color: #efb7ae;
   }
+
+  a {
+    margin-left: auto;
+    color: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+}
+// Contador de pendientes junto a un ítem del menú (ventas offline, conflictos).
+.admin-nav-badge {
+  min-width: 20px;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #d92d20;
+  color: #fff;
+  font-size: 0.72rem;
+  line-height: 18px;
+  text-align: center;
 }
 .admin-page-heading {
   display: flex;

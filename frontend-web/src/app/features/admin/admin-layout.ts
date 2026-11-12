@@ -1,6 +1,9 @@
+import { DatePipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
+import { ConnectivityService } from '../../core/offline/connectivity.service';
+import { OfflineAutoSyncService } from '../../core/offline/offline-auto-sync.service';
 import { AdminNavGroup, visibleAdminNavigation } from './admin-navigation';
 import { NotificationBell } from '../../shared/components/notification-bell/notification-bell';
 import { TenantContextService } from '../../core/tenant/tenant-context.service';
@@ -8,7 +11,7 @@ import { AdminAssistant } from './admin-assistant';
 
 @Component({
   selector: 'app-admin-layout',
-  imports: [RouterLink, RouterLinkActive, RouterOutlet, NotificationBell, AdminAssistant],
+  imports: [DatePipe, RouterLink, RouterLinkActive, RouterOutlet, NotificationBell, AdminAssistant],
   template: `
     <!-- THESIS: Un taller operativo de moda, no un mosaico SaaS; la tarea y el estado mandan. OWN-WORLD: papel frío, grafito, líneas cromadas y cobalto reservado a acción y selección. STORY: el equipo reconoce su alcance, entra al módulo permitido y actúa con contexto. FIRST VIEWPORT: rail lateral estable, cabecera de identidad y área de trabajo densa sin tarjetas decorativas. FORM: extensión Operate del sistema aprobado. FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance -->
     <div class="admin-shell" [class.sidebar-collapsed]="sidebarCollapsed()">
@@ -80,7 +83,10 @@ import { AdminAssistant } from './admin-assistant';
                     routerLinkActive="active"
                     [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
                     (click)="menuOpen.set(false)"
-                    >{{ item.label }}</a
+                    >{{ item.label }}
+                    @if (badgeFor(item.path); as count) {
+                      <span class="admin-nav-badge" [attr.aria-label]="count + ' por revisar'">{{ count }}</span>
+                    }</a
                   >
                 }
               </div>
@@ -226,6 +232,22 @@ import { AdminAssistant } from './admin-assistant';
             <span>{{ message }}</span>
           </aside>
         }
+        @if (!connectivity.online()) {
+          <aside class="admin-subscription-alert is-critical" role="status">
+            <strong>Sin conexión</strong>
+            <span>
+              @if (connectivity.offlineSince(); as since) { Desde las {{ since | date: 'HH:mm' }}. }
+              Puedes seguir vendiendo en Operación offline; las ventas se envían solas al volver la conexión.
+            </span>
+          </aside>
+        }
+        @if (offlineFailures(); as count) {
+          <aside class="admin-subscription-alert is-critical" role="alert">
+            <strong>{{ count === 1 ? '1 venta offline no se registró' : count + ' ventas offline no se registraron' }}</strong>
+            <span>Revisa el motivo de cada una.</span>
+            <a routerLink="/admin/inventario/offline">Revisar</a>
+          </aside>
+        }
         <main class="admin-main" id="contenido"><router-outlet /></main>
       </div>
       <app-admin-assistant />
@@ -248,7 +270,20 @@ export class AdminLayout {
     if (user?.roles.includes('ADMIN')) return 'Todas las sucursales';
     return user?.sucursal ? `Sucursal asignada: ${user.sucursal}` : 'Sin sucursal asignada';
   });
-  readonly visibleNavigation = computed(() => visibleAdminNavigation(this.user()?.permisos ?? []));
+  readonly visibleNavigation = computed(() =>
+    visibleAdminNavigation(this.user()?.permisos ?? [], this.user()),
+  );
+  readonly connectivity = inject(ConnectivityService);
+  private readonly offlineSync = inject(OfflineAutoSyncService);
+  /** Ventas offline de este equipo no registradas y sin revisar. */
+  readonly offlineFailures = computed(() => this.offlineSync.failures().length);
+
+  /** Contador rojo junto al ítem del menú (0 = sin contador). */
+  badgeFor(path: string): number {
+    if (path === '/admin/inventario/offline') return this.offlineFailures();
+    if (path === '/admin/inventario/conflictos-offline') return this.offlineSync.pendingConflicts();
+    return 0;
+  }
   readonly subscriptionTitle = computed(() =>
     this.tenant.tenant()?.subscription_estado === 'GRACIA'
       ? 'La suscripción está en periodo de gracia'

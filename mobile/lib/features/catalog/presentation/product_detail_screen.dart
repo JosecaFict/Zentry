@@ -1,4 +1,6 @@
+import 'package:capricho_store/core/connectivity/connectivity_controller.dart';
 import 'package:capricho_store/core/theme/app_theme.dart';
+import 'package:capricho_store/features/admin/domain/operational_access.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/features/catalog/data/catalog_repository.dart';
 import 'package:capricho_store/features/catalog/data/catalog_source.dart';
@@ -768,9 +770,14 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     }
 
     if (variant.stock == null) {
+      final offline = ref.watch(
+        connectivityControllerProvider.select((s) => s.checked && !s.online),
+      );
       return _stockMessage(
-        icon: Icons.info_outline_rounded,
-        message: 'La disponibilidad no está informada para esta sucursal.',
+        icon: offline ? Icons.cloud_off_rounded : Icons.info_outline_rounded,
+        message: offline
+            ? 'Sin conexión: el stock por sucursal se consulta con internet.'
+            : 'La disponibilidad no está informada para esta sucursal.',
       );
     }
 
@@ -848,8 +855,14 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           orElse: () => null,
         );
 
+    // El carrito y las reservas viven en el servidor: sin conexión no se
+    // pueden usar aunque el catálogo se vea.
+    final offline = ref.watch(
+      connectivityControllerProvider.select((s) => s.checked && !s.online),
+    );
+    final user = ref.watch(authControllerProvider.select((s) => s.user));
     final hasBranch = _selectedBranchId != null;
-    final hasVariant = matchedVariant != null;
+    final hasVariant = matchedVariant != null && !offline;
     final stock = matchedVariant?.stock ?? 0;
     final hasStock = stock > 0;
 
@@ -872,6 +885,11 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (offline || (user?.canOpenOffline ?? false))
+                _SaleChannelHint(
+                  offline: offline,
+                  canSellInStore: user?.canOpenOffline ?? false,
+                ),
               if (!hasBranch)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 8),
@@ -1148,4 +1166,51 @@ class _ProductDetailData {
   final List<ProductVariant> variants;
   final List<ProductMeasurement> measurements;
   final List<BranchItem> branches;
+}
+
+/// Explica por qué no se puede comprar aquí y dónde vender: sin conexión el
+/// carrito no funciona, y el carrito es de clientes (un trabajador vende en
+/// Panel → Offline, que funciona con o sin internet).
+class _SaleChannelHint extends StatelessWidget {
+  const _SaleChannelHint({required this.offline, required this.canSellInStore});
+
+  final bool offline;
+  final bool canSellInStore;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = offline
+        ? 'Sin conexión: agregar al carrito y reservar necesitan internet.'
+              '${canSellInStore ? ' Para vender en tienda usa Panel → Offline.' : ''}'
+        : 'El carrito es para compras de clientes. Para registrar una venta '
+              'en tienda usa Panel → Offline.';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(
+            offline ? Icons.cloud_off_rounded : Icons.point_of_sale_outlined,
+            size: 16,
+            color: offline ? AppColors.warning : AppColors.cobalt,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.inkSoft,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (canSellInStore)
+            TextButton(
+              onPressed: () => context.go('/admin/offline'),
+              child: const Text('Ir a vender'),
+            ),
+        ],
+      ),
+    );
+  }
 }

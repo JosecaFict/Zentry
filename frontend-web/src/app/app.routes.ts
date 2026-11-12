@@ -375,6 +375,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'inventario/conflictos-offline', // Ventas offline no registradas (encargado)
+        title: 'Conflictos offline | Tienda',
+        canActivate: [requireAnyPermission('inventario.ver')],
+        loadComponent: () =>
+          import('./features/admin/sync-conflicts-admin').then((m) => m.SyncConflictsAdmin),
+      },
+      {
         path: 'seguridad/roles-permisos', // [CU-02] Matriz de roles y permisos
         title: 'Roles y permisos | Tienda',
         canActivate: [requireAnyPermission('permisos.asignar')],

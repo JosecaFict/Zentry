@@ -14,7 +14,11 @@ import {
   OfflineScope,
   OfflineSyncMeta,
   PendingOfflineOperation,
+  canReloadOfflineOperation,
+  offlineFailureReason,
+  serverResolutionLabel,
 } from '../../core/offline/offline.models';
+import { OfflineAutoSyncService } from '../../core/offline/offline-auto-sync.service';
 import { OfflineSyncService } from '../../core/offline/offline-sync.service';
 import { ApiErrorService } from '../../core/services/api-error.service';
 import { CatalogService } from '../../core/services/catalog.service';
@@ -48,8 +52,7 @@ export class OfflineOperationsAdmin implements OnInit {
   private readonly synchronization = inject(OfflineSyncService);
   private readonly errors = inject(ApiErrorService);
   private readonly destroyRef = inject(DestroyRef);
-  private retryTimer?: ReturnType<typeof setTimeout>;
-  private retryCount = 0;
+  private readonly autoSync = inject(OfflineAutoSyncService);
 
   readonly connectivity = inject(ConnectivityService);
   readonly branches = signal<Branch[]>([]);
@@ -134,25 +137,25 @@ export class OfflineOperationsAdmin implements OnInit {
   );
 
   constructor() {
+    // El envío automático es global (OfflineAutoSyncService, cada chequeo de
+    // conexión); esta pantalla solo se recarga cuando cambia la cola.
     effect(() => {
-      const online = this.connectivity.online();
+      this.autoSync.revision();
       untracked(() => {
-        this.resetAutoSync();
-        if (online) this.scheduleAutoSync();
+        if (this.selectedBranchId() && this.database.scope()) {
+          void this.refreshLocalView().catch(() => undefined);
+        }
       });
     });
-    this.destroyRef.onDestroy(() => this.resetAutoSync());
+    effect(() => {
+      if (this.connectivity.online()) untracked(() => this.scheduleAutoSync());
+    });
   }
 
-  private resetAutoSync(): void {
-    clearTimeout(this.retryTimer);
-    this.retryCount = 0;
-  }
-
-  private scheduleAutoSync(delay = 0): void {
-    clearTimeout(this.retryTimer);
+  /** Con conexión y ventas en cola, las envía ya sin esperar al próximo chequeo. */
+  private scheduleAutoSync(): void {
     if (this.destroyRef.destroyed || !this.connectivity.online() || !this.operationSummary().pending) return;
-    this.retryTimer = setTimeout(() => void this.synchronizeNow(true), delay);
+    void this.autoSync.syncNow();
   }
 
   async ngOnInit(): Promise<void> {
@@ -243,7 +246,6 @@ export class OfflineOperationsAdmin implements OnInit {
 
   async selectBranch(rawValue: string): Promise<void> {
     if (this.synchronizing() || this.preparing() || this.queuingSale()) return;
-    this.resetAutoSync();
     this.selectedBranchId.set(rawValue ? Number(rawValue) : null);
     this.resetLocalView();
     if (!this.selectedBranchId()) return;
@@ -294,7 +296,6 @@ export class OfflineOperationsAdmin implements OnInit {
     const scope = this.scope();
     const lines = this.cartLines();
     if (!scope || !lines.length) return;
-    const wasOnline = this.connectivity.online();
     this.queuingSale.set(true);
     this.error.set('');
     this.message.set('');
@@ -329,7 +330,8 @@ export class OfflineOperationsAdmin implements OnInit {
       this.error.set(this.errors.message(error, 'No se pudo guardar la venta offline.'));
     } finally {
       this.queuingSale.set(false);
-      if (!wasOnline && this.connectivity.online()) this.scheduleAutoSync();
+      // Con conexión se envía enseguida, sin esperar al próximo chequeo.
+      this.scheduleAutoSync();
     }
   }
 
@@ -343,7 +345,6 @@ export class OfflineOperationsAdmin implements OnInit {
       this.error.set('Selecciona el cliente para guardar la reserva.');
       return;
     }
-    const wasOnline = this.connectivity.online();
     this.queuingSale.set(true);
     this.error.set('');
     this.message.set('');
@@ -368,7 +369,8 @@ export class OfflineOperationsAdmin implements OnInit {
       this.error.set(this.errors.message(error, 'No se pudo guardar la reserva offline.'));
     } finally {
       this.queuingSale.set(false);
-      if (!wasOnline && this.connectivity.online()) this.scheduleAutoSync();
+      // Con conexión se envía enseguida, sin esperar al próximo chequeo.
+      this.scheduleAutoSync();
     }
   }
 
@@ -397,29 +399,28 @@ export class OfflineOperationsAdmin implements OnInit {
     }
   }
 
-  async synchronizeNow(automatic = false): Promise<void> {
+  /** Botón "Sincronizar": envía ya (si falla, el envío automático reintenta cada 30 s). */
+  async synchronizeNow(): Promise<void> {
     if (this.destroyRef.destroyed || !this.connectivity.online() || !this.selectedBranchId() ||
         this.synchronizing() || this.preparing()) return;
-    if (!automatic) this.resetAutoSync();
     const scope = this.scope();
     if (!scope) return;
     this.synchronizing.set(true);
     this.error.set('');
     this.message.set('');
-    let delay: number | null = null;
     try {
       const response = await this.synchronization.synchronizePending(scope);
       if (this.destroyRef.destroyed) return;
       await this.refreshLocalView();
       if (this.destroyRef.destroyed) return;
-      this.retryCount = 0;
       this.message.set(
         response
           ? `Sincronización completada: ${response.total_aplicadas} operaciones aplicadas.`
           : 'No existen operaciones pendientes por sincronizar.',
       );
       if (response) {
-        if (this.operationSummary().pending) delay = 0;
+        // Quedan más lotes: los envía el servicio automático.
+        this.scheduleAutoSync();
         try {
           await this.synchronization.prepare(scope);
           await this.refreshLocalView();
@@ -429,26 +430,71 @@ export class OfflineOperationsAdmin implements OnInit {
       }
     } catch (error) {
       this.error.set(this.errors.message(error, 'No se pudo completar la sincronización.'));
-      if ((error instanceof TimeoutError || (error instanceof HttpErrorResponse &&
-          (error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500))) &&
-          this.retryCount < 5) {
-        delay = 2000 * 2 ** this.retryCount++;
-      }
     } finally {
       this.synchronizing.set(false);
-      if (delay !== null) this.scheduleAutoSync(delay);
+      void this.autoSync.refreshAlerts();
     }
   }
 
-  async retryOperation(operation: PendingOfflineOperation): Promise<void> {
+  readonly canReload = canReloadOfflineOperation;
+  readonly serverResolution = serverResolutionLabel;
+  readonly failureReason = (operation: PendingOfflineOperation) =>
+    offlineFailureReason(operation.codigo_error);
+
+  /**
+   * Venta rechazada por datos inválidos: carga sus prendas en el carrito para
+   * registrarla corregida como operación nueva. La original queda revisada
+   * (el servidor no acepta reenviarla con el mismo id).
+   */
+  async reloadIntoCart(operation: PendingOfflineOperation): Promise<void> {
+    if (!this.canReload(operation) || this.resolvingOperationId()) return;
+    const quantities: Record<number, number> = {};
+    let missing = 0;
+    const items = Array.isArray(operation.payload['items']) ? operation.payload['items'] : [];
+    for (const raw of items) {
+      const line = (raw ?? {}) as Record<string, unknown>;
+      const variantId = Number(line['id_variante']);
+      const requested = Math.floor(Number(line['cantidad']) || 0);
+      const item = this.catalog().find((entry) => entry.id_variante === variantId);
+      const available = item ? this.availableFor(item) : 0;
+      if (!item || available <= 0 || requested <= 0) {
+        missing++;
+        continue;
+      }
+      quantities[variantId] = Math.min(requested, available);
+    }
+    if (!Object.keys(quantities).length) {
+      this.error.set('Ninguna prenda de esa operación está disponible en el catálogo local.');
+      return;
+    }
     this.resolvingOperationId.set(operation.id_operacion);
     this.error.set('');
     try {
-      await this.database.retryOperation(operation.id_operacion);
+      await this.database.markReviewed(operation.id_operacion);
+      this.cartQuantities.set(quantities);
+      this.operationMode.set(operation.tipo);
+      const customerId = operation.payload['id_cliente'];
+      this.selectedCustomerId.set(typeof customerId === 'number' ? customerId : null);
       await this.refreshLocalView();
-      this.message.set('La operación volvió a la cola. Actualiza el catálogo y sincroniza nuevamente.');
+      this.message.set(missing
+        ? `Prendas cargadas (${missing} ya no están disponibles): revisa y vuelve a guardar.`
+        : 'Prendas cargadas en el carrito: revisa los datos y vuelve a guardar.');
     } catch (error) {
-      this.error.set(this.errors.message(error, 'No se pudo reintentar la operación.'));
+      this.error.set(this.errors.message(error, 'No se pudo cargar la operación.'));
+    } finally {
+      this.resolvingOperationId.set(null);
+    }
+  }
+
+  /** Deja de alertar sobre la operación; no la reenvía ni la borra. */
+  async markReviewed(operation: PendingOfflineOperation): Promise<void> {
+    this.resolvingOperationId.set(operation.id_operacion);
+    this.error.set('');
+    try {
+      await this.database.markReviewed(operation.id_operacion);
+      await this.refreshLocalView();
+    } catch (error) {
+      this.error.set(this.errors.message(error, 'No se pudo marcar la operación.'));
     } finally {
       this.resolvingOperationId.set(null);
     }
@@ -520,6 +566,8 @@ export class OfflineOperationsAdmin implements OnInit {
     this.queuedQuantities.set(queued);
     this.recentOperations.set(operations);
     this.customers.set(customers);
+    // Alertas del panel (banner y contador) al día con la cola local.
+    void this.autoSync.refreshAlerts();
   }
 
   private scope(): OfflineScope | null {

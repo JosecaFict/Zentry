@@ -1,9 +1,19 @@
+import { canReviewSyncConflicts } from '../../core/offline/offline.models';
+
+export interface AdminNavUser {
+  roles: readonly string[];
+  permisos: readonly string[];
+  id_sucursal?: number | null;
+}
+
 export interface AdminNavItem {
   label: string;
   path: string;
   permissions: string[];
   exact?: boolean;
   requireAll?: boolean;
+  /** Regla extra por rol; si existe, el ítem solo se ve con un usuario que la cumpla. */
+  visibleFor?: (user: AdminNavUser) => boolean;
 }
 export interface AdminNavGroup {
   label: string;
@@ -148,6 +158,12 @@ export const ADMIN_NAVIGATION: AdminNavGroup[] = [
         path: '/admin/inventario/offline',
         permissions: ['inventario.ver'],
       },
+      {
+        label: 'Conflictos offline',
+        path: '/admin/inventario/conflictos-offline',
+        permissions: ['inventario.ver'],
+        visibleFor: canReviewSyncConflicts,
+      },
     ],
   },
   {
@@ -172,22 +188,29 @@ export const ADMIN_NAVIGATION: AdminNavGroup[] = [
   },
 ];
 
-export function visibleAdminNavigation(permissionCodes: readonly string[]): AdminNavGroup[] {
+export function visibleAdminNavigation(
+  permissionCodes: readonly string[],
+  user?: AdminNavUser | null,
+): AdminNavGroup[] {
   const permissions = new Set(permissionCodes);
   return ADMIN_NAVIGATION.map((group) => ({
     ...group,
     items: group.items.filter(
       (item) =>
-        !item.permissions.length ||
-        (item.requireAll
-          ? item.permissions.every((permission) => permissions.has(permission))
-          : item.permissions.some((permission) => permissions.has(permission))),
+        (!item.visibleFor || (!!user && item.visibleFor(user))) &&
+        (!item.permissions.length ||
+          (item.requireAll
+            ? item.permissions.every((permission) => permissions.has(permission))
+            : item.permissions.some((permission) => permissions.has(permission)))),
     ),
   })).filter((group) => group.items.length);
 }
 
-export function availableAdminModules(permissionCodes: readonly string[]): AdminNavItem[] {
-  return visibleAdminNavigation(permissionCodes)
+export function availableAdminModules(
+  permissionCodes: readonly string[],
+  user?: AdminNavUser | null,
+): AdminNavItem[] {
+  return visibleAdminNavigation(permissionCodes, user)
     .flatMap((group) => group.items)
     .filter((item) => item.path !== '/admin');
 }

@@ -277,14 +277,31 @@
                 <span>{{ operationUnits(operation) }} {{ operationUnits(operation) === 1 ? 'unidad' : 'unidades' }} · {{ operation.created_at | date: 'dd/MM/yyyy, HH:mm' }}</span>
               </div>
               <span class="operation-status" [attr.data-status]="operation.estado">{{ operationStatusLabel(operation) }}</span>
-              @if (operation.mensaje_error) { <p>{{ operation.mensaje_error }}</p> }
-              @if (operation.estado === 'CONFLICTO' || operation.estado === 'RECHAZADA') {
+              @if (serverResolution(operation); as resolution) {
+                <p><strong>{{ resolution }}</strong></p>
+              } @else if (operation.estado === 'CONFLICTO' || operation.estado === 'RECHAZADA') {
+                <p>
+                  <strong>{{ failureReason(operation) }}</strong>
+                  @if (operation.mensaje_error) { <br />Detalle: {{ operation.mensaje_error }} }
+                  <br />{{ canReload(operation) ? 'Puedes volver a cargarla corregida.' : 'En revisión por tu encargado.' }}
+                  @if (operation.revisada_at) { · Revisada }
+                </p>
                 <div class="operation-actions">
-                  <button type="button" [disabled]="resolvingOperationId() === operation.id_operacion" (click)="retryOperation(operation)">Reintentar</button>
+                  @if (canReload(operation)) {
+                    <button type="button" [disabled]="resolvingOperationId() === operation.id_operacion" (click)="reloadIntoCart(operation)">Cargar de nuevo en el carrito</button>
+                  }
+                  @if (!operation.revisada_at) {
+                    <button type="button" [disabled]="resolvingOperationId() === operation.id_operacion" (click)="markReviewed(operation)">Marcar como revisada</button>
+                  }
                   <button class="is-danger" type="button" [disabled]="resolvingOperationId() === operation.id_operacion" (click)="discardOperation(operation)">
-                    {{ discardConfirmationId() === operation.id_operacion ? 'Confirmar descarte' : 'Descartar' }}
+                    {{ discardConfirmationId() === operation.id_operacion ? 'Confirmar: quitar' : 'Quitar de este dispositivo' }}
                   </button>
                 </div>
+                @if (discardConfirmationId() === operation.id_operacion) {
+                  <p>Solo desaparece de este equipo. Si ya se envió, tu encargado la sigue viendo para resolverla.</p>
+                }
+              } @else if (operation.mensaje_error) {
+                <p>{{ operation.mensaje_error }}</p>
               }
             </article>
           }

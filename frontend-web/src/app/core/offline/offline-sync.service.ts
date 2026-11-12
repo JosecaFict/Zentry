@@ -59,7 +59,20 @@ export class OfflineSyncService {
     }
   }
 
-  async synchronizePending(scope = this.database.scope()): Promise<SyncBatchResponse | null> {
+  /**
+   * Envía un lote pendiente. Las llamadas se encolan una detrás de otra
+   * (pantalla Offline y sincronización automática) para que el mismo lote
+   * nunca se envíe dos veces en paralelo.
+   */
+  synchronizePending(scope = this.database.scope()): Promise<SyncBatchResponse | null> {
+    const result = this.tail.then(() => this.synchronizeOnce(scope));
+    this.tail = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  private tail: Promise<void> = Promise.resolve();
+
+  private async synchronizeOnce(scope: OfflineScope | null): Promise<SyncBatchResponse | null> {
     if (!this.connectivity.online()) {
       throw new Error('No hay conexión para sincronizar las operaciones pendientes.');
     }

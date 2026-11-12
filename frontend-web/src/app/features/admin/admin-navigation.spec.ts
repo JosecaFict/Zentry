@@ -44,6 +44,17 @@ describe('admin navigation permissions', () => {
     ]);
   });
 
+  it('shows offline conflicts only to branch managers and administrators', () => {
+    const labels = (roles: string[], id_sucursal: number | null = 3) =>
+      availableAdminModules(['inventario.ver'], { roles, permisos: ['inventario.ver'], id_sucursal })
+        .map((item) => item.label);
+
+    expect(labels(['ENCARGADO_SUCURSAL'])).toContain('Conflictos offline');
+    expect(labels(['ADMIN'], null)).toContain('Conflictos offline');
+    expect(labels(['ENCARGADO_SUCURSAL'], null)).not.toContain('Conflictos offline');
+    expect(labels(['CAJERO'])).not.toContain('Conflictos offline');
+  });
+
   it('shows branches only to users with organization access', () => {
     expect(availableAdminModules(['sucursales.ver']).map((item) => item.label)).toEqual([
       'Sucursales',
