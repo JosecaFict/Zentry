@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:capricho_store/core/connectivity/connectivity_controller.dart';
 import 'package:capricho_store/core/network/api_exception.dart';
 import 'package:capricho_store/core/tenant/tenant_context.dart';
 import 'package:capricho_store/features/admin/data/admin_repository.dart';
@@ -8,8 +9,7 @@ import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/features/offline/data/offline_database.dart';
 import 'package:capricho_store/features/offline/data/offline_sync_repository.dart';
 import 'package:capricho_store/features/offline/domain/offline_models.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/widgets.dart';
+import 'package:capricho_store/features/offline/presentation/offline_sync_controller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final offlineControllerProvider =
@@ -104,49 +104,28 @@ class OfflineState {
 }
 
 class OfflineController extends Notifier<OfflineState> {
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
-  Timer? _retryTimer;
-  int _retryCount = 0;
-  bool _foreground = true;
-
   @override
   OfflineState build() {
-    final lifecycle = AppLifecycleListener(
-      onHide: () {
-        _foreground = false;
-        _retryTimer?.cancel();
-      },
-      onResume: () {
-        _foreground = true;
-        _retryCount = 0;
-        _scheduleAutoSync();
-      },
-    );
-    ref.onDispose(() {
-      lifecycle.dispose();
-      _retryTimer?.cancel();
-      _connectivitySubscription?.cancel();
+    // La conexión y la sincronización automática son globales
+    // (ConnectivityController y OfflineSyncController); esta pantalla solo
+    // refleja su estado y recarga la cola cuando termina una sincronización.
+    ref.listen(connectivityControllerProvider.select((s) => s.online), (
+      _,
+      online,
+    ) {
+      state = state.copyWith(online: online);
+    });
+    ref.listen(offlineSyncControllerProvider.select((s) => s.revision), (_, _) {
+      unawaited(_loadLocal());
     });
     Future.microtask(initialize);
-    return const OfflineState();
+    return OfflineState(
+      online: ref.read(connectivityControllerProvider).online,
+    );
   }
 
   Future<void> initialize() async {
     try {
-      final connectivity = Connectivity();
-      final current = await connectivity.checkConnectivity();
-      if (!ref.mounted) return;
-      state = state.copyWith(online: _isOnline(current));
-      _connectivitySubscription = connectivity.onConnectivityChanged.listen((
-        results,
-      ) {
-        final online = _isOnline(results);
-        if (online == state.online) return;
-        state = state.copyWith(online: online);
-        _retryTimer?.cancel();
-        _retryCount = 0;
-        if (online) _scheduleAutoSync();
-      });
       final user = ref.read(authControllerProvider).user;
       final tenant = ref.read(tenantControllerProvider).selected;
       if (user == null || tenant == null) {
@@ -188,7 +167,6 @@ class OfflineController extends Notifier<OfflineState> {
         branchId: branchId,
       );
       if (branchId != null) await _loadLocal();
-      if (ref.mounted) _scheduleAutoSync();
     } catch (error) {
       if (!ref.mounted) return;
       state = state.copyWith(
@@ -197,9 +175,6 @@ class OfflineController extends Notifier<OfflineState> {
       );
     }
   }
-
-  bool _isOnline(List<ConnectivityResult> results) =>
-      results.any((result) => result != ConnectivityResult.none);
 
   OfflineScope? get _scope {
     final tenant = ref.read(tenantControllerProvider).selected;
@@ -215,8 +190,6 @@ class OfflineController extends Notifier<OfflineState> {
 
   Future<void> selectBranch(int? branchId) async {
     if (state.busy) return;
-    _retryTimer?.cancel();
-    _retryCount = 0;
     state = state.copyWith(
       branchId: branchId,
       clearBranch: branchId == null,
@@ -229,7 +202,6 @@ class OfflineController extends Notifier<OfflineState> {
       clearError: true,
     );
     if (branchId != null) await _loadLocal();
-    if (ref.mounted) _scheduleAutoSync();
   }
 
   Future<void> prepare() async {
@@ -357,7 +329,6 @@ class OfflineController extends Notifier<OfflineState> {
   Future<bool> queue() async {
     final scope = _scope;
     if (scope == null || state.busy || state.cart.isEmpty) return false;
-    final wasOnline = state.online;
     final type = state.mode;
     if (type == OfflineOperationType.reservation && state.customerId == null) {
       state = state.copyWith(error: 'Selecciona el cliente de la reserva.');
@@ -425,94 +396,107 @@ class OfflineController extends Notifier<OfflineState> {
     } finally {
       if (ref.mounted) {
         state = state.copyWith(busy: false);
-        if (!wasOnline && state.online) _scheduleAutoSync();
+        // Con conexión, se envía enseguida sin esperar al próximo chequeo.
+        if (state.online) {
+          unawaited(ref.read(offlineSyncControllerProvider.notifier).syncNow());
+        }
       }
     }
   }
 
-  void _scheduleAutoSync([Duration delay = Duration.zero]) {
-    _retryTimer?.cancel();
-    if (!_foreground || !state.online || state.pending == 0) return;
-    _retryTimer = Timer(delay, () => unawaited(synchronize(automatic: true)));
-  }
-
-  Future<void> synchronize({bool automatic = false}) async {
+  /// Sincronización manual (botón "Sincronizar" de esta pantalla).
+  Future<void> synchronize() async {
     final scope = _scope;
-    if (scope == null ||
-        !state.online ||
-        state.busy ||
-        (automatic && !_foreground)) {
-      return;
-    }
-    if (!automatic) {
-      _retryTimer?.cancel();
-      _retryCount = 0;
-    }
+    if (scope == null || !state.online || state.busy) return;
     state = state.copyWith(busy: true, clearError: true, clearMessage: true);
-    Duration? nextAttempt;
-    String? success;
+    OfflineSyncOutcome? outcome;
     try {
-      final database = ref.read(offlineDatabaseProvider);
-      final repository = ref.read(offlineSyncRepositoryProvider);
-      final batch = await database.claimSyncBatch(scope);
-      if (!ref.mounted || _scope?.key != scope.key) return;
-      if (batch == null) {
-        state = state.copyWith(message: 'No hay operaciones pendientes.');
-        return;
-      }
-      final deviceId = await database.ensureScope(scope);
-      if (!ref.mounted || _scope?.key != scope.key) return;
-      await repository.submitBatch(
-        batchId: batch.id,
-        deviceId: deviceId,
-        operations: batch.operations,
-      );
-      if (!ref.mounted || _scope?.key != scope.key) return;
-      final confirmed = await repository.confirmBatch(
-        batchId: batch.id,
-        deviceId: deviceId,
-      );
-      await database.applyResponses(
-        confirmed['operaciones'] as List<dynamic>? ?? const [],
-      );
-      await database.markSuccessfulSync(scope);
+      outcome = await ref
+          .read(offlineSyncControllerProvider.notifier)
+          .syncScope(scope);
       if (!ref.mounted || _scope?.key != scope.key) return;
       await _loadLocal();
-      if (!ref.mounted) return;
-      _retryCount = 0;
-      if (state.pending > 0) nextAttempt = Duration.zero;
-      success =
-          'Sincronización lista: ${confirmed['total_aplicadas'] ?? 0} aplicadas, '
-          '${confirmed['total_conflictos'] ?? 0} conflictos y '
-          '${confirmed['total_rechazadas'] ?? 0} rechazadas.';
     } catch (error) {
       if (!ref.mounted) return;
       state = state.copyWith(error: error.toString());
-      if (error is ApiException && _retryCount < 5) {
-        final status = error.statusCode;
-        if (status == null || status == 408 || status == 429 || status >= 500) {
-          nextAttempt = Duration(seconds: 2 << _retryCount++);
-        }
-      }
     } finally {
       if (ref.mounted) state = state.copyWith(busy: false);
     }
-    if (success != null && ref.mounted && _scope?.key == scope.key) {
-      if (state.online) await prepare();
-      if (ref.mounted) state = state.copyWith(message: success);
+    if (outcome == null || !ref.mounted || _scope?.key != scope.key) return;
+    if (outcome.batches == 0) {
+      state = state.copyWith(message: 'No hay operaciones pendientes.');
+      return;
     }
-    if (ref.mounted && nextAttempt != null) {
-      _scheduleAutoSync(nextAttempt);
-    }
+    // Tras sincronizar, se refresca el stock local con el del servidor.
+    if (state.online) await prepare();
+    if (!ref.mounted) return;
+    state = outcome.hasFailures
+        ? state.copyWith(
+            clearMessage: true,
+            error:
+                '${outcome.summary} Revisa abajo el motivo de cada operación '
+                'no registrada.',
+          )
+        : state.copyWith(message: outcome.summary);
   }
 
-  Future<void> retry(String id) async {
-    await ref.read(offlineDatabaseProvider).retry(id);
+  /// Venta rechazada por datos inválidos: vuelve a cargar sus prendas en el
+  /// carrito para registrarla corregida como una operación nueva. La original
+  /// queda revisada (en el servidor no se puede reenviar con el mismo id).
+  Future<bool> reloadIntoCart(String id) async {
+    final operation = state.operations.where((op) => op.id == id).firstOrNull;
+    if (operation == null || state.busy) return false;
+    final next = <int, int>{};
+    var missing = 0;
+    for (final raw
+        in operation.payload['items'] as List<dynamic>? ?? const []) {
+      final item = raw as Map;
+      final variantId = item['id_variante'] as int?;
+      final quantity = item['cantidad'] as int? ?? 0;
+      final local = state.catalog
+          .where((entry) => entry.variantId == variantId)
+          .firstOrNull;
+      final available = local == null ? 0 : availableFor(local);
+      if (variantId == null || available <= 0) {
+        missing++;
+        continue;
+      }
+      next[variantId] = quantity.clamp(1, available).toInt();
+    }
+    if (next.isEmpty) {
+      state = state.copyWith(
+        error:
+            'Ninguna prenda de esa operación está disponible en el catálogo '
+            'local de esta sucursal.',
+      );
+      return false;
+    }
+    await ref.read(offlineSyncControllerProvider.notifier).acknowledge(id);
+    if (!ref.mounted) return false;
+    state = state.copyWith(
+      cart: next,
+      mode: operation.type,
+      customerId: operation.payload['id_cliente'] as int?,
+      clearCustomer: operation.payload['id_cliente'] == null,
+      clearError: true,
+      message: missing == 0
+          ? 'Prendas cargadas: revisa los datos y vuelve a guardar.'
+          : 'Prendas cargadas ($missing ya no están disponibles): revisa y '
+                'vuelve a guardar.',
+    );
+    await _loadLocal();
+    return true;
+  }
+
+  /// Marca la operación fallida como revisada (deja de alertar, no se borra).
+  Future<void> acknowledge(String id) async {
+    await ref.read(offlineSyncControllerProvider.notifier).acknowledge(id);
     await _loadLocal();
   }
 
   Future<void> discard(String id) async {
     await ref.read(offlineDatabaseProvider).discard(id);
     await _loadLocal();
+    await ref.read(offlineSyncControllerProvider.notifier).refreshFailures();
   }
 }

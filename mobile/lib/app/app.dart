@@ -2,6 +2,11 @@ import 'dart:async';
 
 import 'package:capricho_store/app/router.dart';
 import 'package:capricho_store/core/notifications/fcm_service.dart';
+import 'package:capricho_store/core/notifications/local_notifications.dart';
+import 'package:capricho_store/features/catalog/data/catalog_images.dart';
+import 'package:capricho_store/features/catalog/data/catalog_snapshot_sync.dart';
+import 'package:capricho_store/features/offline/presentation/offline_sync_controller.dart';
+import 'package:capricho_store/features/offline/presentation/sync_conflicts_controller.dart';
 import 'package:capricho_store/core/theme/app_theme.dart';
 import 'package:capricho_store/core/tenant/tenant_context.dart';
 import 'package:capricho_store/features/commerce/presentation/commerce_controller.dart';
@@ -19,13 +24,41 @@ class ZentryApp extends ConsumerStatefulWidget {
 
 class _ZentryAppState extends ConsumerState<ZentryApp> {
   StreamSubscription<String>? _notificationTapSub;
+  StreamSubscription<String>? _localNotificationTapSub;
   StreamSubscription<RemoteMessage>? _foregroundMessageSub;
+  ProviderSubscription<OfflineSyncState>? _offlineSyncSub;
+  ProviderSubscription<CatalogSnapshotState>? _catalogSnapshotSub;
+  ProviderSubscription<CatalogImagesState>? _catalogImagesSub;
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
 
   @override
   void initState() {
     super.initState();
+
+    // Servicios globales: verificación de conexión cada 30 s y
+    // sincronización automática de ventas offline mientras la app vive.
+    _offlineSyncSub = ref.listenManual(
+      offlineSyncControllerProvider,
+      (_, _) {},
+    );
+    // Copia completa del catálogo para navegarlo y filtrarlo sin conexión.
+    _catalogSnapshotSub = ref.listenManual(
+      catalogSnapshotControllerProvider,
+      (_, _) {},
+    );
+    // Imagen principal de cada producto guardada para verla sin conexión.
+    _catalogImagesSub = ref.listenManual(
+      catalogImagesControllerProvider,
+      (_, _) {},
+    );
+
+    // Tocar una notificación local (venta offline rechazada).
+    final localNotifier = ref.read(localNotifierProvider);
+    _localNotificationTapSub = localNotifier.onTap.listen(
+      (route) => ref.read(appRouterProvider).go(route),
+    );
+    unawaited(localNotifier.ensureInitialized());
 
     // Escuchar toques en notificaciones push (Lockscreen o Background)
     _notificationTapSub = FcmService().onNotificationTap.listen((route) {
@@ -39,6 +72,15 @@ class _ZentryAppState extends ConsumerState<ZentryApp> {
       HapticFeedback.mediumImpact();
       ref.read(notificationsProvider.notifier).refresh();
       ref.read(ordersProvider.notifier).refresh();
+      if (message.data['type'] == 'SYNC_CONFLICTO') {
+        // Supervisor: hay un conflicto nuevo. Vendedor: le resolvieron uno.
+        unawaited(ref.read(syncConflictsProvider.notifier).refresh());
+        unawaited(
+          ref
+              .read(offlineSyncControllerProvider.notifier)
+              .refreshServerStatus(),
+        );
+      }
 
       final route = FcmService.extractRoute(message);
       final title = message.notification?.title ?? 'Notificación';
@@ -112,7 +154,11 @@ class _ZentryAppState extends ConsumerState<ZentryApp> {
   @override
   void dispose() {
     _notificationTapSub?.cancel();
+    _localNotificationTapSub?.cancel();
     _foregroundMessageSub?.cancel();
+    _offlineSyncSub?.close();
+    _catalogSnapshotSub?.close();
+    _catalogImagesSub?.close();
     super.dispose();
   }
 

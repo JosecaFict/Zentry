@@ -96,8 +96,13 @@ class OfflineOperationsScreen extends ConsumerWidget {
                     const SizedBox(height: 28),
                     _QueuePanel(
                       state: state,
-                      onRetry: controller.retry,
-                      onDiscard: controller.discard,
+                      onReload: controller.reloadIntoCart,
+                      onAcknowledge: controller.acknowledge,
+                      onDiscard: (id) async {
+                        if (await _confirmDiscard(context)) {
+                          await controller.discard(id);
+                        }
+                      },
                     ),
                     const SizedBox(height: 100),
                   ],
@@ -110,6 +115,31 @@ class OfflineOperationsScreen extends ConsumerWidget {
     );
   }
 }
+
+Future<bool> _confirmDiscard(BuildContext context) async =>
+    await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('¿Quitar de este dispositivo?'),
+        content: const Text(
+          'Solo desaparece de este teléfono. Si ya se envió al servidor, tu '
+          'encargado la sigue viendo para resolverla. Si nunca se envió, se '
+          'pierde por completo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Quitar'),
+          ),
+        ],
+      ),
+    ) ??
+    false;
 
 class _Header extends StatelessWidget {
   const _Header({required this.online});
@@ -561,12 +591,26 @@ class _CatalogGrid extends StatelessWidget {
 class _QueuePanel extends StatelessWidget {
   const _QueuePanel({
     required this.state,
-    required this.onRetry,
+    required this.onReload,
+    required this.onAcknowledge,
     required this.onDiscard,
   });
   final OfflineState state;
-  final ValueChanged<String> onRetry;
+  final ValueChanged<String> onReload;
+  final ValueChanged<String> onAcknowledge;
   final ValueChanged<String> onDiscard;
+
+  /// Las fallidas sin revisar van siempre primero y nunca quedan fuera del
+  /// límite de 20 elementos.
+  List<OfflineOperation> get _visible {
+    final unreviewed = state.operations
+        .where((op) => op.failed && op.acknowledgedAt == null)
+        .toList();
+    final rest = state.operations
+        .where((op) => !(op.failed && op.acknowledgedAt == null))
+        .take(20);
+    return [...unreviewed, ...rest];
+  }
 
   @override
   Widget build(BuildContext context) => Column(
@@ -585,11 +629,32 @@ class _QueuePanel extends StatelessWidget {
           ),
         )
       else
-        ...state.operations.take(20).map((operation) {
-          final failed =
-              operation.status == OfflineOperationStatus.conflict ||
-              operation.status == OfflineOperationStatus.rejected;
+        ..._visible.map((operation) {
+          final failed = operation.failed;
+          final resolution = _resolution(operation);
+          final unreviewed =
+              failed && operation.acknowledgedAt == null && resolution == null;
+          final canReload =
+              failed &&
+              resolution == null &&
+              operation.errorCode == 'DATOS_INVALIDOS';
+          final detail = resolution != null
+              ? '\n$resolution'
+              : failed
+              ? '\n${operation.failureReason}'
+                    '${operation.errorMessage == null ? '' : '\nDetalle: ${operation.errorMessage}'}'
+                    '\n${canReload ? 'Puedes volver a cargarla corregida.' : 'En revisión por tu encargado.'}'
+                    '${operation.acknowledgedAt == null ? '' : ' · Revisada'}'
+              : (operation.errorMessage == null
+                    ? ''
+                    : '\n${operation.errorMessage}');
           return Card(
+            shape: unreviewed
+                ? RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: AppColors.danger),
+                  )
+                : null,
             child: ListTile(
               leading: CircleAvatar(
                 backgroundColor: failed
@@ -606,22 +671,30 @@ class _QueuePanel extends StatelessWidget {
               subtitle: Text(
                 '${_status(operation.status)} · '
                 '${DateFormat('dd/MM HH:mm').format(operation.createdAt.toLocal())}'
-                '${operation.errorMessage == null ? '' : '\n${operation.errorMessage}'}',
+                '$detail',
               ),
-              isThreeLine: operation.errorMessage != null,
-              trailing: failed
+              isThreeLine: detail.isNotEmpty,
+              trailing: failed || resolution != null
                   ? PopupMenuButton<String>(
-                      onSelected: (value) => value == 'retry'
-                          ? onRetry(operation.id)
-                          : onDiscard(operation.id),
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(
-                          value: 'retry',
-                          child: Text('Reintentar'),
-                        ),
-                        PopupMenuItem(
+                      onSelected: (value) => switch (value) {
+                        'reload' => onReload(operation.id),
+                        'ack' => onAcknowledge(operation.id),
+                        _ => onDiscard(operation.id),
+                      },
+                      itemBuilder: (_) => [
+                        if (canReload)
+                          const PopupMenuItem(
+                            value: 'reload',
+                            child: Text('Cargar de nuevo en el carrito'),
+                          ),
+                        if (unreviewed)
+                          const PopupMenuItem(
+                            value: 'ack',
+                            child: Text('Marcar como revisada'),
+                          ),
+                        const PopupMenuItem(
                           value: 'discard',
-                          child: Text('Descartar'),
+                          child: Text('Quitar de este dispositivo'),
                         ),
                       ],
                     )
@@ -631,6 +704,16 @@ class _QueuePanel extends StatelessWidget {
         }),
     ],
   );
+
+  static String? _resolution(
+    OfflineOperation operation,
+  ) => switch (operation.resolution) {
+    'REAPLICADA' => 'Registrada por tu encargado',
+    'ANULADA' =>
+      'Anulada por tu encargado'
+          '${operation.resolutionNote == null ? '' : ': ${operation.resolutionNote}'}',
+    _ => null,
+  };
 
   static String _status(OfflineOperationStatus status) => switch (status) {
     OfflineOperationStatus.pending => 'Pendiente',

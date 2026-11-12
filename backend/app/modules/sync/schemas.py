@@ -118,6 +118,64 @@ class CatalogSnapshotResponse(BaseModel):
     items: list[CatalogSnapshotItem]
 
 
+class SyncConflictItem(BaseModel):
+    id_variante: int
+    cantidad: int
+    descripcion: str
+
+
+class SyncConflictResponse(BaseModel):
+    """Operación offline que no se registró, para que la resuelva un supervisor."""
+
+    id_conflicto: int
+    id_operacion: UUID
+    tipo_operacion: str
+    codigo: str
+    mensaje: str | None
+    estado: Literal["PENDIENTE", "RESUELTO", "DESCARTADO"]
+    id_sucursal: int | None
+    id_vendedor: int
+    vendedor: str | None
+    items: list[SyncConflictItem]
+    total_cobrado_centavos: int | None
+    fecha_cliente: datetime
+    created_at: datetime
+    puede_reaplicar: bool
+    accion: Literal["REAPLICADA", "ANULADA"] | None = None
+    resolucion: str | None = None
+    resuelto_por: str | None = None
+    resuelto_at: datetime | None = None
+
+
+class SyncConflictResolveRequest(BaseModel):
+    """REAPLICAR: volver a registrar la operación (p. ej. tras ajustar el
+    inventario). ANULAR: cerrarla sin registrar (dinero devuelto, prenda
+    recuperada…); exige una nota."""
+
+    accion: Literal["REAPLICAR", "ANULAR"]
+    nota: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def cancellation_needs_note(self) -> "SyncConflictResolveRequest":
+        if self.nota is not None:
+            self.nota = self.nota.strip() or None
+        if self.accion == "ANULAR" and (self.nota is None or len(self.nota) < 3):
+            raise ValueError("Explica en una nota por qué se anula la operación")
+        return self
+
+
+class SyncOperationStatusResponse(BaseModel):
+    """Estado en el servidor de una operación del dispositivo."""
+
+    id_operacion: UUID
+    estado: str
+    codigo_error: str | None
+    mensaje_error: str | None
+    conflicto_estado: str | None = None
+    accion: Literal["REAPLICADA", "ANULADA"] | None = None
+    resolucion: str | None = None
+
+
 def parse_offline_payload(
     operation: SyncOperationRequest,
 ) -> OfflineSaleCreate | OfflineReservationCreate:

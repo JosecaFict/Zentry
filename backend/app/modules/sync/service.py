@@ -26,10 +26,14 @@ from app.modules.sync.schemas import (
     OfflineReservationCreate,
     SyncBatchRequest,
     SyncBatchResponse,
+    SyncConflictItem,
+    SyncConflictResolveRequest,
+    SyncConflictResponse,
     SyncDeviceRegister,
     SyncDeviceResponse,
     SyncOperationRequest,
     SyncOperationResponse,
+    SyncOperationStatusResponse,
     parse_offline_payload,
 )
 
@@ -208,9 +212,46 @@ class SyncService:
         if incoming != current:
             raise SyncConflictError("El contenido del lote no coincide con su envío original")
 
+    @staticmethod
+    def _parse_stored(operation: SyncOperation) -> SaleCreate | OfflineReservationCreate:
+        return parse_offline_payload(
+            SyncOperationRequest(
+                id_operacion=operation.id_operacion,
+                tipo=operation.tipo,
+                fecha_cliente=operation.fecha_cliente,
+                payload=operation.payload,
+            )
+        )
+
+    async def _apply(
+        self,
+        user_id: int,
+        parsed: SaleCreate | OfflineReservationCreate,
+        *,
+        all_branches: bool,
+    ):
+        """Registra la venta o reserva en una transacción anidada."""
+        async with self.session.begin_nested():
+            if isinstance(parsed, SaleCreate):
+                return await self.commerce.create_pos_sale(
+                    user_id,
+                    parsed,
+                    all_branches=all_branches,
+                    commit=False,
+                    collected_prices=parsed.precios_cobrados,
+                )
+            return await self.commerce.create_reservation(
+                user_id,
+                parsed,
+                customer_id=parsed.id_cliente,
+                all_branches=all_branches,
+                commit=False,
+            )
+
     async def _process_batch(self, principal: CurrentPrincipal, batch: SyncBatch) -> None:
         batch.estado = "PROCESANDO"
         await self.session.commit()
+        new_conflicts: list[tuple[SyncConflict, SyncOperation]] = []
         for current in await self.repository.operations(batch.id_lote):
             operation = await self.repository.operation(current.id_operacion, lock=True)
             if operation is None or operation.estado in {"APLICADA", "CONFLICTO", "RECHAZADA"}:
@@ -218,39 +259,21 @@ class SyncService:
             operation.estado = "PROCESANDO"
             operation.intentos += 1
             try:
-                request = SyncOperationRequest(
-                    id_operacion=operation.id_operacion,
-                    tipo=operation.tipo,
-                    fecha_cliente=operation.fecha_cliente,
-                    payload=operation.payload,
-                )
-                parsed = parse_offline_payload(request)
+                parsed = self._parse_stored(operation)
                 self._authorize_operation(principal, parsed)
-                async with self.session.begin_nested():
-                    if isinstance(parsed, SaleCreate):
-                        result = await self.commerce.create_pos_sale(
-                            principal.user.id_usuario,
-                            parsed,
-                            all_branches="ventas.sucursales_todas" in principal.permissions
-                            or "ADMIN" in principal.roles,
-                            commit=False,
-                            collected_prices=parsed.precios_cobrados,
-                        )
-                    else:
-                        result = await self.commerce.create_reservation(
-                            principal.user.id_usuario,
-                            parsed,
-                            customer_id=parsed.id_cliente,
-                            all_branches="ventas.sucursales_todas" in principal.permissions
-                            or "ADMIN" in principal.roles,
-                            commit=False,
-                        )
+                result = await self._apply(
+                    principal.user.id_usuario,
+                    parsed,
+                    all_branches="ventas.sucursales_todas" in principal.permissions
+                    or "ADMIN" in principal.roles,
+                )
                 operation.estado = "APLICADA"
                 operation.resultado = result.model_dump(mode="json")
                 operation.codigo_error = None
                 operation.mensaje_error = None
             except CommerceConflictError as exc:
-                await self._record_conflict(operation, exc.detail)
+                if conflict := await self._record_conflict(operation, exc.detail):
+                    new_conflicts.append((conflict, operation))
             except (
                 ValidationError,
                 ValueError,
@@ -270,8 +293,15 @@ class SyncService:
                 operation.estado = "RECHAZADA"
                 operation.codigo_error = "ERROR_INTERNO"
                 operation.mensaje_error = "No se pudo procesar la operación"
+            if operation.estado == "RECHAZADA":
+                # También queda para revisión del supervisor: la venta pudo
+                # ocurrir en la tienda aunque el servidor no la aceptara.
+                if conflict := await self._register_review(operation):
+                    new_conflicts.append((conflict, operation))
             operation.procesada_at = datetime.now(UTC)
             await self.session.commit()
+
+        await self._notify_supervisors(new_conflicts)
 
         operations = await self.repository.operations(batch.id_lote)
         batch = await self.repository.batch(batch.id_lote, lock=True)
@@ -302,7 +332,9 @@ class SyncService:
         elif "reservas.gestionar" not in principal.permissions and "ADMIN" not in principal.roles:
             raise SyncForbiddenError("No tiene permisos para registrar reservas offline")
 
-    async def _record_conflict(self, operation: SyncOperation, message: str) -> None:
+    async def _record_conflict(
+        self, operation: SyncOperation, message: str
+    ) -> SyncConflict | None:
         operation.estado = "CONFLICTO"
         operation.codigo_error = (
             "STOCK_INSUFICIENTE"
@@ -310,15 +342,26 @@ class SyncService:
             else "CONFLICTO_COMERCIAL"
         )
         operation.mensaje_error = message
-        if await self.repository.conflict(operation.id_operacion) is None:
-            await self.repository.add(
-                SyncConflict(
-                    id_tenant=operation.id_tenant,
-                    id_operacion=operation.id_operacion,
-                    tipo=operation.codigo_error,
-                    detalle={"mensaje": message, "tipo_operacion": operation.tipo},
-                )
+        return await self._register_review(operation)
+
+    async def _register_review(self, operation: SyncOperation) -> SyncConflict | None:
+        """Crea el registro para el supervisor. Devuelve None si ya existía."""
+        if await self.repository.conflict(operation.id_operacion) is not None:
+            return None
+        return await self.repository.add(
+            SyncConflict(
+                id_tenant=operation.id_tenant,
+                id_operacion=operation.id_operacion,
+                tipo=operation.codigo_error or "CONFLICTO_COMERCIAL",
+                detalle={
+                    "mensaje": operation.mensaje_error,
+                    "tipo_operacion": operation.tipo,
+                },
+                estado="PENDIENTE",
+                # Se asigna aquí: el server_default no se relee tras el INSERT.
+                created_at=datetime.now(UTC),
             )
+        )
 
     @staticmethod
     def _safe_message(exc: Exception) -> str:
@@ -328,6 +371,259 @@ class SyncService:
         if isinstance(exc, ValidationError):
             return "Los datos de la operación no cumplen el contrato de sincronización"
         return str(exc)[:500]
+
+    # ── Resolución de conflictos (fase 5) ─────────────────────────────────
+
+    SUPERVISOR_ROLES = frozenset({"ADMIN", "ADMINISTRADOR", "ENCARGADO_SUCURSAL"})
+    ALL_BRANCH_ROLES = frozenset({"ADMIN", "ADMINISTRADOR"})
+    REAPPLICABLE = frozenset({"STOCK_INSUFICIENTE", "CONFLICTO_COMERCIAL", "ERROR_INTERNO"})
+    REASONS = {
+        "STOCK_INSUFICIENTE": "No había stock: otra venta o reserva se registró antes",
+        "CONFLICTO_COMERCIAL": "Choca con otra operación (precio, reserva o pedido)",
+        "DATOS_INVALIDOS": "Faltan datos o no son válidos",
+        "ERROR_INTERNO": "Error del servidor al registrarla",
+    }
+    CONFLICTS_ROUTE = "/admin/conflictos"
+    DEVICE_ROUTE = "/admin/offline"
+
+    @classmethod
+    def _supervisor_scope(cls, principal: CurrentPrincipal) -> int | None:
+        """Sucursal que puede revisar (None = todas). Lanza si no es supervisor."""
+        roles = {role.upper() for role in principal.roles}
+        all_branches = (
+            bool(roles & cls.ALL_BRANCH_ROLES)
+            or "ventas.sucursales_todas" in principal.permissions
+        )
+        if not all_branches and "ENCARGADO_SUCURSAL" not in roles:
+            raise SyncForbiddenError("Solo un encargado o administrador revisa conflictos")
+        if all_branches:
+            return None
+        if principal.id_sucursal is None:
+            raise SyncForbiddenError("El encargado no tiene una sucursal asignada")
+        return principal.id_sucursal
+
+    @staticmethod
+    def _branch_of(operation: SyncOperation) -> int | None:
+        value = (operation.payload or {}).get("id_sucursal")
+        return value if isinstance(value, int) else None
+
+    @staticmethod
+    def _items_of(operation: SyncOperation) -> list[tuple[int, int]]:
+        items = []
+        for raw in (operation.payload or {}).get("items") or []:
+            if isinstance(raw, dict) and isinstance(raw.get("id_variante"), int):
+                items.append((raw["id_variante"], int(raw.get("cantidad") or 0)))
+        return items
+
+    async def _conflict_responses(
+        self, rows: list[tuple[SyncConflict, SyncOperation]]
+    ) -> list[SyncConflictResponse]:
+        variant_ids = {vid for _, op in rows for vid, _ in self._items_of(op)}
+        user_ids = {op.id_usuario for _, op in rows} | {
+            c.resuelto_por for c, _ in rows if c.resuelto_por is not None
+        }
+        labels = await self.repository.variant_labels(variant_ids)
+        names = await self.repository.user_names(user_ids)
+        responses = []
+        for conflict, operation in rows:
+            total = (operation.payload or {}).get("total_cobrado_centavos")
+            responses.append(
+                SyncConflictResponse(
+                    id_conflicto=conflict.id_conflicto,
+                    id_operacion=operation.id_operacion,
+                    tipo_operacion=operation.tipo,
+                    codigo=conflict.tipo,
+                    mensaje=operation.mensaje_error,
+                    estado=conflict.estado,
+                    id_sucursal=self._branch_of(operation),
+                    id_vendedor=operation.id_usuario,
+                    vendedor=names.get(operation.id_usuario),
+                    items=[
+                        SyncConflictItem(
+                            id_variante=vid,
+                            cantidad=qty,
+                            descripcion=labels.get(vid, f"Variante #{vid}"),
+                        )
+                        for vid, qty in self._items_of(operation)
+                    ],
+                    total_cobrado_centavos=total if isinstance(total, int) else None,
+                    fecha_cliente=operation.fecha_cliente,
+                    created_at=conflict.created_at,
+                    puede_reaplicar=conflict.estado == "PENDIENTE"
+                    and conflict.tipo in self.REAPPLICABLE,
+                    accion=(conflict.detalle or {}).get("accion"),
+                    resolucion=conflict.resolucion,
+                    resuelto_por=names.get(conflict.resuelto_por)
+                    if conflict.resuelto_por is not None
+                    else None,
+                    resuelto_at=conflict.resuelto_at,
+                )
+            )
+        return responses
+
+    async def _notify_supervisors(
+        self, conflicts: list[tuple[SyncConflict, SyncOperation]]
+    ) -> None:
+        """Push + notificación en bandeja a encargados de la sucursal y admins."""
+        if not conflicts:
+            return
+        try:
+            for conflict, operation in conflicts:
+                recipients = await self.repository.conflict_supervisors(
+                    self._branch_of(operation)
+                )
+                recipients.discard(operation.id_usuario)  # Ya tiene su alerta local.
+                if not recipients:
+                    continue
+                [summary] = await self._conflict_responses([(conflict, operation)])
+                items = ", ".join(item.descripcion for item in summary.items)
+                label = "Venta" if operation.tipo == "VENTA" else "Reserva"
+                await self.commerce.notify_users(
+                    recipients,
+                    "SYNC_CONFLICTO",
+                    f"⚠ {label} offline no registrada",
+                    f"{summary.vendedor or 'Un vendedor'} · {items or 'sin detalle'} · "
+                    f"{self.REASONS.get(conflict.tipo, 'Requiere revisión')}",
+                    data={
+                        "route": self.CONFLICTS_ROUTE,
+                        "type": "SYNC_CONFLICTO",
+                        "id": conflict.id_conflicto,
+                    },
+                )
+            await self.session.commit()
+        except Exception:
+            # El aviso nunca debe romper la sincronización ya guardada.
+            logger.exception("No se pudo avisar a los supervisores del conflicto")
+            await self.session.rollback()
+
+    async def list_conflicts(
+        self,
+        principal: CurrentPrincipal,
+        *,
+        state: str | None = "PENDIENTE",
+        branch_id: int | None = None,
+    ) -> list[SyncConflictResponse]:
+        tenant_id = self._require_offline(principal)
+        scope = self._supervisor_scope(principal)
+        if scope is not None:
+            if branch_id is not None and branch_id != scope:
+                raise SyncForbiddenError("Solo puede revisar conflictos de su sucursal")
+            branch_id = scope
+        rows = await self.repository.conflicts(tenant_id, state=state, branch_id=branch_id)
+        return await self._conflict_responses(rows)
+
+    async def resolve_conflict(
+        self,
+        principal: CurrentPrincipal,
+        conflict_id: int,
+        payload: SyncConflictResolveRequest,
+    ) -> SyncConflictResponse:
+        tenant_id = self._require_offline(principal)
+        scope = self._supervisor_scope(principal)
+        conflict = await self.repository.conflict_by_id(conflict_id, lock=True)
+        if conflict is None or conflict.id_tenant != tenant_id:
+            raise SyncNotFoundError("El conflicto no existe")
+        operation = await self.repository.operation(conflict.id_operacion, lock=True)
+        if operation is None:
+            raise SyncNotFoundError("La operación del conflicto ya no existe")
+        branch_id = self._branch_of(operation)
+        if scope is not None and branch_id != scope:
+            raise SyncForbiddenError("Solo puede resolver conflictos de su sucursal")
+        if conflict.estado != "PENDIENTE":
+            raise SyncConflictError("Este conflicto ya fue resuelto")
+
+        now = datetime.now(UTC)
+        if payload.accion == "REAPLICAR":
+            if conflict.tipo not in self.REAPPLICABLE:
+                raise SyncConflictError(
+                    "Una operación con datos inválidos no puede reaplicarse; anúlala"
+                )
+            try:
+                parsed = self._parse_stored(operation)
+                # Se registra a nombre del vendedor original; el permiso de
+                # sucursal ya lo validó el supervisor.
+                result = await self._apply(operation.id_usuario, parsed, all_branches=True)
+            except CommerceConflictError as exc:
+                raise SyncConflictError(
+                    f"Todavía no se puede registrar: {exc.detail}. "
+                    "Si hay stock real, ajusta primero el inventario."
+                ) from exc
+            except (
+                ValidationError,
+                ValueError,
+                CommerceNotFoundError,
+                CommerceForbiddenError,
+                InvalidCommerceOperationError,
+            ) as exc:
+                raise SyncConflictError(
+                    f"No se puede registrar: {self._safe_message(exc)}"
+                ) from exc
+            operation.estado = "APLICADA"
+            operation.resultado = result.model_dump(mode="json")
+            operation.codigo_error = None
+            operation.mensaje_error = None
+            operation.procesada_at = now
+            conflict.estado = "RESUELTO"
+            action = "REAPLICADA"
+        else:
+            conflict.estado = "DESCARTADO"
+            action = "ANULADA"
+        conflict.detalle = {**(conflict.detalle or {}), "accion": action}
+        conflict.resolucion = payload.nota
+        conflict.resuelto_por = principal.user.id_usuario
+        conflict.resuelto_at = now
+        await self.session.commit()
+
+        [response] = await self._conflict_responses([(conflict, operation)])
+        await self._notify_seller(response, principal)
+        return response
+
+    async def _notify_seller(
+        self, conflict: SyncConflictResponse, principal: CurrentPrincipal
+    ) -> None:
+        if conflict.id_vendedor == principal.user.id_usuario:
+            return
+        try:
+            label = "Venta" if conflict.tipo_operacion == "VENTA" else "Reserva"
+            items = ", ".join(item.descripcion for item in conflict.items)
+            outcome = (
+                "registrada por el supervisor"
+                if conflict.accion == "REAPLICADA"
+                else "anulada por el supervisor"
+            )
+            await self.commerce.notify_users(
+                {conflict.id_vendedor},
+                "SYNC_CONFLICTO_RESUELTO",
+                f"{label} offline {outcome}",
+                f"{items or 'Operación'}"
+                + (f" · {conflict.resolucion}" if conflict.resolucion else ""),
+                data={"route": self.DEVICE_ROUTE, "type": "SYNC_CONFLICTO"},
+            )
+            await self.session.commit()
+        except Exception:
+            logger.exception("No se pudo avisar al vendedor de la resolución")
+            await self.session.rollback()
+
+    async def operation_status(
+        self, principal: CurrentPrincipal, ids: list[UUID]
+    ) -> list[SyncOperationStatusResponse]:
+        """El dispositivo pregunta cómo quedaron sus operaciones fallidas."""
+        self._require_offline(principal)
+        rows = await self.repository.operations_with_conflicts(
+            ids[:100], principal.user.id_usuario
+        )
+        return [
+            SyncOperationStatusResponse(
+                id_operacion=operation.id_operacion,
+                estado=operation.estado,
+                codigo_error=operation.codigo_error,
+                mensaje_error=operation.mensaje_error,
+                conflicto_estado=conflict.estado if conflict else None,
+                accion=(conflict.detalle or {}).get("accion") if conflict else None,
+                resolucion=conflict.resolucion if conflict else None,
+            )
+            for operation, conflict in rows
+        ]
 
     async def get_batch(
         self, principal: CurrentPrincipal, batch_id: UUID

@@ -31,7 +31,9 @@ import 'package:capricho_store/features/commerce/presentation/reservations_scree
 import 'package:capricho_store/features/home/presentation/home_screen.dart';
 import 'package:capricho_store/features/home/presentation/splash_screen.dart';
 import 'package:capricho_store/features/offline/presentation/offline_operations_screen.dart';
+import 'package:capricho_store/features/offline/presentation/sync_conflicts_screen.dart';
 import 'package:capricho_store/shared/widgets/app_shell.dart';
+import 'package:capricho_store/shared/widgets/requires_connection.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -209,17 +211,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           path: route,
           pageBuilder: (context, state) => _adaptivePage(
             key: state.pageKey,
-            child: Consumer(builder: (context, ref, _) {
-              final user = ref.watch(authControllerProvider).user;
-              final tenant = ref.watch(tenantControllerProvider).selected;
-              if (tenant == null || !mode.allows(user?.roles)) {
-                return const Scaffold(body: Center(child: CircularProgressIndicator()));
-              }
-              return AssistantScreen(
-                key: ValueKey((tenant.slug, user!.id, mode)),
-                mode: mode,
-              );
-            }),
+            child: Consumer(
+              builder: (context, ref, _) {
+                final user = ref.watch(authControllerProvider).user;
+                final tenant = ref.watch(tenantControllerProvider).selected;
+                if (tenant == null || !mode.allows(user?.roles)) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                return RequiresConnection(
+                  feature: 'El asesor',
+                  child: AssistantScreen(
+                    key: ValueKey((tenant.slug, user!.id, mode)),
+                    mode: mode,
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ShellRoute(
@@ -242,6 +251,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/admin/offline',
             builder: (context, state) => const OfflineOperationsScreen(),
+          ),
+          GoRoute(
+            path: '/admin/conflictos', // Ventas offline no registradas (supervisor)
+            builder: (context, state) => const SyncConflictsScreen(),
           ),
           GoRoute(
             path: '/admin/perfil', // [CU-01] Perfil de empleado / admin
@@ -286,8 +299,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/checkout', // [CU-12] Checkout y pago con Stripe
-        pageBuilder: (context, state) =>
-            _adaptivePage(key: state.pageKey, child: const CheckoutScreen()),
+        pageBuilder: (context, state) => _adaptivePage(
+          key: state.pageKey,
+          child: const RequiresConnection(
+            feature: 'El pago',
+            child: CheckoutScreen(),
+          ),
+        ),
       ),
       GoRoute(
         path: '/checkout-complete', // [CU-12] Confirmación y resultado de pago
@@ -338,13 +356,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final extra = state.extra as Map<String, dynamic>? ?? {};
           return _adaptivePage(
             key: state.pageKey,
-            child: VirtualFittingScreen(
-              product: extra['product'] as Product,
-              measurements:
-                  (extra['measurements'] as List<ProductMeasurement>?) ??
-                  const [],
-              initialVariant: extra['initialVariant'] as ProductVariant?,
-              images: (extra['images'] as List<ProductImage>?) ?? const [],
+            child: RequiresConnection(
+              feature: 'El probador virtual',
+              child: VirtualFittingScreen(
+                product: extra['product'] as Product,
+                measurements:
+                    (extra['measurements'] as List<ProductMeasurement>?) ??
+                    const [],
+                initialVariant: extra['initialVariant'] as ProductVariant?,
+                images: (extra['images'] as List<ProductImage>?) ?? const [],
+              ),
             ),
           );
         },

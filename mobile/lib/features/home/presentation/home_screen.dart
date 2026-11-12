@@ -1,8 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:capricho_store/core/theme/app_theme.dart';
 import 'package:capricho_store/features/catalog/data/catalog_repository.dart';
+import 'package:capricho_store/features/catalog/data/catalog_source.dart';
 import 'package:capricho_store/features/catalog/domain/catalog_models.dart';
 import 'package:capricho_store/features/commerce/presentation/commerce_controller.dart';
+import 'package:capricho_store/shared/widgets/adaptive/adaptive_image.dart';
 import 'package:capricho_store/shared/widgets/brand_wordmark.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,6 +44,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    refreshCatalogOnReconnect(ref, () => setState(_loadData));
     final currency = NumberFormat.currency(locale: 'es_BO', symbol: 'Bs.');
 
     return Scaffold(
@@ -684,22 +686,11 @@ class _ProductCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   if (product.image?.url != null && product.image!.url.isNotEmpty)
-                    CachedNetworkImage(
+                    // Usa la misma lógica offline que el resto del catálogo.
+                    AdaptiveImage(
                       imageUrl: product.image!.url,
                       fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(
-                        color: AppColors.muted,
-                        child: const Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ),
-                      errorWidget: (context, url, error) => Container(
-                        color: AppColors.muted,
-                        child: const Icon(
-                          Icons.image_not_supported_outlined,
-                          color: AppColors.inkSoft,
-                        ),
-                      ),
+                      borderRadius: BorderRadius.zero,
                     )
                   else
                     Container(

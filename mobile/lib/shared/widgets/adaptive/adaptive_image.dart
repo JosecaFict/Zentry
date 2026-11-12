@@ -1,12 +1,17 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:capricho_store/core/connectivity/connectivity_controller.dart';
 import 'package:capricho_store/core/theme/app_theme.dart';
+import 'package:capricho_store/features/catalog/data/catalog_images.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Componente de imagen robusto y adaptativo:
 /// - Muestra un shimmer suave durante la descarga.
 /// - Fallback editorial si la URL es nula, vacía o falla (error 404 / sin red).
 /// - Soporte opcional de Hero tag para transiciones fluidas.
-class AdaptiveImage extends StatefulWidget {
+class AdaptiveImage extends ConsumerStatefulWidget {
   const AdaptiveImage({
     required this.imageUrl,
     super.key,
@@ -27,10 +32,10 @@ class AdaptiveImage extends StatefulWidget {
   final Object? heroTag;
 
   @override
-  State<AdaptiveImage> createState() => _AdaptiveImageState();
+  ConsumerState<AdaptiveImage> createState() => _AdaptiveImageState();
 }
 
-class _AdaptiveImageState extends State<AdaptiveImage>
+class _AdaptiveImageState extends ConsumerState<AdaptiveImage>
     with SingleTickerProviderStateMixin {
   late final AnimationController _shimmerController;
 
@@ -110,16 +115,43 @@ class _AdaptiveImageState extends State<AdaptiveImage>
 
     Widget imageContent;
 
-    if (widget.imageUrl == null || widget.imageUrl!.trim().isEmpty) {
+    final url = widget.imageUrl?.trim() ?? '';
+    // Copia guardada para ver sin conexión (fase 4) y estado de la red.
+    final savedPath = url.isEmpty
+        ? null
+        : ref.watch(
+            catalogImagesControllerProvider.select((state) => state.paths[url]),
+          );
+    final offline = ref.watch(
+      connectivityControllerProvider.select(
+        (state) => state.checked && !state.online,
+      ),
+    );
+
+    Widget savedOr(Widget Function() fallback) => savedPath == null
+        ? fallback()
+        : Image.file(
+            File(savedPath),
+            width: widget.width,
+            height: widget.height,
+            fit: widget.fit,
+            errorBuilder: (context, error, stack) => fallback(),
+          );
+
+    if (url.isEmpty) {
       imageContent = _buildErrorPlaceholder();
+    } else if (offline && savedPath != null) {
+      imageContent = savedOr(_buildErrorPlaceholder);
     } else {
+      // Con conexión, calidad completa; si la red falla, la copia guardada.
       imageContent = CachedNetworkImage(
-        imageUrl: widget.imageUrl!,
+        imageUrl: url,
+        cacheManager: catalogImageCacheManager,
         width: widget.width,
         height: widget.height,
         fit: widget.fit,
         placeholder: (context, url) => _buildShimmerPlaceholder(),
-        errorWidget: (context, url, error) => _buildErrorPlaceholder(),
+        errorWidget: (context, url, error) => savedOr(_buildErrorPlaceholder),
         fadeInDuration: const Duration(milliseconds: 250),
       );
     }

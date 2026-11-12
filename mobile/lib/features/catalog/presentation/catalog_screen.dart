@@ -1,6 +1,7 @@
 import 'package:capricho_store/core/theme/app_theme.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/features/catalog/data/catalog_repository.dart';
+import 'package:capricho_store/features/catalog/data/catalog_source.dart';
 import 'package:capricho_store/features/catalog/domain/catalog_models.dart';
 import 'package:capricho_store/features/commerce/presentation/commerce_controller.dart';
 import 'package:capricho_store/shared/widgets/adaptive/adaptive_card_pressable.dart';
@@ -497,6 +498,10 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
 
   @override
   Widget build(BuildContext context) {
+    refreshCatalogOnReconnect(ref, () {
+      _loadMetadata();
+      _setQuery(query);
+    });
     final currency = NumberFormat.currency(locale: 'es_BO', symbol: 'Bs.');
 
     return Scaffold(

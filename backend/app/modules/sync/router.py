@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,8 +11,11 @@ from app.modules.sync.schemas import (
     SyncBatchRequest,
     SyncBatchResponse,
     SyncConfirmationRequest,
+    SyncConflictResolveRequest,
+    SyncConflictResponse,
     SyncDeviceRegister,
     SyncDeviceResponse,
+    SyncOperationStatusResponse,
 )
 from app.modules.sync.service import SyncService
 
@@ -67,6 +70,52 @@ async def get_batch(
 ) -> SyncBatchResponse:
     try:
         return await service.get_batch(principal, batch_id)
+    except SyncError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/conflicts", response_model=list[SyncConflictResponse])
+async def list_conflicts(
+    principal: Annotated[CurrentPrincipal, Depends(get_current_principal)],
+    service: Annotated[SyncService, Depends(get_sync_service)],
+    estado: Literal["PENDIENTE", "RESUELTO", "DESCARTADO", "TODOS"] = "PENDIENTE",
+    id_sucursal: int | None = Query(default=None, gt=0),
+) -> list[SyncConflictResponse]:
+    """Operaciones offline no registradas, para encargados y administradores."""
+    try:
+        return await service.list_conflicts(
+            principal,
+            state=None if estado == "TODOS" else estado,
+            branch_id=id_sucursal,
+        )
+    except SyncError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/conflicts/{conflict_id}/resolve", response_model=SyncConflictResponse)
+async def resolve_conflict(
+    conflict_id: int,
+    payload: SyncConflictResolveRequest,
+    principal: Annotated[CurrentPrincipal, Depends(get_current_principal)],
+    service: Annotated[SyncService, Depends(get_sync_service)],
+) -> SyncConflictResponse:
+    """REAPLICAR (registrarla ahora) o ANULAR (cerrarla con una nota)."""
+    try:
+        return await service.resolve_conflict(principal, conflict_id, payload)
+    except SyncError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/operations/status", response_model=list[SyncOperationStatusResponse])
+async def operation_status(
+    principal: Annotated[CurrentPrincipal, Depends(get_current_principal)],
+    service: Annotated[SyncService, Depends(get_sync_service)],
+    ids: Annotated[list[UUID], Query(min_length=1, max_length=100)],
+) -> list[SyncOperationStatusResponse]:
+    """Estado actual de operaciones propias (para que el dispositivo vea si un
+    supervisor ya resolvió un conflicto)."""
+    try:
+        return await service.operation_status(principal, ids)
     except SyncError as exc:
         raise _http_error(exc) from exc
 

@@ -101,6 +101,65 @@ class OfflineSyncRepository {
     }
   }
 
+  /// Cómo quedaron en el servidor operaciones propias (resueltas o no por un
+  /// supervisor).
+  Future<List<OfflineOperationServerStatus>> operationStatus(
+    List<String> ids,
+  ) async {
+    if (ids.isEmpty) return const [];
+    try {
+      final response = await _dio.get<List<dynamic>>(
+        '/sync/operations/status',
+        queryParameters: {'ids': ids},
+        options: Options(listFormat: ListFormat.multi),
+      );
+      return (response.data ?? const [])
+          .map(
+            (item) => OfflineOperationServerStatus.fromJson(
+              Map<String, dynamic>.from(item as Map),
+            ),
+          )
+          .toList(growable: false);
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
+
+  /// Conflictos para encargados y administradores.
+  Future<List<SyncConflict>> conflicts({String estado = 'PENDIENTE'}) async {
+    try {
+      final response = await _dio.get<List<dynamic>>(
+        '/sync/conflicts',
+        queryParameters: {'estado': estado},
+      );
+      return (response.data ?? const [])
+          .map(
+            (item) =>
+                SyncConflict.fromJson(Map<String, dynamic>.from(item as Map)),
+          )
+          .toList(growable: false);
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
+
+  /// [action]: `REAPLICAR` o `ANULAR` (este último exige [note]).
+  Future<SyncConflict> resolveConflict(
+    int conflictId, {
+    required String action,
+    String? note,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/sync/conflicts/$conflictId/resolve',
+        data: {'accion': action, 'nota': ?note},
+      );
+      return SyncConflict.fromJson(response.data!);
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
+
   Future<Map<String, dynamic>> confirmBatch({
     required String batchId,
     required String deviceId,

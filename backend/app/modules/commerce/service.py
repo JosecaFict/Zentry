@@ -2726,6 +2726,18 @@ class CommerceService:
         except Exception as exc:
             logger.warning("No se pudo registrar la notificacion: %s", exc)
 
+    async def notify_users(
+        self,
+        user_ids: set[int],
+        kind: str,
+        title: str,
+        content: str,
+        data: dict | None = None,
+    ) -> None:
+        """Registra la notificación y envía el push a cada usuario indicado."""
+        for user_id in sorted(user_ids):
+            await self._notify(user_id, kind, title, content, data=data)
+
     async def _notify_branch_staff(
         self,
         branch_id: int,

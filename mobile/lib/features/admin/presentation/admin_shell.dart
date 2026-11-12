@@ -3,7 +3,10 @@ import 'package:capricho_store/core/theme/app_theme.dart';
 import 'package:capricho_store/features/admin/domain/operational_access.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/features/commerce/presentation/commerce_controller.dart';
+import 'package:capricho_store/features/offline/presentation/offline_sync_controller.dart';
+import 'package:capricho_store/features/offline/presentation/sync_conflicts_controller.dart';
 import 'package:capricho_store/shared/widgets/brand_wordmark.dart';
+import 'package:capricho_store/shared/widgets/connection_banners.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -61,6 +64,10 @@ class AdminShell extends ConsumerWidget {
       ),
     ];
 
+    final offlineAlerts = ref.watch(
+      offlineSyncControllerProvider.select((state) => state.failures.length),
+    );
+
     var selectedIndex = destinations.indexWhere(
       (destination) => location.startsWith(destination.location),
     );
@@ -89,6 +96,23 @@ class AdminShell extends ConsumerWidget {
         ),
         centerTitle: false,
         actions: [
+          if (user.canReviewSyncConflicts)
+            Consumer(
+              builder: (context, ref, _) {
+                final pending = ref.watch(pendingSyncConflictsProvider);
+                return IconButton(
+                  tooltip: 'Ventas offline por resolver',
+                  isSelected: location == syncConflictsRoute,
+                  icon: Badge(
+                    isLabelVisible: pending > 0,
+                    label: Text(pending > 99 ? '99+' : '$pending'),
+                    backgroundColor: AppColors.danger,
+                    child: const Icon(Icons.sync_problem_outlined),
+                  ),
+                  onPressed: () => context.go(syncConflictsRoute),
+                );
+              },
+            ),
           Consumer(
             builder: (context, ref, _) {
               final unreadCount = ref.watch(unreadNotificationsCountProvider);
@@ -123,25 +147,39 @@ class AdminShell extends ConsumerWidget {
         ),
       ),
       body: child,
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: AppColors.line)),
-        ),
-        child: NavigationBar(
-          selectedIndex: selectedIndex,
-          onDestinationSelected: (index) {
-            context.go(destinations[index].location);
-          },
-          destinations: destinations
-              .map(
-                (destination) => NavigationDestination(
-                  icon: Icon(destination.icon),
-                  selectedIcon: Icon(destination.selectedIcon),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const ConnectionBanners(),
+          Container(
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: AppColors.line)),
+            ),
+            child: NavigationBar(
+              selectedIndex: selectedIndex,
+              onDestinationSelected: (index) {
+                context.go(destinations[index].location);
+              },
+              destinations: destinations.map((destination) {
+                // Badge rojo en "Offline" mientras haya rechazos sin revisar.
+                final alerts = destination.location == offlineAlertRoute
+                    ? offlineAlerts
+                    : 0;
+                Widget withBadge(IconData icon) => Badge(
+                  isLabelVisible: alerts > 0,
+                  label: Text('$alerts'),
+                  backgroundColor: AppColors.danger,
+                  child: Icon(icon),
+                );
+                return NavigationDestination(
+                  icon: withBadge(destination.icon),
+                  selectedIcon: withBadge(destination.selectedIcon),
                   label: destination.label,
-                ),
-              )
-              .toList(),
-        ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
       ),
     );
   }

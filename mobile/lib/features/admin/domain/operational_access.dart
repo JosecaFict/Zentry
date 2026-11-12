@@ -48,6 +48,15 @@ extension OperationalAccess on AppUser {
 
   bool get canOpenOffline => canViewInventory && canManageOrders;
 
+  /// Puede revisar y resolver ventas offline no registradas (mismo criterio
+  /// que el backend: administradores, ventas en todas las sucursales o
+  /// encargados con sucursal asignada).
+  bool get canReviewSyncConflicts =>
+      isActive &&
+      (isAdmin ||
+          hasPermission('ventas.sucursales_todas') ||
+          (roles.contains('ENCARGADO_SUCURSAL') && idSucursal != null));
+
   bool get canManageInventory =>
       hasPermission(OperationalPermissions.inventoryMovement);
 

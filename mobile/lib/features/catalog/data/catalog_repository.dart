@@ -2,9 +2,12 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:capricho_store/core/connectivity/connectivity_controller.dart';
 import 'package:capricho_store/core/network/api_client.dart';
 import 'package:capricho_store/core/network/api_exception.dart';
 import 'package:capricho_store/core/tenant/tenant_context.dart';
+import 'package:capricho_store/features/catalog/data/catalog_snapshot.dart';
+import 'package:capricho_store/features/catalog/data/catalog_source.dart';
 import 'package:capricho_store/features/catalog/domain/catalog_models.dart';
 import 'package:capricho_store/features/offline/data/offline_database.dart';
 import 'package:dio/dio.dart';
@@ -14,9 +17,19 @@ final catalogRepositoryProvider = Provider<CatalogRepository>(
   (ref) => CatalogRepository(
     ref.watch(dioProvider),
     cache: ref.watch(offlineDatabaseProvider),
+    snapshot: ref.watch(catalogSnapshotStoreProvider),
     tenantSlug: ref.watch(
       tenantControllerProvider.select((state) => state.selected?.slug),
     ),
+    isKnownOffline: () {
+      final connectivity = ref.read(connectivityControllerProvider);
+      return connectivity.checked && !connectivity.online;
+    },
+    onCacheHit: (updatedAt) =>
+        ref.read(catalogSourceProvider.notifier).reportCacheHit(updatedAt),
+    onNetworkFailure: () => ref
+        .read(connectivityControllerProvider.notifier)
+        .reportNetworkFailure(),
   ),
 );
 
@@ -24,15 +37,35 @@ final catalogRepositoryProvider = Provider<CatalogRepository>(
 /// Si no hay red (o el servidor falla), devuelve la última respuesta guardada
 /// para que las pantallas sigan funcionando sin conexión.
 class CatalogRepository {
-  const CatalogRepository(this._dio, {this.cache, this.tenantSlug});
+  const CatalogRepository(
+    this._dio, {
+    this.cache,
+    this.snapshot,
+    this.tenantSlug,
+    this.isKnownOffline,
+    this.onCacheHit,
+    this.onNetworkFailure,
+  });
 
   final Dio _dio;
 
   /// Base local donde se guardan las respuestas; sin ella no hay modo offline.
   final OfflineDatabase? cache;
 
+  /// Copia completa del catálogo para filtros que nunca se consultaron.
+  final CatalogSnapshotStore? snapshot;
+
   /// Empresa activa: separa la caché para no mezclar catálogos.
   final String? tenantSlug;
+
+  /// Si ya se sabe que no hay conexión, se lee la caché sin esperar a la red.
+  final bool Function()? isKnownOffline;
+
+  /// Se llama con la fecha de la respuesta guardada que se devolvió.
+  final void Function(DateTime updatedAt)? onCacheHit;
+
+  /// Se llama cuando una consulta falla por red.
+  final void Function()? onNetworkFailure;
 
   Future<ProductPage> products(CatalogQuery query) {
     // [CU-04] Consultar catálogo con filtros
@@ -44,6 +77,8 @@ class CatalogRepository {
         queryParameters: params,
       )).data,
       (json) => ProductPage.fromJson(json! as Map<String, dynamic>),
+      local: (tenant) =>
+          _fromSnapshot(tenant, (snapshot) => snapshot.query(query)),
     );
   }
 
@@ -57,6 +92,8 @@ class CatalogRepository {
         queryParameters: params,
       )).data,
       (json) => Product.fromJson(json! as Map<String, dynamic>),
+      local: (tenant) =>
+          _fromSnapshot(tenant, (snapshot) => snapshot.product(id)),
     );
   }
 
@@ -125,6 +162,12 @@ class CatalogRepository {
         queryParameters: params,
       )).data,
       (json) => _list(json, ProductVariant.fromJson),
+      // Sin conexión: las variantes del producto en la copia completa (sin el
+      // stock por sucursal, que solo da el detalle con `sucursal`).
+      local: (tenant) => _fromSnapshot(
+        tenant,
+        (snapshot) => snapshot.product(productId)?['variantes'],
+      ),
     );
   }
 
@@ -138,14 +181,77 @@ class CatalogRepository {
         (json) => _list(json, ProductMeasurement.fromJson),
       );
 
-  /// Red primero; si falla por conexión, usa la última respuesta guardada.
+  /// Página cruda de `/products`, sin caché (la usa la descarga completa).
+  Future<Map<String, dynamic>> rawProductsPage(
+    Map<String, Object> params,
+  ) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/products',
+        queryParameters: params,
+      );
+      return response.data ?? const {};
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
+
+  /// Respuesta armada desde la copia completa del catálogo (fase 3).
+  Future<_Stored?> _fromSnapshot(
+    String tenant,
+    Object? Function(CatalogSnapshot snapshot) build,
+  ) async {
+    final store = snapshot;
+    if (store == null) return null;
+    try {
+      final loaded = await store.load(tenant);
+      if (loaded == null) return null;
+      final json = build(loaded);
+      return json == null ? null : (json: json, at: loaded.syncedAt);
+    } catch (error) {
+      developer.log(
+        'No se pudo leer la copia completa: $error',
+        name: 'Catalog',
+      );
+      return null;
+    }
+  }
+
+  /// Sin conexión: la respuesta exacta guardada o la copia completa, la que
+  /// sea más reciente.
+  Future<_Stored?> _offline(
+    OfflineDatabase cache,
+    String tenant,
+    String key,
+    Future<_Stored?> Function(String tenant)? local,
+  ) async {
+    final exact = await _readCache(cache, tenant, key);
+    final fallback = local == null ? null : await local(tenant);
+    if (exact != null &&
+        (fallback == null || !fallback.at.isAfter(exact.updatedAt))) {
+      return (json: jsonDecode(exact.json), at: exact.updatedAt);
+    }
+    return fallback;
+  }
+
+  /// Red primero; si falla por conexión, usa la última respuesta guardada
+  /// o, si se indica [local], la copia completa del catálogo.
   Future<T> _cached<T>(
     String key,
     Future<Object?> Function() fetch,
-    T Function(Object? json) parse,
-  ) async {
+    T Function(Object? json) parse, {
+    Future<_Stored?> Function(String tenant)? local,
+  }) async {
     final cache = this.cache;
     final tenant = tenantSlug;
+    if (cache != null && tenant != null && (isKnownOffline?.call() ?? false)) {
+      final stored = await _offline(cache, tenant, key, local);
+      if (stored != null) {
+        onCacheHit?.call(stored.at);
+        return parse(stored.json);
+      }
+      // Sin copia guardada: igual se intenta la red por si ya volvió.
+    }
     try {
       final data = await fetch();
       final result = parse(data);
@@ -162,22 +268,25 @@ class CatalogRepository {
       }
       return result;
     } on DioException catch (error) {
-      if (cache == null || tenant == null || !isNetworkError(error)) {
+      final networkError = isNetworkError(error);
+      if (networkError) onNetworkFailure?.call();
+      if (cache == null || tenant == null || !networkError) {
         throw ApiException.fromDio(error);
       }
-      final cached = await _readCache(cache, tenant, key);
-      if (cached == null) throw ApiException.fromDio(error);
-      return parse(jsonDecode(cached));
+      final stored = await _offline(cache, tenant, key, local);
+      if (stored == null) throw ApiException.fromDio(error);
+      onCacheHit?.call(stored.at);
+      return parse(stored.json);
     }
   }
 
-  static Future<String?> _readCache(
+  static Future<({String json, DateTime updatedAt})?> _readCache(
     OfflineDatabase cache,
     String tenant,
     String key,
   ) async {
     try {
-      return (await cache.catalogCache(tenant, key))?.json;
+      return await cache.catalogCache(tenant, key);
     } catch (error) {
       developer.log(
         'No se pudo leer $key de la caché: $error',
@@ -222,3 +331,10 @@ class CatalogRepository {
       .map((item) => fromJson(item as Map<String, dynamic>))
       .toList();
 }
+
+/// JSON guardado y la fecha en que se obtuvo del servidor.
+typedef _Stored = ({Object? json, DateTime at});
+
+final catalogSnapshotStoreProvider = Provider<CatalogSnapshotStore>(
+  (ref) => CatalogSnapshotStore(ref.watch(offlineDatabaseProvider)),
+);

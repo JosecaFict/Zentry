@@ -141,6 +141,9 @@ class OfflineOperation {
     this.errorMessage,
     this.batchId,
     this.result,
+    this.acknowledgedAt,
+    this.resolution,
+    this.resolutionNote,
   });
 
   final String id;
@@ -154,6 +157,20 @@ class OfflineOperation {
   final String? errorMessage;
   final String? batchId;
   final Map<String, dynamic>? result;
+
+  /// Cuándo se revisó una operación fallida (null = alerta pendiente).
+  final DateTime? acknowledgedAt;
+
+  /// Cómo la resolvió un supervisor en el servidor: `REAPLICADA` o `ANULADA`.
+  final String? resolution;
+  final String? resolutionNote;
+
+  bool get failed =>
+      status == OfflineOperationStatus.conflict ||
+      status == OfflineOperationStatus.rejected;
+
+  /// Motivo del fallo en lenguaje claro, según el código del backend.
+  String get failureReason => OfflineFailureReason.describe(errorCode);
 
   String get label => type == OfflineOperationType.sale ? 'Venta' : 'Reserva';
   int get units => (payload['items'] as List<dynamic>? ?? const []).fold(
@@ -179,4 +196,202 @@ class SyncBatchResult {
   final int applied;
   final int conflicts;
   final int rejected;
+}
+
+/// Traduce los códigos de error de `/sync/batches` a mensajes para el vendedor.
+abstract final class OfflineFailureReason {
+  static String describe(String? code) => switch (code) {
+    'STOCK_INSUFICIENTE' =>
+      'No había stock: otra venta o reserva se registró antes.',
+    'CONFLICTO_COMERCIAL' =>
+      'Choca con otra operación (precio, reserva o estado del pedido).',
+    'DATOS_INVALIDOS' => 'Faltan datos o no son válidos: revisa la operación.',
+    'ERROR_INTERNO' =>
+      'Error del servidor: vuelve a intentarlo o avisa a soporte.',
+    _ => 'El servidor no aceptó la operación.',
+  };
+}
+
+/// Operación rechazada o en conflicto pendiente de revisión, con el nombre
+/// de las prendas para mostrarlo en la alerta.
+class OfflineFailure {
+  const OfflineFailure({
+    required this.operation,
+    required this.branchId,
+    required this.items,
+  });
+
+  final OfflineOperation operation;
+  final int branchId;
+
+  /// Prendas de la operación, ej. "Polo básico M Negro".
+  final List<String> items;
+
+  String get title =>
+      '${operation.label} no registrada'
+      '${items.isEmpty ? '' : ' · ${items.join(', ')}'}';
+}
+
+/// Estado en el servidor de una operación fallida del dispositivo.
+class OfflineOperationServerStatus {
+  const OfflineOperationServerStatus({
+    required this.id,
+    required this.status,
+    this.conflictStatus,
+    this.action,
+    this.note,
+  });
+
+  factory OfflineOperationServerStatus.fromJson(Map<String, dynamic> json) =>
+      OfflineOperationServerStatus(
+        id: json['id_operacion'] as String,
+        status: json['estado'] as String,
+        conflictStatus: json['conflicto_estado'] as String?,
+        action: json['accion'] as String?,
+        note: json['resolucion'] as String?,
+      );
+
+  final String id;
+  final String status;
+  final String? conflictStatus;
+
+  /// `REAPLICADA` o `ANULADA` cuando un supervisor ya lo resolvió.
+  final String? action;
+  final String? note;
+
+  bool get resolved => action != null;
+}
+
+class SyncConflictItem {
+  const SyncConflictItem({
+    required this.variantId,
+    required this.quantity,
+    required this.description,
+  });
+
+  factory SyncConflictItem.fromJson(Map<String, dynamic> json) =>
+      SyncConflictItem(
+        variantId: json['id_variante'] as int,
+        quantity: json['cantidad'] as int,
+        description: json['descripcion'] as String,
+      );
+
+  final int variantId;
+  final int quantity;
+  final String description;
+}
+
+/// Operación offline no registrada, vista por un encargado o administrador.
+class SyncConflict {
+  const SyncConflict({
+    required this.id,
+    required this.operationId,
+    required this.operationType,
+    required this.code,
+    required this.status,
+    required this.sellerId,
+    required this.items,
+    required this.clientDate,
+    required this.createdAt,
+    required this.canReapply,
+    this.message,
+    this.branchId,
+    this.seller,
+    this.totalCents,
+    this.action,
+    this.note,
+    this.resolvedBy,
+    this.resolvedAt,
+  });
+
+  factory SyncConflict.fromJson(Map<String, dynamic> json) => SyncConflict(
+    id: json['id_conflicto'] as int,
+    operationId: json['id_operacion'] as String,
+    operationType: json['tipo_operacion'] as String,
+    code: json['codigo'] as String,
+    message: json['mensaje'] as String?,
+    status: json['estado'] as String,
+    branchId: json['id_sucursal'] as int?,
+    sellerId: json['id_vendedor'] as int,
+    seller: json['vendedor'] as String?,
+    items: [
+      for (final item in json['items'] as List<dynamic>? ?? const [])
+        SyncConflictItem.fromJson(Map<String, dynamic>.from(item as Map)),
+    ],
+    totalCents: json['total_cobrado_centavos'] as int?,
+    clientDate: DateTime.parse(json['fecha_cliente'] as String),
+    createdAt: DateTime.parse(json['created_at'] as String),
+    canReapply: json['puede_reaplicar'] as bool? ?? false,
+    action: json['accion'] as String?,
+    note: json['resolucion'] as String?,
+    resolvedBy: json['resuelto_por'] as String?,
+    resolvedAt: DateTime.tryParse(json['resuelto_at'] as String? ?? ''),
+  );
+
+  final int id;
+  final String operationId;
+  final String operationType;
+  final String code;
+  final String? message;
+
+  /// `PENDIENTE`, `RESUELTO` o `DESCARTADO`.
+  final String status;
+  final int? branchId;
+  final int sellerId;
+  final String? seller;
+  final List<SyncConflictItem> items;
+  final int? totalCents;
+  final DateTime clientDate;
+  final DateTime createdAt;
+  final bool canReapply;
+  final String? action;
+  final String? note;
+  final String? resolvedBy;
+  final DateTime? resolvedAt;
+
+  bool get pending => status == 'PENDIENTE';
+  String get label => operationType == 'VENTA' ? 'Venta' : 'Reserva';
+  String get reason => OfflineFailureReason.describe(code);
+
+  /// Qué le conviene hacer al supervisor según el motivo.
+  String get advice => switch (code) {
+    'STOCK_INSUFICIENTE' =>
+      'Si la prenda sí estaba en la tienda, ajusta el inventario y reaplica. '
+          'Si no, anúlala y registra cómo se resolvió con el cliente.',
+    'CONFLICTO_COMERCIAL' =>
+      'Revisa la reserva o el precio en conflicto; luego reaplica o anula.',
+    'ERROR_INTERNO' => 'Fue un error del servidor: intenta reaplicarla.',
+    'DATOS_INVALIDOS' =>
+      'No se puede reaplicar tal cual. Anúlala; el vendedor puede volver a '
+          'cargar la venta corregida.',
+    _ => 'Revisa la operación y decide si reaplicarla o anularla.',
+  };
+}
+
+/// Resultado de sincronizar la cola de una sucursal.
+class OfflineSyncOutcome {
+  const OfflineSyncOutcome({
+    this.applied = 0,
+    this.conflicts = 0,
+    this.rejected = 0,
+    this.batches = 0,
+  });
+
+  final int applied;
+  final int conflicts;
+  final int rejected;
+  final int batches;
+
+  bool get hasFailures => conflicts > 0 || rejected > 0;
+
+  OfflineSyncOutcome operator +(OfflineSyncOutcome other) => OfflineSyncOutcome(
+    applied: applied + other.applied,
+    conflicts: conflicts + other.conflicts,
+    rejected: rejected + other.rejected,
+    batches: batches + other.batches,
+  );
+
+  String get summary =>
+      'Sincronización lista: $applied aplicadas, $conflicts conflictos y '
+      '$rejected rechazadas.';
 }

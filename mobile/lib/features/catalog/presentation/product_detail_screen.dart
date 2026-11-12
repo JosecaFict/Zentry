@@ -1,6 +1,7 @@
 import 'package:capricho_store/core/theme/app_theme.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/features/catalog/data/catalog_repository.dart';
+import 'package:capricho_store/features/catalog/data/catalog_source.dart';
 import 'package:capricho_store/features/catalog/domain/catalog_models.dart';
 import 'package:capricho_store/features/commerce/presentation/commerce_controller.dart';
 import 'package:capricho_store/features/commerce/presentation/reservation_bottom_sheet.dart';
@@ -120,6 +121,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    refreshCatalogOnReconnect(ref, () => setState(_loadData));
     final currency = NumberFormat.currency(locale: 'es_BO', symbol: 'Bs.');
     final cartCount = ref.watch(cartItemCountProvider);
 
