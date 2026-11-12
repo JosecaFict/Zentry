@@ -1,4 +1,5 @@
 import 'package:capricho_store/core/theme/app_theme.dart';
+import 'package:capricho_store/features/admin/domain/operational_access.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/features/offline/domain/offline_models.dart';
 import 'package:capricho_store/features/offline/presentation/offline_controller.dart';
@@ -469,6 +470,10 @@ class _CatalogGrid extends StatelessWidget {
       builder: (context, ref, _) {
         final current = ref.watch(offlineControllerProvider);
         final ctrl = ref.read(offlineControllerProvider.notifier);
+        final user = ref.watch(authControllerProvider).user;
+        // Solo se ofrece lo que el backend aceptará al sincronizar.
+        final canSell = user?.canSellOffline ?? false;
+        final canReserve = user?.canReserveOffline ?? false;
         final selectedItems = current.catalog
             .where((item) => current.cart.containsKey(item.variantId))
             .toList(growable: false);
@@ -496,21 +501,23 @@ class _CatalogGrid extends StatelessWidget {
                   const Text(
                     'Las ventas offline se registran únicamente en efectivo.',
                   ),
-                  const SizedBox(height: 16),
-                  SegmentedButton<OfflineOperationType>(
-                    segments: const [
-                      ButtonSegment(
-                        value: OfflineOperationType.sale,
-                        label: Text('Venta'),
-                      ),
-                      ButtonSegment(
-                        value: OfflineOperationType.reservation,
-                        label: Text('Reserva'),
-                      ),
-                    ],
-                    selected: {current.mode},
-                    onSelectionChanged: (value) => ctrl.setMode(value.first),
-                  ),
+                  if (canSell && canReserve) ...[
+                    const SizedBox(height: 16),
+                    SegmentedButton<OfflineOperationType>(
+                      segments: const [
+                        ButtonSegment(
+                          value: OfflineOperationType.sale,
+                          label: Text('Venta'),
+                        ),
+                        ButtonSegment(
+                          value: OfflineOperationType.reservation,
+                          label: Text('Reserva'),
+                        ),
+                      ],
+                      selected: {current.mode},
+                      onSelectionChanged: (value) => ctrl.setMode(value.first),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   DropdownButtonFormField<int>(
                     key: ValueKey(current.mode),

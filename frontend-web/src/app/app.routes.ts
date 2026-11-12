@@ -5,7 +5,9 @@ import {
   platformGuard,
   requireAllPermissions,
   requireAnyPermission,
+  requireUser,
 } from './core/guards/permission.guard';
+import { canReviewSyncConflicts, canUseOffline } from './core/offline/offline.models';
 import { mainSurfaceGuard, tenantSurfaceGuard } from './core/guards/surface.guard';
 
 export const routes: Routes = [
@@ -368,7 +370,7 @@ export const routes: Routes = [
       {
         path: 'inventario/offline',
         title: 'Operación offline | Tienda',
-        canActivate: [requireAnyPermission('inventario.ver')],
+        canActivate: [requireUser(canUseOffline)],
         loadComponent: () =>
           import('./features/admin/offline-operations-admin').then(
             (m) => m.OfflineOperationsAdmin,
@@ -377,7 +379,7 @@ export const routes: Routes = [
       {
         path: 'inventario/conflictos-offline', // Ventas offline no registradas (encargado)
         title: 'Conflictos offline | Tienda',
-        canActivate: [requireAnyPermission('inventario.ver')],
+        canActivate: [requireUser(canReviewSyncConflicts)],
         loadComponent: () =>
           import('./features/admin/sync-conflicts-admin').then((m) => m.SyncConflictsAdmin),
       },

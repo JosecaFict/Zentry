@@ -34,14 +34,26 @@ describe('admin navigation permissions', () => {
       'recepcion.registrar',
     ]).map((item) => item.label);
 
+    // Ver inventario ya no basta para vender offline (el backend exige cobrar).
     expect(labels).toEqual([
       'Recepciones',
       'Existencias',
       'Lotes',
       'Movimientos',
       'Transferencias',
-      'Operación offline',
     ]);
+  });
+
+  it('lets the default cashier sell offline without inventory access', () => {
+    // Permisos del rol CAJERO en la base de datos.
+    const permisos = ['ventas.ver', 'ventas.crear', 'pagos.registrar', 'productos.ver'];
+    const labels = availableAdminModules(permisos, { roles: ['CAJERO'], permisos, id_sucursal: 3 })
+      .map((item) => item.label);
+
+    expect(labels).toContain('Venta presencial');
+    expect(labels).toContain('Operación offline');
+    expect(labels).not.toContain('Conflictos offline');
+    expect(labels).not.toContain('Existencias');
   });
 
   it('shows offline conflicts only to branch managers and administrators', () => {

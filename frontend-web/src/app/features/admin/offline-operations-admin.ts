@@ -15,6 +15,8 @@ import {
   OfflineSyncMeta,
   PendingOfflineOperation,
   canReloadOfflineOperation,
+  canReserveOffline,
+  canSellOffline,
   offlineFailureReason,
   serverResolutionLabel,
 } from '../../core/offline/offline.models';
@@ -23,6 +25,9 @@ import { OfflineSyncService } from '../../core/offline/offline-sync.service';
 import { ApiErrorService } from '../../core/services/api-error.service';
 import { CatalogService } from '../../core/services/catalog.service';
 import { TenantContextService } from '../../core/tenant/tenant-context.service';
+
+/** Con internet, el catálogo local se vuelve a descargar si tiene más de esto. */
+const CATALOG_REFRESH_MS = 5 * 60_000;
 
 interface OfflineCatalogGroup {
   name: string;
@@ -66,6 +71,9 @@ export class OfflineOperationsAdmin implements OnInit {
   });
   readonly loadingBranches = signal(true);
   readonly preparing = signal(false);
+  /** Actualización del catálogo en segundo plano: no bloquea la venta. */
+  readonly refreshing = signal(false);
+  private preparedAt = 0;
   readonly synchronizing = signal(false);
   readonly message = signal('');
   readonly error = signal('');
@@ -76,7 +84,9 @@ export class OfflineOperationsAdmin implements OnInit {
   readonly latestOperation = computed(() => this.recentOperations()[0]);
   readonly queuingSale = signal(false);
   readonly customers = signal<OfflineCustomerItem[]>([]);
-  readonly operationMode = signal<'VENTA' | 'RESERVA'>('VENTA');
+  readonly canSell = computed(() => canSellOffline(this.auth.currentUser()));
+  readonly canReserve = computed(() => canReserveOffline(this.auth.currentUser()));
+  readonly operationMode = signal<'VENTA' | 'RESERVA'>(this.allowedMode('VENTA'));
   readonly selectedCustomerId = signal<number | null>(null);
   readonly resolvingOperationId = signal<string | null>(null);
   readonly discardConfirmationId = signal<string | null>(null);
@@ -148,7 +158,12 @@ export class OfflineOperationsAdmin implements OnInit {
       });
     });
     effect(() => {
-      if (this.connectivity.online()) untracked(() => this.scheduleAutoSync());
+      if (!this.connectivity.online()) return;
+      untracked(() => {
+        this.scheduleAutoSync();
+        // Volvió la red: descarga el catálogo si falta o está viejo.
+        void this.autoPrepare();
+      });
     });
   }
 
@@ -185,6 +200,7 @@ export class OfflineOperationsAdmin implements OnInit {
     } finally {
       this.loadingBranches.set(false);
     }
+    await this.autoPrepare();
   }
 
   private async restoreLocalBranches(): Promise<void> {
@@ -208,7 +224,7 @@ export class OfflineOperationsAdmin implements OnInit {
       this.selectedBranchId.set(selected.id_sucursal);
       await this.inspectLocalData();
     } else if (!branches.length) {
-      this.message.set('Conéctate una vez y prepara el dispositivo para usar una sucursal sin internet.');
+      this.message.set('Conéctate a internet una vez y elige tu sucursal: el catálogo se descargará solo para usarlo sin internet.');
     }
   }
 
@@ -256,6 +272,8 @@ export class OfflineOperationsAdmin implements OnInit {
     } finally {
       this.preparing.set(false);
     }
+    this.preparedAt = 0;
+    await this.autoPrepare();
   }
 
   availableFor(item: OfflineCatalogItem): number {
@@ -286,9 +304,20 @@ export class OfflineOperationsAdmin implements OnInit {
   }
 
   selectOperationMode(mode: 'VENTA' | 'RESERVA'): void {
-    this.operationMode.set(mode);
+    this.operationMode.set(this.allowedMode(mode));
     this.message.set('');
     this.error.set('');
+  }
+
+  /**
+   * El modo pedido si el usuario puede usarlo; si no, el otro. Así quien solo
+   * reserva no queda en "Venta" (el backend la rechazaría al sincronizar).
+   */
+  private allowedMode(wanted: 'VENTA' | 'RESERVA'): 'VENTA' | 'RESERVA' {
+    const user = this.auth.currentUser();
+    if (wanted === 'VENTA' && !canSellOffline(user) && canReserveOffline(user)) return 'RESERVA';
+    if (wanted === 'RESERVA' && !canReserveOffline(user) && canSellOffline(user)) return 'VENTA';
+    return wanted;
   }
 
   async queueOfflineSale(): Promise<void> {
@@ -374,29 +403,53 @@ export class OfflineOperationsAdmin implements OnInit {
     }
   }
 
-  async prepareDevice(): Promise<void> {
-    if (this.preparing() || this.synchronizing()) return;
+  /**
+   * Descarga el catálogo y los clientes de la sucursal. Con `automatic` y un
+   * catálogo ya guardado, actualiza en segundo plano: no bloquea la venta ni
+   * muestra errores (se sigue vendiendo con lo guardado).
+   */
+  async prepareDevice(automatic = false): Promise<void> {
+    if (this.preparing() || this.refreshing() || this.synchronizing()) return;
     const scope = this.scope();
     if (!scope) return;
-    this.preparing.set(true);
-    this.error.set('');
-    this.message.set('');
+    const background = automatic && this.catalog().length > 0;
+    (background ? this.refreshing : this.preparing).set(true);
+    if (!background) {
+      this.error.set('');
+      this.message.set('');
+    }
     try {
       await this.synchronization.prepare(scope);
+      this.preparedAt = Date.now();
       await this.refreshLocalView();
+      if (background) return;
       if (this.catalog().length) {
         this.message.set(
-          `Catálogo de ${this.selectedBranch()?.nombre ?? 'la sucursal'} disponible en este dispositivo.`,
+          `Catálogo de ${this.selectedBranch()?.nombre ?? 'la sucursal'} listo para vender, con o sin conexión.`,
         );
       } else if (!this.connectivity.online()) {
         this.error.set('Conéctate a internet una vez para descargar el catálogo de esta sucursal.');
       }
     } catch (error) {
-      this.error.set(this.errors.message(error, 'No se pudo preparar este dispositivo.'));
+      if (!background) {
+        this.error.set(this.errors.message(error, 'No se pudo descargar el catálogo de la sucursal.'));
+      }
     } finally {
       this.preparing.set(false);
+      this.refreshing.set(false);
       this.scheduleAutoSync();
     }
+  }
+
+  /**
+   * Sin pasos manuales: con internet descarga el catálogo si falta o tiene más
+   * de 5 minutos (al abrir la pantalla, al elegir sucursal y al volver la red).
+   */
+  private async autoPrepare(): Promise<void> {
+    if (this.destroyRef.destroyed || !this.connectivity.online() || !this.selectedBranchId() ||
+        this.loadingBranches() || this.preparing() || this.refreshing() || this.synchronizing()) return;
+    if (this.catalog().length && Date.now() - this.preparedAt < CATALOG_REFRESH_MS) return;
+    await this.prepareDevice(true);
   }
 
   /** Botón "Sincronizar": envía ya (si falla, el envío automático reintenta cada 30 s). */
@@ -472,7 +525,7 @@ export class OfflineOperationsAdmin implements OnInit {
     try {
       await this.database.markReviewed(operation.id_operacion);
       this.cartQuantities.set(quantities);
-      this.operationMode.set(operation.tipo);
+      this.operationMode.set(this.allowedMode(operation.tipo));
       const customerId = operation.payload['id_cliente'];
       this.selectedCustomerId.set(typeof customerId === 'number' ? customerId : null);
       await this.refreshLocalView();
@@ -593,6 +646,6 @@ export class OfflineOperationsAdmin implements OnInit {
     this.recentOperations.set([]);
     this.customers.set([]);
     this.selectedCustomerId.set(null);
-    this.operationMode.set('VENTA');
+    this.operationMode.set(this.allowedMode('VENTA'));
   }
 }

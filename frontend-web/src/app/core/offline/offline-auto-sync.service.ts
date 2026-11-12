@@ -8,6 +8,7 @@ import { OfflineDatabaseService } from './offline-database.service';
 import { OfflineSyncService } from './offline-sync.service';
 import {
   canReviewSyncConflicts,
+  canUseOffline,
   OfflineScope,
   PendingOfflineOperation,
 } from './offline.models';
@@ -95,14 +96,14 @@ export class OfflineAutoSyncService {
 
   private async run(): Promise<void> {
     const user = this.auth.currentUser();
-    if (!user?.permisos.includes('inventario.ver')) {
-      this.failuresState.set([]);
-      this.pendingConflictsState.set(0);
-      return;
-    }
     if (this.connectivity.online() &&
         Date.now() - this.conflictsCheckedAt >= CONFLICTS_REFRESH_MS) {
       await this.refreshPendingConflicts();
+    }
+    // Mismas reglas que el backend: vender o reservar offline (no exige inventario).
+    if (!canUseOffline(user)) {
+      this.failuresState.set([]);
+      return;
     }
     const scope = await this.ensureScope();
     if (!scope) {

@@ -6,6 +6,7 @@ import 'package:capricho_store/core/network/api_exception.dart';
 import 'package:capricho_store/core/tenant/tenant_context.dart';
 import 'package:capricho_store/features/admin/data/admin_repository.dart';
 import 'package:capricho_store/features/admin/domain/admin_models.dart';
+import 'package:capricho_store/features/admin/domain/operational_access.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/features/offline/data/offline_database.dart';
 import 'package:capricho_store/features/offline/data/offline_sync_repository.dart';
@@ -146,7 +147,24 @@ class OfflineController extends Notifier<OfflineState> {
     Future.microtask(initialize);
     return OfflineState(
       online: ref.read(connectivityControllerProvider).online,
+      mode: _allowedMode(OfflineOperationType.sale),
     );
+  }
+
+  /// El modo pedido si el usuario puede usarlo; si no, el otro. Así un
+  /// usuario que solo reserva no queda en "Venta" (el backend la rechazaría).
+  OfflineOperationType _allowedMode(OfflineOperationType wanted) {
+    final user = ref.read(authControllerProvider).user;
+    if (user == null) return wanted;
+    final canSell = user.canSellOffline;
+    final canReserve = user.canReserveOffline;
+    if (wanted == OfflineOperationType.sale && !canSell && canReserve) {
+      return OfflineOperationType.reservation;
+    }
+    if (wanted == OfflineOperationType.reservation && !canReserve && canSell) {
+      return OfflineOperationType.sale;
+    }
+    return wanted;
   }
 
   Future<void> initialize() async {
@@ -300,7 +318,12 @@ class OfflineController extends Notifier<OfflineState> {
       );
       final results = await Future.wait<Object>([
         repository.catalog(scope.branchId),
-        repository.customers(),
+        // Sin permiso para ver clientes se vende igual a consumidor final.
+        repository.customers().catchError((Object error) {
+          final status = error is ApiException ? error.statusCode : null;
+          if (status == 403) return <OfflineCustomer>[];
+          throw error;
+        }),
       ]);
       final snapshot = results[0] as OfflineSnapshot;
       final customers = results[1] as List<OfflineCustomer>;
@@ -390,9 +413,10 @@ class OfflineController extends Notifier<OfflineState> {
   }
 
   void setMode(OfflineOperationType mode) {
+    final allowed = _allowedMode(mode);
     state = state.copyWith(
-      mode: mode,
-      clearCustomer: mode == OfflineOperationType.sale,
+      mode: allowed,
+      clearCustomer: allowed == OfflineOperationType.sale,
     );
   }
 
@@ -554,7 +578,7 @@ class OfflineController extends Notifier<OfflineState> {
     if (!ref.mounted) return false;
     state = state.copyWith(
       cart: next,
-      mode: operation.type,
+      mode: _allowedMode(operation.type),
       customerId: operation.payload['id_cliente'] as int?,
       clearCustomer: operation.payload['id_cliente'] == null,
       clearError: true,

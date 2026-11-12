@@ -130,7 +130,7 @@ class _Cashier extends AuthController {
       email: 'demo@example.com',
       status: 'ACTIVO',
       roles: ['CAJERO'],
-      permissions: ['inventario.ver'],
+      permissions: ['ventas.ver', 'ventas.crear', 'pagos.registrar'],
     ),
   );
 }

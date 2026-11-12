@@ -37,6 +37,18 @@ export const requireAnyPermission =
     );
   };
 
+/** Permite la ruta cuando el usuario cumple una regla (p. ej. puede vender offline). */
+export const requireUser =
+  (allowed: (user: UserResponse) => boolean): CanActivateFn =>
+  () => {
+    const auth = inject(AuthService);
+    const router = inject(Router);
+    if (!auth.token()) return router.createUrlTree(['/login']);
+    return resolveUser(auth).pipe(
+      map((user) => (user && allowed(user) ? true : router.createUrlTree(['/admin/403']))),
+    );
+  };
+
 export const requireAllPermissions =
   (...permissions: readonly string[]): CanActivateFn =>
   () => {

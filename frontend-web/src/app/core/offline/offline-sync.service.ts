@@ -1,5 +1,6 @@
 import { inject, Injectable, signal } from '@angular/core';
-import { firstValueFrom, timeout } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { catchError, firstValueFrom, of, timeout } from 'rxjs';
 
 import { ConnectivityService } from './connectivity.service';
 import { OfflineDatabaseService } from './offline-database.service';
@@ -42,7 +43,15 @@ export class OfflineSyncService {
       const catalog = await firstValueFrom(this.api.catalog(scope.branchId));
       this.assertScope(scope);
       await this.database.replaceCatalog(catalog);
-      const customers = await firstValueFrom(this.commerce.adminCustomers({ estado: 'ACTIVO' }));
+      // Sin permiso para ver clientes se vende igual, sin cliente registrado.
+      const customers = await firstValueFrom(
+        this.commerce.adminCustomers({ estado: 'ACTIVO' }).pipe(
+          catchError((error: unknown) => {
+            if (error instanceof HttpErrorResponse && error.status === 403) return of([]);
+            throw error;
+          }),
+        ),
+      );
       this.assertScope(scope);
       await this.database.replaceCustomers(
         customers.filter((customer) => customer.estado === 'ACTIVO').map((customer) => ({

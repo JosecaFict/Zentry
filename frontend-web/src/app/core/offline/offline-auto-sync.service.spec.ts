@@ -43,7 +43,7 @@ function setup(options: { permisos?: string[]; online?: boolean; roles?: string[
       { provide: AuthService, useValue: { currentUser: signal({
         id_usuario: 2,
         roles: options.roles ?? ['CAJERO'],
-        permisos: options.permisos ?? ['inventario.ver'],
+        permisos: options.permisos ?? ['ventas.ver', 'ventas.crear', 'pagos.registrar'],
         id_sucursal: 3,
       }) } },
       { provide: TenantContextService, useValue: { tenant: () => ({ id_tenant: 1 }) } },

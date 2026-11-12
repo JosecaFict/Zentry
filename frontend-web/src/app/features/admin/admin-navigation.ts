@@ -1,4 +1,4 @@
-import { canReviewSyncConflicts } from '../../core/offline/offline.models';
+import { canReviewSyncConflicts, canUseOffline } from '../../core/offline/offline.models';
 
 export interface AdminNavUser {
   roles: readonly string[];
@@ -79,6 +79,19 @@ export const ADMIN_NAVIGATION: AdminNavGroup[] = [
         permissions: ['ventas.crear', 'pagos.registrar'],
         requireAll: true,
       },
+      // Vender con o sin internet: mismas reglas que el backend (no exige inventario).
+      {
+        label: 'Operación offline',
+        path: '/admin/inventario/offline',
+        permissions: [],
+        visibleFor: canUseOffline,
+      },
+      {
+        label: 'Conflictos offline',
+        path: '/admin/inventario/conflictos-offline',
+        permissions: [],
+        visibleFor: canReviewSyncConflicts,
+      },
       { label: 'Pedidos', path: '/admin/pedidos', permissions: ['ventas.ver'] },
       { label: 'Reservas', path: '/admin/reservas', permissions: ['reservas.ver'] },
       { label: 'Clientes', path: '/admin/clientes', permissions: ['ventas.ver'] },
@@ -152,17 +165,6 @@ export const ADMIN_NAVIGATION: AdminNavGroup[] = [
         label: 'Transferencias',
         path: '/admin/inventario/transferencias',
         permissions: ['inventario.ver', 'inventario.movimiento'],
-      },
-      {
-        label: 'Operación offline',
-        path: '/admin/inventario/offline',
-        permissions: ['inventario.ver'],
-      },
-      {
-        label: 'Conflictos offline',
-        path: '/admin/inventario/conflictos-offline',
-        permissions: ['inventario.ver'],
-        visibleFor: canReviewSyncConflicts,
       },
     ],
   },

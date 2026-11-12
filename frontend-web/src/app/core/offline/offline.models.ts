@@ -149,6 +149,37 @@ export interface SyncConflict {
   resuelto_at: string | null;
 }
 
+type OfflineUser = {
+  roles: readonly string[];
+  permisos: readonly string[];
+  id_sucursal?: number | null;
+} | null | undefined;
+
+const isAdmin = (user: NonNullable<OfflineUser>) =>
+  (user.roles ?? []).some((role) => ['ADMIN', 'ADMINISTRADOR'].includes(role.toUpperCase()));
+
+/**
+ * Puede registrar ventas offline: mismas reglas que el backend
+ * (`sync/service.py`, `_authorize_operation`). No exige ver inventario: el
+ * cajero de fábrica tiene `ventas.crear` y `pagos.registrar`.
+ */
+export function canSellOffline(user: OfflineUser): boolean {
+  if (!user) return false;
+  return isAdmin(user) ||
+    ((user.permisos ?? []).includes('ventas.crear') && (user.permisos ?? []).includes('pagos.registrar'));
+}
+
+/** Puede registrar reservas offline (backend: `reservas.gestionar`). */
+export function canReserveOffline(user: OfflineUser): boolean {
+  if (!user) return false;
+  return isAdmin(user) || (user.permisos ?? []).includes('reservas.gestionar');
+}
+
+/** Puede usar la pantalla Operación offline (vender o reservar). */
+export function canUseOffline(user: OfflineUser): boolean {
+  return canSellOffline(user) || canReserveOffline(user);
+}
+
 /**
  * Quién revisa conflictos (mismas reglas que el backend): administrador,
  * permiso de todas las sucursales o encargado con sucursal asignada.

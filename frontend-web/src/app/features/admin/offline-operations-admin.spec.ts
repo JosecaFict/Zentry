@@ -18,6 +18,7 @@ function setup(restoredBranchIds?: number[]) {
   const saved: PendingOfflineOperation[] = [];
   const branches = vi.fn(() => of([]));
   const openScope = vi.fn();
+  const prepare = vi.fn().mockResolvedValue(undefined);
   const autoSync = { revision: signal(0), syncNow: vi.fn().mockResolvedValue(undefined), refreshAlerts: vi.fn() };
   const customers = [{ id_cliente: 8, nombre_completo: 'Cliente de prueba', correo: '', telefono: null }];
   const queueOperation = vi.fn(async (_type: string, payload: Record<string, unknown>) => {
@@ -28,12 +29,14 @@ function setup(restoredBranchIds?: number[]) {
   TestBed.configureTestingModule({
     imports: [OfflineOperationsAdmin],
     providers: [
-      { provide: AuthService, useValue: { currentUser: () => ({ id_usuario: 2 }) } },
+      { provide: AuthService, useValue: { currentUser: () => ({
+        id_usuario: 2, roles: ['CAJERO'], permisos: ['ventas.ver', 'ventas.crear', 'pagos.registrar'],
+      }) } },
       { provide: OfflineAutoSyncService, useValue: autoSync },
       { provide: TenantContextService, useValue: { tenant: () => ({ id_tenant: 1 }) } },
       { provide: CatalogService, useValue: { branches } },
       { provide: ConnectivityService, useValue: { online } },
-      { provide: OfflineSyncService, useValue: { synchronizePending: synchronize } },
+      { provide: OfflineSyncService, useValue: { synchronizePending: synchronize, prepare } },
       { provide: OfflineDatabaseService, useValue: {
         listCatalog: async () => [],
         currentMeta: async () => null,
@@ -52,7 +55,7 @@ function setup(restoredBranchIds?: number[]) {
   const component = fixture.componentInstance;
   fixture.detectChanges();
   if (!restoredBranchIds) component.selectedBranchId.set(3);
-  return { fixture, component, online, synchronize, queueOperation, customers, branches, openScope, autoSync };
+  return { fixture, component, online, synchronize, queueOperation, customers, branches, openScope, autoSync, prepare };
 }
 
 it('recovers the last saved branch without requesting the network', async () => {
@@ -165,4 +168,40 @@ it('does not reload operations that a manager must resolve', async () => {
   expect(markReviewed).not.toHaveBeenCalled();
   expect(component.cartQuantities()).toEqual({});
   expect(component.failureReason(conflict)).toContain('No había stock');
+});
+
+it('downloads the branch catalog by itself when the connection returns', async () => {
+  const { fixture, component, online, prepare } = setup();
+  await vi.waitFor(() => expect(component.loadingBranches()).toBe(false));
+  expect(prepare).not.toHaveBeenCalled();
+
+  online.set(true);
+  fixture.detectChanges();
+
+  await vi.waitFor(() =>
+    expect(prepare).toHaveBeenCalledExactlyOnceWith({ tenantId: 1, userId: 2, branchId: 3 }),
+  );
+  await vi.waitFor(() => expect(component.preparing()).toBe(false));
+});
+
+it('refreshes a saved catalog in the background without blocking the sale', async () => {
+  const { component, online, prepare } = setup();
+  await vi.waitFor(() => expect(component.loadingBranches()).toBe(false));
+  component.catalog.set([{
+    id_variante: 4, sku: 'DEMO', producto: 'Polo', talla: 'M', color: 'Azul',
+    precio: '100.00', stock_fisico: 2, stock_reservado: 0, stock_disponible: 2, updated_at: null,
+  }]);
+  let finish!: () => void;
+  prepare.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+  online.set(true);
+
+  const before = component.message();
+  const refresh = component.prepareDevice(true);
+  expect(component.refreshing()).toBe(true);
+  expect(component.preparing()).toBe(false);
+  finish();
+  await refresh;
+  expect(component.refreshing()).toBe(false);
+  // En segundo plano no cambia los mensajes de la pantalla.
+  expect(component.message()).toBe(before);
 });

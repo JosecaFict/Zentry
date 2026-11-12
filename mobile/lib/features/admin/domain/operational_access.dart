@@ -11,6 +11,8 @@ abstract final class OperationalPermissions {
   static const productsView = 'productos.ver';
   static const salesView = 'ventas.ver';
   static const salesCreate = 'ventas.crear';
+  static const paymentsRegister = 'pagos.registrar';
+  static const reservationsManage = 'reservas.gestionar';
 
   static const mobileCapabilities = {
     inventoryView,
@@ -46,7 +48,19 @@ extension OperationalAccess on AppUser {
   bool get canViewInventory =>
       hasPermission(OperationalPermissions.inventoryView);
 
-  bool get canOpenOffline => canViewInventory && canManageOrders;
+  /// Puede registrar ventas offline: mismas reglas que el backend
+  /// (`sync/service.py`, `_authorize_operation`). No exige ver inventario:
+  /// el cajero de fábrica tiene `ventas.crear` y `pagos.registrar`.
+  bool get canSellOffline =>
+      isAdmin ||
+      (hasPermission(OperationalPermissions.salesCreate) &&
+          hasPermission(OperationalPermissions.paymentsRegister));
+
+  /// Puede registrar reservas offline (backend: `reservas.gestionar`).
+  bool get canReserveOffline =>
+      isAdmin || hasPermission(OperationalPermissions.reservationsManage);
+
+  bool get canOpenOffline => canSellOffline || canReserveOffline;
 
   /// Puede revisar y resolver ventas offline no registradas (mismo criterio
   /// que el backend: administradores, ventas en todas las sucursales o

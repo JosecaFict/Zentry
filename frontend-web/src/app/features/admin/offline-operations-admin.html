@@ -29,12 +29,13 @@
         </select>
       </label>
       <button
-        class="button button--primary"
+        class="button button--secondary"
         type="button"
-        [disabled]="!selectedBranchId() || preparing() || synchronizing()"
+        [disabled]="!selectedBranchId() || preparing() || refreshing() || synchronizing()"
         (click)="prepareDevice()"
       >
-        {{ preparing() ? 'Preparando…' : catalog().length ? 'Actualizar catálogo' : 'Preparar dispositivo' }}
+        <!-- El catálogo se descarga solo con internet; el botón solo fuerza una actualización. -->
+        {{ preparing() || refreshing() ? 'Actualizando catálogo…' : 'Actualizar catálogo' }}
       </button>
     </div>
   </section>
@@ -99,8 +100,15 @@
 
       @if (!catalog().length) {
         <div class="offline-empty">
-          <strong>Este dispositivo todavía no tiene catálogo.</strong>
-          <p>{{ connectivity.online() ? 'Pulsa “Preparar dispositivo” para descargarlo.' : 'Recupera la conexión para hacer la primera descarga.' }}</p>
+          @if (preparing()) {
+            <strong>Descargando el catálogo de la sucursal…</strong>
+          } @else if (connectivity.online()) {
+            <strong>No se pudo descargar el catálogo.</strong>
+            <p>Pulsa “Actualizar catálogo” para intentarlo de nuevo.</p>
+          } @else {
+            <strong>Este equipo todavía no tiene el catálogo de esta sucursal.</strong>
+            <p>Conéctate a internet una vez y se descargará solo.</p>
+          }
         </div>
       } @else {
         <div class="catalog-groups">
@@ -162,18 +170,20 @@
             }
           </header>
 
-          <div class="operation-mode" role="group" aria-label="Tipo de operación">
-            <button
-              type="button"
-              [class.is-active]="operationMode() === 'VENTA'"
-              (click)="selectOperationMode('VENTA')"
-            >Venta</button>
-            <button
-              type="button"
-              [class.is-active]="operationMode() === 'RESERVA'"
-              (click)="selectOperationMode('RESERVA')"
-            >Reserva</button>
-          </div>
+          @if (canSell() && canReserve()) {
+            <div class="operation-mode" role="group" aria-label="Tipo de operación">
+              <button
+                type="button"
+                [class.is-active]="operationMode() === 'VENTA'"
+                (click)="selectOperationMode('VENTA')"
+              >Venta</button>
+              <button
+                type="button"
+                [class.is-active]="operationMode() === 'RESERVA'"
+                (click)="selectOperationMode('RESERVA')"
+              >Reserva</button>
+            </div>
+          }
 
           @if (operationMode() === 'RESERVA' || cartLines().length) {
             <label class="reservation-customer">

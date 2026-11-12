@@ -94,7 +94,7 @@ void main() {
     });
 
     test(
-      'Offline exige acceso a inventario también al abrir la ruta directamente',
+      'Offline exige poder cobrar también al abrir la ruta directamente',
       () {
         final user = _user(
           roles: const ['CAJERO'],
@@ -110,6 +110,39 @@ void main() {
         );
       },
     );
+
+    test('el cajero de fábrica vende offline sin ver inventario', () {
+      // Permisos del rol CAJERO en la base: ventas.ver, ventas.crear,
+      // pagos.registrar y productos.ver (sin inventario.ver).
+      final cashier = _user(
+        roles: const ['CAJERO'],
+        permissions: const [
+          OperationalPermissions.salesView,
+          OperationalPermissions.salesCreate,
+          OperationalPermissions.paymentsRegister,
+          OperationalPermissions.productsView,
+        ],
+      );
+      expect(cashier.canSellOffline, isTrue);
+      expect(cashier.canReserveOffline, isFalse);
+      expect(cashier.canOpenOffline, isTrue);
+      expect(
+        NavigationMemory.panelRedirect(
+          initialized: true,
+          user: cashier,
+          location: '/admin/offline',
+        ),
+        isNull,
+      );
+    });
+
+    test('ver inventario ya no basta para vender offline', () {
+      final stock = _user(
+        roles: const ['AUXILIAR_INVENTARIO'],
+        permissions: const [OperationalPermissions.inventoryView],
+      );
+      expect(stock.canOpenOffline, isFalse);
+    });
 
     test('un deep link sin sesión conserva returnUrl para el login', () {
       final redirect = NavigationMemory.panelRedirect(

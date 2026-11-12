@@ -78,7 +78,11 @@ describe('AdminLayout', () => {
   });
 
   it('warns when offline and when offline sales were not registered', () => {
-    const { fixture } = setup({ permisos: ['inventario.ver'], id_sucursal: 1, roles: ['ENCARGADO_SUCURSAL'] });
+    const { fixture } = setup({
+      permisos: ['inventario.ver', 'ventas.crear', 'pagos.registrar'],
+      id_sucursal: 1,
+      roles: ['ENCARGADO_SUCURSAL'],
+    });
     online.set(false);
     failures.set([{ id_operacion: 'a' }, { id_operacion: 'b' }] as PendingOfflineOperation[]);
     pendingConflicts.set(3);
