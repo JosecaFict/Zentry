@@ -7,7 +7,9 @@ plugins {
 
 android {
     namespace = "store.zentrysaas.app"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_local_notifications 23 (y androidx.core 1.19) exigen compilar
+    // contra SDK 37. No cambia minSdk ni targetSdk.
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
