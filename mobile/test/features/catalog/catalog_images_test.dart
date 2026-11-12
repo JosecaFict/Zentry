@@ -253,7 +253,9 @@ void main() {
       );
       addTearDown(again.dispose);
       again.listen(catalogImagesControllerProvider, (_, _) {});
-      for (var i = 0; i < 200; i++) {
+      // Hasta 10 s: con todos los tests en paralelo la lectura de disco tarda.
+      final watch = Stopwatch()..start();
+      while (watch.elapsed < const Duration(seconds: 10)) {
         if (again.read(catalogImagesControllerProvider).paths.isNotEmpty) break;
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }

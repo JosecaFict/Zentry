@@ -2,15 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../admin/domain/operational_access.dart';
+import '../../auth/presentation/auth_controller.dart';
 import '../data/commerce_api.dart';
 import '../domain/commerce_models.dart';
 import 'return_request_dialog.dart';
 
+/// Cuenta de empleado: sus compras y devoluciones de cliente no existen.
+bool _staffOnly(Ref ref) =>
+    ref.watch(authControllerProvider).user?.isStaffOnly ?? false;
+
 final purchasesProvider = FutureProvider<List<Map<String, dynamic>>>(
-  (ref) => ref.watch(commerceApiProvider).listPurchases(),
+  (ref) async => _staffOnly(ref)
+      ? const []
+      : ref.watch(commerceApiProvider).listPurchases(),
 );
 final customerReturnsProvider = FutureProvider<List<Map<String, dynamic>>>(
-  (ref) => ref.watch(commerceApiProvider).listReturns(),
+  (ref) async => _staffOnly(ref)
+      ? const []
+      : ref.watch(commerceApiProvider).listReturns(),
 );
 
 class PurchasesScreen extends ConsumerWidget {

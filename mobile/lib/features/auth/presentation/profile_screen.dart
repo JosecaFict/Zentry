@@ -532,6 +532,9 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 const Divider(height: 1),
               ],
+              // Compras, reservas y direcciones son del cliente: una cuenta de
+              // empleado no las tiene (el backend responde 404).
+              if (!user.isStaffOnly) ...[
               ListTile(
                 leading: const Icon(Icons.swap_horiz_rounded),
                 title: const Text('Compras y devoluciones'),
@@ -580,6 +583,7 @@ class ProfileScreen extends ConsumerWidget {
                 },
               ),
               const Divider(height: 1),
+              ],
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),

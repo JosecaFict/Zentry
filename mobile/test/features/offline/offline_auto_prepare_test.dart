@@ -23,12 +23,69 @@ class _Backend implements HttpClientAdapter {
   int catalogCalls = 0;
   int stock = 4;
 
+  /// Ventas presenciales recibidas (`POST /sales/pos`).
+  final List<Map<String, dynamic>> sales = [];
+
+  /// Cómo responde la venta: 'ok', 'sin_stock' o 'sin_red'.
+  String saleMode = 'ok';
+
+  ResponseBody _json(Object body, [int status = 200]) => ResponseBody.fromString(
+    jsonEncode(body),
+    status,
+    headers: {
+      Headers.contentTypeHeader: [Headers.jsonContentType],
+    },
+  );
+
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    if (options.path == '/sales/pos') {
+      if (saleMode == 'sin_red') {
+        throw DioException.connectionError(
+          requestOptions: options,
+          reason: 'Sin conexión',
+        );
+      }
+      if (saleMode == 'sin_stock') {
+        return _json({
+          'detail': 'Stock insuficiente para completar la venta',
+        }, 409);
+      }
+      final data = Map<String, dynamic>.from(options.data as Map);
+      sales.add(data);
+      return _json({
+        'id_venta': 501,
+        'id_cliente': data['id_cliente'],
+        'cliente_nombre': data['id_cliente'] == null ? null : 'Rosa Pérez',
+        'sucursal': 'Centro',
+        'empleado_nombre': 'Ana Vendedora',
+        'metodo_pago': 'EFECTIVO',
+        'total': '199.80',
+        'fecha_venta': '2026-11-12T15:00:00Z',
+        'items': [
+          {
+            'producto': 'Polo básico',
+            'talla': 'M',
+            'color': 'Negro',
+            'cantidad': 2,
+            'subtotal': '199.80',
+          },
+        ],
+      }, 201);
+    }
+    if (options.path == '/customers/quick') {
+      final data = Map<String, dynamic>.from(options.data as Map);
+      return _json({
+        'id_cliente': 77,
+        'nombre_completo': '${data['nombres']} ${data['apellidos']}'.trim(),
+        'correo': data['correo'] ?? '',
+        'telefono': data['telefono'],
+      }, 201);
+    }
     final Object body = switch (options.path) {
       '/branches' => [
         {'id_sucursal': 2, 'nombre': 'Centro', 'direccion': 'Av. 1'},
@@ -159,14 +216,21 @@ void main() {
     return container;
   }
 
-  Future<OfflineState> settled(ProviderContainer container) async {
-    for (var i = 0; i < 400; i++) {
+  /// Espera a que la pantalla cumpla [done] y quede sin descargas en curso.
+  /// Espera una condición concreta (no "que esté quieta"): entre que termina
+  /// de cargar y empieza la descarga automática hay un instante sin trabajo.
+  Future<OfflineState> settled(
+    ProviderContainer container, [
+    bool Function(OfflineState state)? done,
+  ]) async {
+    final watch = Stopwatch()..start();
+    while (watch.elapsed < const Duration(seconds: 10)) {
       final state = container.read(offlineControllerProvider);
-      if (!state.loading && !state.busy && !state.refreshing) {
-        // Un respiro más por si queda una descarga encadenada.
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        final again = container.read(offlineControllerProvider);
-        if (!again.busy && !again.refreshing) return again;
+      if (!state.loading &&
+          !state.busy &&
+          !state.refreshing &&
+          (done?.call(state) ?? true)) {
+        return state;
       }
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -177,7 +241,7 @@ void main() {
     'con internet descarga el catálogo solo, sin pulsar "Preparar"',
     () async {
       final container = await open();
-      final state = await settled(container);
+      final state = await settled(container, (state) => state.prepared);
 
       expect(backend.catalogCalls, 1);
       expect(state.branchId, 2);
@@ -212,13 +276,16 @@ void main() {
     'con catálogo guardado actualiza el stock en segundo plano',
     () async {
       final first = await open();
-      await settled(first);
+      await settled(first, (state) => state.prepared);
       first.dispose();
 
       backend.stock = 1;
       probe = FakeProbe();
       final container = await open();
-      final state = await settled(container);
+      final state = await settled(
+        container,
+        (state) => state.catalog.singleOrNull?.availableStock == 1,
+      );
 
       expect(backend.catalogCalls, 2);
       expect(state.catalog.single.availableStock, 1);
@@ -226,4 +293,91 @@ void main() {
       expect(state.message, isNull);
     },
   );
+
+  group('venta presencial con internet', () {
+    Future<(ProviderContainer, OfflineController)> ready() async {
+      final container = await open();
+      final state = await settled(container, (state) => state.prepared);
+      final controller = container.read(offlineControllerProvider.notifier);
+      controller.setQuantity(state.catalog.single, 2);
+      return (container, controller);
+    }
+
+    test('se registra al momento y muestra el comprobante', () async {
+      final (container, controller) = await ready();
+
+      expect(await controller.queue(), isTrue);
+
+      final state = container.read(offlineControllerProvider);
+      expect(backend.sales.single['items'], [
+        {'id_variante': 7, 'cantidad': 2},
+      ]);
+      expect(backend.sales.single['registrar_efectivo'], isTrue);
+      expect(state.lastSale?.id, 501);
+      expect(state.lastSale?.total, 199.80);
+      expect(state.lastSale?.lines.single.description, 'Polo básico M Negro');
+      expect(state.cart, isEmpty);
+      expect(state.message, 'Venta #501 registrada.');
+      // No queda nada pendiente en el teléfono.
+      const scope = OfflineScope(tenantSlug: 'demo', userId: 1, branchId: 2);
+      expect(await database.operations(scope), isEmpty);
+    });
+
+    test('sin stock en el servidor: avisa y no guarda nada', () async {
+      final (container, controller) = await ready();
+      backend.saleMode = 'sin_stock';
+
+      expect(await controller.queue(), isFalse);
+
+      final state = container.read(offlineControllerProvider);
+      expect(state.error, 'Stock insuficiente para completar la venta');
+      expect(state.cart, {7: 2}, reason: 'el carrito queda para corregirlo');
+      expect(state.lastSale, isNull);
+      const scope = OfflineScope(tenantSlug: 'demo', userId: 1, branchId: 2);
+      expect(await database.operations(scope), isEmpty);
+    });
+
+    test('si no llega al servidor, se guarda en el teléfono', () async {
+      final (container, controller) = await ready();
+      backend.saleMode = 'sin_red';
+
+      expect(await controller.queue(), isTrue);
+
+      final state = container.read(offlineControllerProvider);
+      expect(state.message, contains('quedó guardada en este dispositivo'));
+      expect(state.cart, isEmpty);
+      const scope = OfflineScope(tenantSlug: 'demo', userId: 1, branchId: 2);
+      final saved = await database.operations(scope);
+      expect(saved.single.type, OfflineOperationType.sale);
+      expect(saved.single.payload['items'], [
+        {'id_variante': 7, 'cantidad': 2},
+      ]);
+    });
+
+    test('cliente nuevo desde la caja queda elegido y guardado', () async {
+      final (container, controller) = await ready();
+
+      expect(
+        await controller.createCustomer(
+          names: 'Rosa',
+          surnames: 'Pérez',
+          phone: '70000000',
+        ),
+        isTrue,
+      );
+
+      final state = container.read(offlineControllerProvider);
+      expect(state.customerId, 77);
+      expect(state.customers.map((c) => c.name), contains('Rosa Pérez'));
+      const scope = OfflineScope(tenantSlug: 'demo', userId: 1, branchId: 2);
+      expect((await database.customers(scope)).single.id, 77);
+
+      expect(await controller.queue(), isTrue);
+      expect(backend.sales.single['id_cliente'], 77);
+      expect(
+        container.read(offlineControllerProvider).lastSale?.customer,
+        'Rosa Pérez',
+      );
+    });
+  });
 }

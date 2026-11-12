@@ -35,6 +35,7 @@ class OfflineState {
     this.customerId,
     this.query = '',
     this.message,
+    this.lastSale,
     this.error,
   });
 
@@ -54,6 +55,9 @@ class OfflineState {
   final int? customerId;
   final String query;
   final String? message;
+
+  /// Última venta registrada en línea (comprobante que ve el cajero).
+  final RegisteredSale? lastSale;
   final String? error;
 
   bool get prepared => catalog.isNotEmpty;
@@ -87,11 +91,13 @@ class OfflineState {
     int? customerId,
     String? query,
     String? message,
+    RegisteredSale? lastSale,
     String? error,
     bool clearBranch = false,
     bool clearCustomer = false,
     bool clearMessage = false,
     bool clearError = false,
+    bool clearLastSale = false,
   }) => OfflineState(
     loading: loading ?? this.loading,
     busy: busy ?? this.busy,
@@ -107,6 +113,7 @@ class OfflineState {
     customerId: clearCustomer ? null : (customerId ?? this.customerId),
     query: query ?? this.query,
     message: clearMessage ? null : (message ?? this.message),
+    lastSale: clearLastSale ? null : (lastSale ?? this.lastSale),
     error: clearError ? null : (error ?? this.error),
   );
 }
@@ -478,7 +485,56 @@ class OfflineController extends Notifier<OfflineState> {
             'observacion': 'Reserva registrada desde Zentry móvil offline',
             'items': items,
           };
-    state = state.copyWith(busy: true, clearError: true, clearMessage: true);
+    state = state.copyWith(
+      busy: true,
+      clearError: true,
+      clearMessage: true,
+      clearLastSale: true,
+    );
+    var savedOffline = false;
+    if (type == OfflineOperationType.sale && state.online) {
+      // Con internet es una venta presencial normal: se registra al momento
+      // con el stock real y el cajero ve el comprobante.
+      try {
+        final sale = await ref
+            .read(offlineSyncRepositoryProvider)
+            .registerSale({
+              'id_sucursal': scope.branchId,
+              'id_cliente': state.customerId,
+              'id_reserva': null,
+              'modalidad_entrega': 'ENTREGA_DIRECTA',
+              'items': items,
+              'registrar_efectivo': true,
+              'metodo_pago': 'EFECTIVO',
+            });
+        if (!ref.mounted) return false;
+        state = state.copyWith(
+          busy: false,
+          cart: const {},
+          clearCustomer: true,
+          lastSale: sale,
+          message: 'Venta #${sale.id} registrada.',
+        );
+        // El stock del servidor cambió: se refresca en segundo plano.
+        _preparedAt = null;
+        unawaited(_autoPrepare());
+        return true;
+      } on SaleNotSentException {
+        // No llegó al servidor: se guarda en el teléfono y se envía sola.
+        savedOffline = true;
+        ref.read(connectivityControllerProvider.notifier).reportNetworkFailure();
+      } catch (error) {
+        // El servidor respondió (sin stock, precio, permisos…): no se guarda
+        // nada y el carrito queda igual para corregir.
+        if (ref.mounted) {
+          state = state.copyWith(
+            busy: false,
+            error: error is ApiException ? error.message : error.toString(),
+          );
+        }
+        return false;
+      }
+    }
     try {
       await ref
           .read(offlineDatabaseProvider)
@@ -487,9 +543,12 @@ class OfflineController extends Notifier<OfflineState> {
       state = state.copyWith(
         cart: const {},
         clearCustomer: true,
-        message: type == OfflineOperationType.sale
-            ? 'Venta en efectivo guardada en este dispositivo.'
-            : 'Reserva guardada; el stock se validará al sincronizar.',
+        message: type == OfflineOperationType.reservation
+            ? 'Reserva guardada; el stock se validará al sincronizar.'
+            : savedOffline
+            ? 'No se pudo llegar al servidor: la venta quedó guardada en este '
+                  'dispositivo y se enviará sola.'
+            : 'Venta en efectivo guardada en este dispositivo.',
       );
       await _loadLocal();
       return true;
@@ -504,6 +563,61 @@ class OfflineController extends Notifier<OfflineState> {
           unawaited(ref.read(offlineSyncControllerProvider.notifier).syncNow());
         }
       }
+    }
+  }
+
+  /// Cierra el comprobante de la última venta para empezar otra.
+  void dismissLastSale() => state = state.copyWith(clearLastSale: true);
+
+  /// Alta rápida de un cliente desde la caja (necesita internet). Queda
+  /// elegido para la venta y guardado en el teléfono para usarlo sin red.
+  Future<bool> createCustomer({
+    required String names,
+    String surnames = '',
+    String? ci,
+    String? email,
+    String? phone,
+  }) async {
+    final scope = _scope;
+    if (scope == null || state.busy) return false;
+    if (!state.online) {
+      state = state.copyWith(
+        error: 'Para registrar un cliente nuevo hace falta internet.',
+      );
+      return false;
+    }
+    state = state.copyWith(busy: true, clearError: true);
+    try {
+      final customer = await ref
+          .read(offlineSyncRepositoryProvider)
+          .createCustomer(
+            names: names,
+            surnames: surnames,
+            ci: ci,
+            email: email,
+            phone: phone,
+          );
+      await ref.read(offlineDatabaseProvider).saveCustomer(scope, customer);
+      if (!ref.mounted) return false;
+      final customers = [
+        ...state.customers.where((item) => item.id != customer.id),
+        customer,
+      ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      state = state.copyWith(
+        busy: false,
+        customers: customers,
+        customerId: customer.id,
+        message: 'Cliente ${customer.name} registrado.',
+      );
+      return true;
+    } catch (error) {
+      if (ref.mounted) {
+        state = state.copyWith(
+          busy: false,
+          error: error is ApiException ? error.message : error.toString(),
+        );
+      }
+      return false;
     }
   }
 

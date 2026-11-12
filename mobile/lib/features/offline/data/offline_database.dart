@@ -562,6 +562,16 @@ class OfflineDatabase {
         .toList(growable: false);
   }
 
+  /// Guarda un cliente recién creado en caja, para elegirlo también sin red.
+  Future<void> saveCustomer(OfflineScope scope, OfflineCustomer customer) async {
+    final db = await _db;
+    await db.customStatement(
+      'INSERT OR REPLACE INTO offline_customer '
+      '(scope_key, customer_id, name, email, phone) VALUES (?, ?, ?, ?, ?)',
+      [scope.key, customer.id, customer.name, customer.email, customer.phone],
+    );
+  }
+
   Future<void> queueOperation({
     required OfflineScope scope,
     required OfflineOperationType type,

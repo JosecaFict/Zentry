@@ -1,4 +1,5 @@
 import 'package:capricho_store/core/network/api_exception.dart';
+import 'package:capricho_store/features/admin/domain/operational_access.dart';
 import 'package:capricho_store/features/auth/presentation/auth_controller.dart';
 import 'package:capricho_store/features/commerce/data/commerce_api.dart';
 import 'package:capricho_store/features/commerce/domain/commerce_models.dart';
@@ -21,7 +22,7 @@ class CartController extends AsyncNotifier<Cart?> {
     });
 
     final auth = ref.watch(authControllerProvider);
-    if (!auth.isAuthenticated) {
+    if (!auth.isAuthenticated || _staffOnly(auth)) {
       return null;
     }
 
@@ -39,7 +40,7 @@ class CartController extends AsyncNotifier<Cart?> {
 
   Future<void> refresh() async {
     final auth = ref.read(authControllerProvider);
-    if (!auth.isAuthenticated) {
+    if (!auth.isAuthenticated || _staffOnly(auth)) {
       state = const AsyncValue.data(null);
       return;
     }
@@ -111,7 +112,7 @@ class ReservationsController extends AsyncNotifier<List<Reservation>> {
   @override
   Future<List<Reservation>> build() async {
     final auth = ref.watch(authControllerProvider);
-    if (!auth.isAuthenticated) return [];
+    if (!auth.isAuthenticated || _staffOnly(auth)) return [];
     try {
       return await _api.listReservations();
     } catch (_) {
@@ -121,7 +122,7 @@ class ReservationsController extends AsyncNotifier<List<Reservation>> {
 
   Future<void> refresh() async {
     final auth = ref.read(authControllerProvider);
-    if (!auth.isAuthenticated) {
+    if (!auth.isAuthenticated || _staffOnly(auth)) {
       state = const AsyncValue.data([]);
       return;
     }
@@ -204,7 +205,7 @@ class AddressesController extends AsyncNotifier<List<Address>> {
   @override
   Future<List<Address>> build() async {
     final auth = ref.watch(authControllerProvider);
-    if (!auth.isAuthenticated) return [];
+    if (!auth.isAuthenticated || _staffOnly(auth)) return [];
     try {
       return await _api.listAddresses();
     } catch (_) {
@@ -214,7 +215,7 @@ class AddressesController extends AsyncNotifier<List<Address>> {
 
   Future<void> refresh() async {
     final auth = ref.read(authControllerProvider);
-    if (!auth.isAuthenticated) {
+    if (!auth.isAuthenticated || _staffOnly(auth)) {
       state = const AsyncValue.data([]);
       return;
     }
@@ -311,3 +312,7 @@ class NotificationsController extends AsyncNotifier<List<CustomerNotification>> 
   }
 }
 
+
+/// Cuenta de empleado: el carrito, las reservas y las direcciones de cliente
+/// no le corresponden, así que no se consultan (el backend respondería 404).
+bool _staffOnly(AuthState auth) => auth.user?.isStaffOnly ?? false;

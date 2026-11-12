@@ -160,6 +160,62 @@ class OfflineSyncRepository {
     }
   }
 
+  /// Venta presencial en línea: queda registrada al momento, con el stock
+  /// real. Si la petición no llegó al servidor lanza [SaleNotSentException]
+  /// (se puede guardar en el teléfono sin riesgo de duplicarla).
+  Future<RegisteredSale> registerSale(Map<String, dynamic> payload) async {
+    try {
+      final response = await _dio.post('/sales/pos', data: payload);
+      return RegisteredSale.fromJson(
+        Map<String, dynamic>.from(response.data as Map),
+      );
+    } on DioException catch (error) {
+      final neverArrived =
+          error.type == DioExceptionType.connectionError ||
+          error.type == DioExceptionType.connectionTimeout ||
+          (error.type == DioExceptionType.unknown &&
+              error.error is SocketException);
+      if (neverArrived) throw const SaleNotSentException();
+      if (error.response == null) {
+        // Se envió pero no llegó la respuesta: puede haber quedado registrada.
+        throw const ApiException(
+          'No llegó la confirmación del servidor. Antes de repetir la venta, '
+          'revisa en el historial de ventas si quedó registrada.',
+        );
+      }
+      throw ApiException.fromDio(error);
+    }
+  }
+
+  /// Alta rápida de cliente desde la caja (`POST /customers/quick`).
+  Future<OfflineCustomer> createCustomer({
+    required String names,
+    String surnames = '',
+    String? ci,
+    String? email,
+    String? phone,
+  }) async {
+    String? clean(String? value) =>
+        value == null || value.trim().isEmpty ? null : value.trim();
+    try {
+      final response = await _dio.post(
+        '/customers/quick',
+        data: {
+          'nombres': names.trim(),
+          'apellidos': surnames.trim(),
+          'ci': clean(ci),
+          'correo': clean(email),
+          'telefono': clean(phone),
+        },
+      );
+      return OfflineCustomer.fromJson(
+        Map<String, dynamic>.from(response.data as Map),
+      );
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
+
   Future<Map<String, dynamic>> confirmBatch({
     required String batchId,
     required String deviceId,

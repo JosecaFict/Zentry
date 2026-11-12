@@ -395,3 +395,73 @@ class OfflineSyncOutcome {
       'Sincronización lista: $applied aplicadas, $conflicts conflictos y '
       '$rejected rechazadas.';
 }
+
+/// La venta en línea no llegó al servidor (sin red o sin conexión con él):
+/// es seguro guardarla en el teléfono para enviarla después, sin duplicarla.
+class SaleNotSentException implements Exception {
+  const SaleNotSentException();
+}
+
+/// Línea de una venta registrada en el servidor.
+class RegisteredSaleLine {
+  const RegisteredSaleLine({
+    required this.description,
+    required this.quantity,
+    required this.subtotal,
+  });
+
+  factory RegisteredSaleLine.fromJson(Map<String, dynamic> json) =>
+      RegisteredSaleLine(
+        description: [
+          json['producto'],
+          json['talla'],
+          json['color'],
+        ].whereType<String>().where((part) => part.isNotEmpty).join(' '),
+        quantity: (json['cantidad'] as num?)?.toInt() ?? 0,
+        subtotal: double.tryParse('${json['subtotal']}') ?? 0,
+      );
+
+  final String description;
+  final int quantity;
+  final double subtotal;
+}
+
+/// Venta presencial registrada en el servidor (`POST /sales/pos`): lo que se
+/// muestra al cajero como comprobante.
+class RegisteredSale {
+  const RegisteredSale({
+    required this.id,
+    required this.branch,
+    required this.total,
+    required this.date,
+    required this.lines,
+    this.customer,
+    this.seller,
+    this.paymentMethod,
+  });
+
+  factory RegisteredSale.fromJson(Map<String, dynamic> json) => RegisteredSale(
+    id: (json['id_venta'] as num).toInt(),
+    branch: json['sucursal'] as String? ?? '',
+    total: double.tryParse('${json['total']}') ?? 0,
+    date:
+        DateTime.tryParse(json['fecha_venta'] as String? ?? '')?.toLocal() ??
+        DateTime.now(),
+    lines: [
+      for (final raw in json['items'] as List<dynamic>? ?? const [])
+        RegisteredSaleLine.fromJson(Map<String, dynamic>.from(raw as Map)),
+    ],
+    customer: json['cliente_nombre'] as String?,
+    seller: json['empleado_nombre'] as String?,
+    paymentMethod: json['metodo_pago'] as String?,
+  );
+
+  final int id;
+  final String branch;
+  final double total;
+  final DateTime date;
+  final List<RegisteredSaleLine> lines;
+  final String? customer;
+  final String? seller;
+  final String? paymentMethod;
+}

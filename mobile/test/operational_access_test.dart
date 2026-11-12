@@ -136,6 +136,16 @@ void main() {
       );
     });
 
+    test('las pantallas de cliente no se consultan con cuenta de empleado', () {
+      final cashier = _user(
+        roles: const ['CAJERO'],
+        permissions: const [OperationalPermissions.salesCreate],
+      );
+      final customer = _user(roles: const ['CLIENTE'], permissions: const []);
+      expect(cashier.isStaffOnly, isTrue);
+      expect(customer.isStaffOnly, isFalse);
+    });
+
     test('ver inventario ya no basta para vender offline', () {
       final stock = _user(
         roles: const ['AUXILIAR_INVENTARIO'],

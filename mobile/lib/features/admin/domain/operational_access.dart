@@ -62,6 +62,12 @@ extension OperationalAccess on AppUser {
 
   bool get canOpenOffline => canSellOffline || canReserveOffline;
 
+  /// Cuenta de empleado sin perfil de cliente: el carrito, las direcciones,
+  /// las reservas y las compras de cliente no le corresponden (el backend
+  /// responde 404 "no tiene un perfil de cliente activo").
+  bool get isStaffOnly =>
+      canAccessOperationalPanel && !roles.contains('CLIENTE');
+
   /// Puede revisar y resolver ventas offline no registradas (mismo criterio
   /// que el backend: administradores, ventas en todas las sucursales o
   /// encargados con sucursal asignada).

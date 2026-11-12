@@ -1170,7 +1170,7 @@ class _ProductDetailData {
 
 /// Explica por qué no se puede comprar aquí y dónde vender: sin conexión el
 /// carrito no funciona, y el carrito es de clientes (un trabajador vende en
-/// Panel → Offline, que funciona con o sin internet).
+/// Panel → Vender, que funciona con o sin internet).
 class _SaleChannelHint extends StatelessWidget {
   const _SaleChannelHint({required this.offline, required this.canSellInStore});
 
@@ -1181,9 +1181,9 @@ class _SaleChannelHint extends StatelessWidget {
   Widget build(BuildContext context) {
     final message = offline
         ? 'Sin conexión: agregar al carrito y reservar necesitan internet.'
-              '${canSellInStore ? ' Para vender en tienda usa Panel → Offline.' : ''}'
+              '${canSellInStore ? ' Para vender en tienda usa Panel → Vender.' : ''}'
         : 'El carrito es para compras de clientes. Para registrar una venta '
-              'en tienda usa Panel → Offline.';
+              'en tienda usa Panel → Vender.';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(

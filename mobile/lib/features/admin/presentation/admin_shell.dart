@@ -52,9 +52,9 @@ class AdminShell extends ConsumerWidget {
       if (user.canOpenOffline)
         const _PanelDestination(
           location: '/admin/offline',
-          label: 'Offline',
-          icon: Icons.sync_alt_outlined,
-          selectedIcon: Icons.sync_alt_rounded,
+          label: 'Vender',
+          icon: Icons.point_of_sale_outlined,
+          selectedIcon: Icons.point_of_sale_rounded,
         ),
       const _PanelDestination(
         location: '/admin/perfil',

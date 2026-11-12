@@ -46,6 +46,13 @@ class OfflineOperationsScreen extends ConsumerWidget {
                 sliver: SliverList.list(
                   children: [
                     _Header(online: state.online),
+                    if (state.lastSale case final sale?) ...[
+                      const SizedBox(height: 16),
+                      _SaleReceipt(
+                        sale: sale,
+                        onClose: controller.dismissLastSale,
+                      ),
+                    ],
                     const SizedBox(height: 24),
                     _BranchPanel(
                       state: state,
@@ -155,17 +162,17 @@ class _Header extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'INVENTARIO · MODO LOCAL',
+              'VENTA PRESENCIAL · CON O SIN INTERNET',
               style: Theme.of(context).textTheme.labelSmall,
             ),
             const SizedBox(height: 6),
-            Text(
-              'Operación offline',
-              style: Theme.of(context).textTheme.displaySmall,
-            ),
+            Text('Vender', style: Theme.of(context).textTheme.displaySmall),
             const SizedBox(height: 6),
-            const Text(
-              'Vende o reserva aunque el dispositivo pierda conexión.',
+            Text(
+              online
+                  ? 'Con internet, cada venta se registra al momento.'
+                  : 'Sin internet: las ventas se guardan en el teléfono y se '
+                        'envían solas al volver la conexión.',
             ),
           ],
         ),
@@ -520,7 +527,11 @@ class _CatalogGrid extends StatelessWidget {
                   ],
                   const SizedBox(height: 16),
                   DropdownButtonFormField<int>(
-                    key: ValueKey(current.mode),
+                    // Se reconstruye al crear un cliente para mostrarlo elegido.
+                    key: ValueKey(
+                      '${current.mode}-${current.customerId}-'
+                      '${current.customers.length}',
+                    ),
                     initialValue:
                         current.customerId ??
                         (current.mode == OfflineOperationType.sale ? 0 : null),
@@ -542,6 +553,20 @@ class _CatalogGrid extends StatelessWidget {
                     ],
                     onChanged: (id) => ctrl.setCustomer(id == 0 ? null : id),
                   ),
+                  if (current.online)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: current.busy
+                            ? null
+                            : () => showDialog<void>(
+                                context: context,
+                                builder: (_) => const _NewCustomerDialog(),
+                              ),
+                        icon: const Icon(Icons.person_add_alt_1_outlined),
+                        label: const Text('Nuevo cliente'),
+                      ),
+                    ),
                   const SizedBox(height: 16),
                   ...selectedItems.map(
                     (item) => ListTile(
@@ -570,6 +595,12 @@ class _CatalogGrid extends StatelessWidget {
                       ),
                     ],
                   ),
+                  if (current.error != null) ...[
+                    const SizedBox(height: 12),
+                    // Ej.: sin stock al registrar en línea; el carrito queda
+                    // igual para corregirlo.
+                    _Notice(message: current.error!, success: false),
+                  ],
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
@@ -578,15 +609,18 @@ class _CatalogGrid extends StatelessWidget {
                           ? null
                           : () async {
                               final saved = await ctrl.queue();
-                              if (saved && context.mounted)
+                              if (saved && context.mounted) {
                                 Navigator.pop(context);
+                              }
                             },
                       child: Text(
                         current.busy
-                            ? 'Guardando…'
-                            : current.mode == OfflineOperationType.sale
-                            ? 'Guardar venta en efectivo'
-                            : 'Guardar reserva',
+                            ? 'Registrando…'
+                            : current.mode == OfflineOperationType.reservation
+                            ? 'Guardar reserva'
+                            : current.online
+                            ? 'Registrar venta en efectivo'
+                            : 'Guardar venta en efectivo',
                       ),
                     ),
                   ),
@@ -788,4 +822,180 @@ class _EmptyCatalog extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Comprobante de la venta registrada en línea: número, prendas y total.
+class _SaleReceipt extends StatelessWidget {
+  const _SaleReceipt({required this.sale, required this.onClose});
+
+  final RegisteredSale sale;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat.currency(locale: 'es_BO', symbol: 'Bs ');
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppColors.success),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: AppColors.success),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Venta #${sale.id} registrada',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Cerrar',
+                  onPressed: onClose,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            Text(
+              '${DateFormat('dd/MM/yyyy HH:mm').format(sale.date)} · '
+              '${sale.branch}'
+              '${sale.seller == null ? '' : ' · ${sale.seller}'}',
+            ),
+            Text('Cliente: ${sale.customer ?? 'Consumidor final'}'),
+            const Divider(),
+            for (final line in sale.lines)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text('${line.quantity} × ${line.description}'),
+                    ),
+                    Text(money.format(line.subtotal)),
+                  ],
+                ),
+              ),
+            const Divider(),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Total cobrado en efectivo',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                Text(
+                  money.format(sale.total),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Formulario de alta rápida de cliente desde la caja (necesita internet).
+class _NewCustomerDialog extends ConsumerStatefulWidget {
+  const _NewCustomerDialog();
+
+  @override
+  ConsumerState<_NewCustomerDialog> createState() => _NewCustomerDialogState();
+}
+
+class _NewCustomerDialogState extends ConsumerState<_NewCustomerDialog> {
+  final _names = TextEditingController();
+  final _surnames = TextEditingController();
+  final _ci = TextEditingController();
+  final _phone = TextEditingController();
+  final _email = TextEditingController();
+
+  @override
+  void dispose() {
+    for (final controller in [_names, _surnames, _ci, _phone, _email]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final saved = await ref
+        .read(offlineControllerProvider.notifier)
+        .createCustomer(
+          names: _names.text,
+          surnames: _surnames.text,
+          ci: _ci.text,
+          phone: _phone.text,
+          email: _email.text,
+        );
+    if (saved && mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(offlineControllerProvider);
+    return AlertDialog(
+      title: const Text('Nuevo cliente'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _names,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Nombres *'),
+              onChanged: (_) => setState(() {}),
+            ),
+            TextField(
+              controller: _surnames,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Apellidos'),
+            ),
+            TextField(
+              controller: _ci,
+              decoration: const InputDecoration(labelText: 'CI'),
+            ),
+            TextField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'Teléfono'),
+            ),
+            TextField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(labelText: 'Correo'),
+            ),
+            if (state.error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                state.error!,
+                style: const TextStyle(color: AppColors.danger),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: state.busy || _names.text.trim().isEmpty ? null : _save,
+          child: Text(state.busy ? 'Guardando…' : 'Registrar cliente'),
+        ),
+      ],
+    );
+  }
 }
