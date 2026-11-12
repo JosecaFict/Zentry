@@ -109,7 +109,52 @@ class OfflineDatabase {
       'CREATE INDEX IF NOT EXISTS ix_offline_operation_scope_status '
       'ON offline_operation(scope_key, status)',
     );
+    await db.customStatement('''
+      CREATE TABLE IF NOT EXISTS catalog_cache (
+        tenant_slug TEXT NOT NULL,
+        cache_key TEXT NOT NULL,
+        json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_slug, cache_key)
+      )
+    ''');
     return db;
+  }
+
+  /// Guarda la respuesta cruda (JSON) de un endpoint del catálogo.
+  Future<void> putCatalogCache(
+    String tenantSlug,
+    String key,
+    String json,
+  ) async {
+    await (await _db).customStatement(
+      'INSERT INTO catalog_cache (tenant_slug, cache_key, json, updated_at) '
+      'VALUES (?, ?, ?, ?) ON CONFLICT (tenant_slug, cache_key) DO UPDATE SET '
+      'json = excluded.json, updated_at = excluded.updated_at',
+      [tenantSlug, key, json, DateTime.now().toUtc().toIso8601String()],
+    );
+  }
+
+  /// Lee la última respuesta guardada de un endpoint del catálogo.
+  Future<({String json, DateTime updatedAt})?> catalogCache(
+    String tenantSlug,
+    String key,
+  ) async {
+    final row = await (await _db)
+        .customSelect(
+          'SELECT json, updated_at FROM catalog_cache '
+          'WHERE tenant_slug = ? AND cache_key = ?',
+          variables: [
+            Variable.withString(tenantSlug),
+            Variable.withString(key),
+          ],
+        )
+        .getSingleOrNull();
+    if (row == null) return null;
+    return (
+      json: row.read<String>('json'),
+      updatedAt: DateTime.parse(row.read<String>('updated_at')),
+    );
   }
 
   Future<List<({int id, String name, String address})>> preparedBranches(
